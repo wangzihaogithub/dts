@@ -1,0 +1,57 @@
+cnwy.kafka-prefix: 'dev_'
+cnwy.binlog-prefix: 'cnwy.'
+canal.conf:
+  enable-pull: true
+  srcDataSources:
+    defaultDS:
+      url: 'jdbc:mysql://rm-2ze3p58061s26ev8i1o.mysql.rds.aliyuncs.com:3306/cnwy?useUnicode=true&characterEncoding=utf-8&allowMultiQueries=true&rewriteBatchedStatements=true&zeroDateTimeBehavior=CONVERT_TO_NULL'
+      username: 'test_cnwy'
+      password: 'ZnC+7PVvGXG4'
+  canalAdapters:
+    # KafkaCanalConnector
+    - destination: 'job_es'
+      connector: com.github.dts.canal.KafkaCanalConnector
+      enable: true
+      batchSize: 500
+      pull-timeout: 50
+      topics:
+        - '${cnwy.kafka-prefix}job'
+        - '${cnwy.kafka-prefix}job_region'
+        - '${cnwy.kafka-prefix}job_specialty'
+      properties: {
+        bootstrap.servers: 'xx:9093',
+        group.id: 'dev_group',
+        security.protocol: 'SASL_SSL',
+        sasl.mechanism: 'PLAIN',
+        ssl.endpoint.identification.algorithm: '',
+        ssl.truststore.location: '/kafkajks/mix.4096.client.truststore.jks',
+        ssl.truststore.password: 'KafkaOnsClient',
+        sasl.jaas.config: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="alikafka_post-cn-o493or7rj00a" password="3gZip4seQRqhGTEwtR67Ib3HrzBji3nl";'
+      }
+      groups:
+        - outerAdapters:
+            - name: 'adapterES7'
+              es7x:
+                address: 'es-cn-omn3newed000a7nef.xx.elasticsearch.aliyuncs.com:9200'
+#                address: 'es-cn-omn3newed000a7nef.xxelasticsearch.aliyuncs.com:9200'
+                username: 'xx'
+                password: 'xx'
+
+    # MysqlBinlogCanalConnector
+    - destination: 'job_es'
+      connector: com.github.dts.canal.MysqlBinlogCanalConnector
+      enable: true
+      batchSize: 500
+      pull-timeout: 5
+      topics:
+        - '${cnwy.binlog-prefix}job'
+        - '${cnwy.binlog-prefix}job_region'
+        - '${cnwy.binlog-prefix}job_specialty'
+      properties: {
+        dataSource: 'defaultDS',
+        maxDumpThread: 111,
+        enableGTID: true
+      }
+      groups:
+        - outerAdapters:
+            - name: 'adapterES7'

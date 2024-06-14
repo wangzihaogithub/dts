@@ -1,0 +1,13 @@
+spring:
+  application:
+    name: 'dts'
+  profiles:
+    active: dev
+server:
+  port: 8080
+
+logging:
+  level:
+    org.apache.kafka.clients.consumer: warn
+    com.alibaba.otter.canal: warn
+    com.taobao.tddl.dbsync: warn

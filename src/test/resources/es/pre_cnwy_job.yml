@@ -1,0 +1,90 @@
+dataSourceKey: defaultDS
+destination: job_es
+esMapping:
+  env: pre
+  _id: id
+  pk: id
+  _index: cnwy_job_pre_index_alias
+  mappingMetadataTimeout: 600000
+  upsert: false
+  writeNull: false
+  indexUpdatedTime: 'indexUpdatedTime'
+  sql: "SELECT
+        job.id as id,
+        job.type as type,
+        job.education as education,
+        job.nature as nature,
+        job.`source` as source,
+        job.`name` as name,
+        job.gender as gender,
+        job.age_low as ageLow,
+        job.age_high as ageHigh,
+        job.link as link,
+        job.notice_url as noticeUrl,
+        job.foreign_lang as foreignLang,
+        job.political as political,
+        job.`session` as session,
+        job.`year` as year,
+        job.`year_low` as yearLow,
+        job.`year_high` as yearHigh,
+        job.account as account,
+        job.welfare as welfare,
+        job.content as content,
+        job.job_start_time as jobStartTime,
+        job.job_end_time as jobEndTime,
+        job.target_id as targetId,
+        job.`status` as status,
+        job.company_id as companyId,
+        job.company_name as companyName,
+        substring_index(job.company_name,'-', 1) as shortCompanyName,
+        job.company_nature as companyNature,
+        job.company_target_nature as companyTargetNature,
+        job.company_link as companyLink,
+        job.company_org as companyOrg,
+        job.create_time as createTime,
+        job.update_time as updateTime
+      FROM job job"
+  objFields:
+    education:
+      type: array
+      split: '[、]'
+    foreignLang:
+      type: array
+      split: '[、]'
+    political:
+      type: array
+      split: '[、]'
+    session:
+      type: array
+      split: '[、]'
+    regionList:
+      type: array-sql
+      sql: "SELECT
+              region.id as id,
+              region.region_id as regionId,
+              region.province_id as provinceId,
+              region.province_name as provinceName,
+              region.city_id as cityId,
+              region.city_name as cityName,
+              region.district_id as districtId,
+              region.district_name as districtName,
+              region.address as address,
+              region.region_id_colloquial as regionIdColloquial,
+              region.region_name_colloquial as regionNameColloquial,
+              concat(region.lat, ',', region.lng) as geo
+          FROM job_region region "
+      onParentChangeWhereSql: 'WHERE region.id = #{id} '
+      onChildChangeWhereSql: 'WHERE region.job_id = #{job_id} '
+      parentDocumentId: job_id
+    specialtyList:
+      type: array-sql
+      sql: "SELECT
+              specialty.id as id,
+              specialty.specialty_id as specialtyId,
+              specialty.specialty_name as specialtyName,
+              specialty.specialty_id_colloquial as specialtyIdColloquial,
+              specialty.specialty_name_colloquial as specialtyNameColloquial
+          FROM job_specialty specialty "
+      onParentChangeWhereSql: 'WHERE specialty.id = #{id} '
+      onChildChangeWhereSql: 'WHERE specialty.job_id = #{job_id} '
+      parentDocumentId: job_id
