@@ -5,40 +5,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.util.Assert;
 import org.springframework.util.ObjectUtils;
 
-/**
- * Abstract base class representing a source of name/value property pairs. The
- * underlying {@linkplain #getSource() source object} may be of any type
- * {@code T} that encapsulates properties. Examples include
- * {@link java.util.Properties} objects, {@link java.util.Map} objects,
- * {@code ServletContext} and {@code ServletConfig} objects (for access to init
- * parameters). Explore the {@code PropertySource} type hierarchy to see
- * provided implementations.
- * <p>
- * {@code PropertySource} objects are not typically used in isolation, but
- * rather through a {@link PropertySources} object, which aggregates property
- * sources and in conjunction with a {@link org.springframework.core.env.PropertyResolver} implementation
- * that can perform precedence-based searches across the set of
- * {@code PropertySources}.
- * <p>
- * {@code PropertySource} identity is determined not based on the content of
- * encapsulated properties, but rather based on the {@link #getName() name} of
- * the {@code PropertySource} alone. This is useful for manipulating
- * {@code PropertySource} objects when in collection contexts. See operations in
- * {@link MutablePropertySources} as well as the {@link #named(String)} and
- * {@link #toString()} methods for details.
- * <p>
- * Note that when working
- * with @{@link org.springframework.context.annotation.Configuration
- * Configuration} classes that the @{@link PropertySource PropertySource}
- * annotation provides a convenient and declarative way of adding property
- * sources to the enclosing {@code Environment}.
- *
- * @author Chris Beams
- * @see PropertySources
- * @see MutablePropertySources
- * @see PropertySource
- * @since 3.1
- */
 public abstract class PropertySource<T> {
 
     protected final Logger logger = LoggerFactory.getLogger(getClass());
@@ -47,9 +13,6 @@ public abstract class PropertySource<T> {
 
     protected final T source;
 
-    /**
-     * Create a new {@code PropertySource} with the given name and source object.
-     */
     public PropertySource(String name, T source) {
         Assert.hasText(name, "Property source name must contain at least one character");
         Assert.notNull(source, "Property source must not be null");
@@ -149,50 +112,10 @@ public abstract class PropertySource<T> {
         }
     }
 
-    /**
-     * Return a {@code PropertySource} implementation intended for collection
-     * comparison purposes only.
-     * <p>
-     * Primarily for internal use, but given a collection of {@code PropertySource}
-     * objects, may be used as follows:
-     *
-     * <pre class="code">
-     *
-     * {
-     *     &#64;code
-     *     List<PropertySource<?>> sources = new ArrayList<PropertySource<?>>();
-     *     sources.add(new MapPropertySource("sourceA", mapA));
-     *     sources.add(new MapPropertySource("sourceB", mapB));
-     *     assert sources.contains(PropertySource.named("sourceA"));
-     *     assert sources.contains(PropertySource.named("sourceB"));
-     *     assert !sources.contains(PropertySource.named("sourceC"));
-     * }
-     * </pre>
-     * <p>
-     * The returned {@code PropertySource} will throw
-     * {@code UnsupportedOperationException} if any methods other than
-     * {@code equals(Object)}, {@code hashCode()}, and {@code toString()} are
-     * called.
-     *
-     * @param name the name of the comparison {@code PropertySource} to be created
-     *             and returned.
-     */
     public static PropertySource<?> named(String name) {
         return new ComparisonPropertySource(name);
     }
 
-    /**
-     * {@code PropertySource} to be used as a placeholder in cases where an actual
-     * property source cannot be eagerly initialized at application context creation
-     * time. For example, a {@code ServletContext}-based property source must wait
-     * until the {@code ServletContext} object is available to its enclosing
-     * {@code ApplicationContext}. In such cases, a stub should be used to hold the
-     * intended default position/order of the property source, then be replaced
-     * during context refresh.
-     *
-     * @see org.springframework.web.context.support.StandardServletEnvironment
-     * @see org.springframework.web.context.support.ServletContextPropertySource
-     */
     public static class StubPropertySource extends PropertySource<Object> {
 
         public StubPropertySource(String name) {

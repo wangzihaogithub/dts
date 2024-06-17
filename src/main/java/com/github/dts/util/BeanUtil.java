@@ -1,8 +1,5 @@
 package com.github.dts.util;
 
-import org.springframework.beans.BeanUtils;
-import org.springframework.util.ReflectionUtils;
-
 import java.beans.PropertyDescriptor;
 import java.lang.reflect.*;
 import java.text.SimpleDateFormat;
@@ -12,8 +9,6 @@ import java.time.temporal.TemporalAccessor;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-
-import static java.util.Locale.ENGLISH;
 
 /**
  * 数据转换(默认值,类型) + 属性操作 = BeanUtils
@@ -68,93 +63,6 @@ public class BeanUtil {
         UNSAFE_ALLOCATE_INSTANCE_METHOD = unsafeAllocateInstanceMethod;
     }
 
-    /**
-     * 调用set方法
-     *
-     * @param fieldName  字段名称
-     * @param fieldValue 字段值
-     * @param target     对象实例
-     * @throws IllegalAccessException
-     * @throws NoSuchFieldException
-     */
-    public static boolean setFieldValue(String fieldName, Object fieldValue, Object target) throws IllegalAccessException, NoSuchFieldException {
-        if (target == null) {
-            return false;
-        }
-        Field field = ReflectionUtils.findField(target.getClass(), fieldName);
-        Object castFieldValue;
-        if (field != null) {
-            castFieldValue = TypeUtil.cast(fieldValue, field.getType());
-        } else {
-            castFieldValue = fieldValue;
-        }
-        try {
-            PropertyDescriptor descriptor = new PropertyDescriptor(fieldName, target.getClass(),
-                    null,
-                    "set" + fieldName.substring(0, 1).toUpperCase(ENGLISH) + fieldName.substring(1));
-            Method writeMethod = descriptor.getWriteMethod();
-            if (writeMethod != null) {
-                writeMethod.invoke(target, castFieldValue);
-                return true;
-            }
-        } catch (Exception e) {
-            //skip
-        }
-        return setFieldValue(field, castFieldValue, target);
-    }
-
-    public static boolean setFieldValue(Field field, Object fieldValue, Object target) throws IllegalAccessException {
-        if (field == null || target == null) {
-            return false;
-        }
-        field.setAccessible(true);
-        field.set(target, fieldValue);
-        return true;
-    }
-
-    /**
-     * 调用get方法
-     *
-     * @param fieldName 字段名称
-     * @param target    对象实例
-     * @return 字段值
-     * @throws IllegalAccessException
-     * @throws NoSuchFieldException
-     */
-    public static Object getFieldValue(String fieldName, Object target) throws IllegalAccessException, NoSuchFieldException {
-        try {
-            if (target == null) {
-                return null;
-            }
-            PropertyDescriptor descriptor = new PropertyDescriptor(fieldName, target.getClass(),
-                    "get" + fieldName.substring(0, 1).toUpperCase(ENGLISH) + fieldName.substring(1),
-                    null);
-            Method readMethod = descriptor.getReadMethod();
-            if (readMethod != null) {
-                return readMethod.invoke(target);
-            }
-        } catch (Exception e) {
-            //skip
-        }
-        Field field = ReflectionUtils.findField(target.getClass(), fieldName);
-        if (field == null) {
-            throw new NoSuchFieldException("field=" + fieldName);
-        }
-        return getFieldValue(field, target);
-    }
-
-    public static Object getFieldValue(int fieldIndex, Object target) throws IllegalAccessException {
-        if (target == null) {
-            return null;
-        }
-        Class<?> targetClass = target.getClass();
-        Field[] declaredFields = targetClass.getDeclaredFields();
-        if (fieldIndex < 0 || declaredFields.length <= fieldIndex) {
-            throw new IllegalAccessException("outof array length. declaredFieldLength=" + declaredFields.length + ", fieldIndex=" + fieldIndex + ",targetClass=" + targetClass);
-        }
-        return getFieldValue(declaredFields[fieldIndex], target);
-    }
-
     public static Object getFieldValue(Field field, Object target) throws IllegalAccessException {
         if (target == null) {
             return null;
@@ -163,19 +71,6 @@ public class BeanUtil {
         return field.get(target);
     }
 
-    public static void copyProperties(Object source, Object dest) {
-        BeanUtils.copyProperties(source, dest);
-    }
-
-    /**
-     * 类型转换
-     *
-     * @param source
-     * @param returnType
-     * @param <T>
-     * @param <R>
-     * @return
-     */
     public static <T, R> List<R> transform(Collection<T> source, Class<R> returnType) {
         if (source == null) {
             return (List<R>) source;

@@ -15,18 +15,6 @@ import java.util.Properties;
  */
 public class YmlConfigBinder {
 
-    /**
-     * 将当前内容指定前缀部分绑定到指定对象并用环境变量中的属性替换占位符, 例: 当前内容有属性 zkServers: ${zookeeper.servers}
-     * 在envProperties中有属性 zookeeper.servers:
-     * 192.168.0.1:2181,192.168.0.1:2181,192.168.0.1:2181 则当前内容 zkServers 会被替换为
-     * zkServers: 192.168.0.1:2181,192.168.0.1:2181,192.168.0.1:2181 注: 假设绑定的类中
-     * zkServers 属性是 List<String> 对象, 则会自动映射成List
-     *
-     * @param prefix       指定前缀
-     * @param contentBytes yml内容
-     * @param clazz        指定对象类型
-     * @return 对象
-     */
     public static <T> T bindYmlToObj(String prefix, byte[] contentBytes, Class<T> clazz,
                                      Properties baseProperties) {
         try {

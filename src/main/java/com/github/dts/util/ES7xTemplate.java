@@ -595,7 +595,7 @@ public class ES7xTemplate implements ESTemplate {
         mapping.getRelations().forEach((relationField, relationMapping) -> {
             Map<String, Object> relations = new HashMap<>();
             relations.put("name", relationMapping.getName());
-            if (StringUtils.isNotEmpty(relationMapping.getParent())) {
+            if (Util.isNotEmpty(relationMapping.getParent())) {
                 FieldItem parentFieldItem = schemaItem.getSelectFields().get(relationMapping.getParent());
                 Object parentVal;
                 try {

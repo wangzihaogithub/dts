@@ -40,13 +40,6 @@ public abstract class AbstractMessageService {
 
     public abstract Map send(String title, String content);
 
-    /**
-     * 发ding
-     *
-     * @param title
-     * @param content
-     * @return
-     */
     public Map sendDingtalk(String title, String content, String token, String secret) {
         title = title + "(" + Util.getIPAddress() + " " + env + ")";
 

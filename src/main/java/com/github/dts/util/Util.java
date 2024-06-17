@@ -57,9 +57,6 @@ public class Util {
         throw (E) t;
     }
 
-    /**
-     * 通过DS执行sql
-     */
     public static Object sqlRS(DataSource ds, String sql, Function<ResultSet, Object> fun) {
         try (Connection conn = ds.getConnection();
              Statement stmt = conn.createStatement()) {

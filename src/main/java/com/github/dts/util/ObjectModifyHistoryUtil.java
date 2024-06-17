@@ -20,12 +20,6 @@ import static com.github.dts.util.BeanUtil.isBeanOrMap;
 import static com.github.dts.util.BeanUtil.wrapIterable;
 import static com.github.dts.util.DifferentComparatorUtil.diff;
 
-/**
- * @ClassName ObjectModifyHistoryUtil
- * @Description 比较对象变更历史
- * @Author Freecao
- * @Date 2019/3/25 10:52
- **/
 public class ObjectModifyHistoryUtil {
     private static final Logger log = LoggerFactory.getLogger(ObjectModifyHistoryUtil.class);
 

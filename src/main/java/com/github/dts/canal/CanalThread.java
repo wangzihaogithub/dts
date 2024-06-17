@@ -32,11 +32,6 @@ public class CanalThread extends Thread {
     private String name;
     private boolean suspend;
 
-    /**
-     * 单台client适配器worker的构造方法
-     *
-     * @param adapterList 外部适配器组
-     */
     public CanalThread(CanalConfig canalConfig, CanalConfig.CanalAdapter config,
                        List<Adapter> adapterList, AbstractMessageService messageService, CanalConnector connector,
                        Consumer<CanalThread> rebuild) {
