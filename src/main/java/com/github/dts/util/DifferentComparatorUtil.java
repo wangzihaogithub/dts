@@ -1,9 +1,5 @@
 package com.github.dts.util;
 
-import lombok.Data;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
 import org.springframework.core.annotation.AnnotationUtils;
 
 import java.beans.PropertyDescriptor;
@@ -237,16 +233,32 @@ public class DifferentComparatorUtil {
         Pair clone();
     }
 
-    @Data
     public static class ListDiffResult<E> {
         private List<E> insertList = new ArrayList<>();
         private List<E> deleteList = new ArrayList<>();
+
+        public List<E> getInsertList() {
+            return insertList;
+        }
+
+        public void setInsertList(List<E> insertList) {
+            this.insertList = insertList;
+        }
+
+        public List<E> getDeleteList() {
+            return deleteList;
+        }
+
+        public void setDeleteList(List<E> deleteList) {
+            this.deleteList = deleteList;
+        }
     }
 
-    @Data
-    @NoArgsConstructor
     public static class Diff implements Cloneable {
         private List<Pair> paths;
+
+        public Diff() {
+        }
 
         public Diff(List<Pair> paths) {
             this.paths = paths;
@@ -280,6 +292,14 @@ public class DifferentComparatorUtil {
                 diffValues.add(new Diff(paths.subList(key.getPaths().size(), paths.size())));
             }
             return groupByMap;
+        }
+
+        public List<Pair> getPaths() {
+            return paths;
+        }
+
+        public void setPaths(List<Pair> paths) {
+            this.paths = paths;
         }
 
         public int size() {
@@ -329,7 +349,6 @@ public class DifferentComparatorUtil {
         }
     }
 
-    @Data
     public static class IterableOrArrayPair implements Pair {
         private Value left;
         private Value right;
@@ -344,6 +363,34 @@ public class DifferentComparatorUtil {
         }
 
         @Override
+        public Value getLeft() {
+            return left;
+        }
+
+        @Override
+        public void setLeft(Value left) {
+            this.left = left;
+        }
+
+        @Override
+        public Value getRight() {
+            return right;
+        }
+
+        @Override
+        public void setRight(Value right) {
+            this.right = right;
+        }
+
+        public int getIndex() {
+            return index;
+        }
+
+        public void setIndex(int index) {
+            this.index = index;
+        }
+
+        @Override
         public String toString() {
             return String.valueOf(index);
         }
@@ -354,8 +401,6 @@ public class DifferentComparatorUtil {
         }
     }
 
-    @Getter
-    @Setter
     public static class Value implements Cloneable {
         private Object source;
         private boolean existField;
@@ -399,6 +444,102 @@ public class DifferentComparatorUtil {
                 }
             }
             return null;
+        }
+
+        public Object getSource() {
+            return source;
+        }
+
+        public void setSource(Object source) {
+            this.source = source;
+        }
+
+        public boolean isExistField() {
+            return existField;
+        }
+
+        public void setExistField(boolean existField) {
+            this.existField = existField;
+        }
+
+        public Object getData() {
+            return data;
+        }
+
+        public void setData(Object data) {
+            this.data = data;
+        }
+
+        public Annotation[] getFieldOrMethodAnnotations() {
+            return fieldOrMethodAnnotations;
+        }
+
+        public void setFieldOrMethodAnnotations(Annotation[] fieldOrMethodAnnotations) {
+            this.fieldOrMethodAnnotations = fieldOrMethodAnnotations;
+        }
+
+        public Field getField() {
+            return field;
+        }
+
+        public void setField(Field field) {
+            this.field = field;
+        }
+
+        public Method getReadMethod() {
+            return readMethod;
+        }
+
+        public void setReadMethod(Method readMethod) {
+            this.readMethod = readMethod;
+        }
+
+        public Value getPrevValue() {
+            return prevValue;
+        }
+
+        public void setPrevValue(Value prevValue) {
+            this.prevValue = prevValue;
+        }
+
+        public Pair getParent() {
+            return parent;
+        }
+
+        public void setParent(Pair parent) {
+            this.parent = parent;
+        }
+
+        public Value getNextValue() {
+            return nextValue;
+        }
+
+        public void setNextValue(Value nextValue) {
+            this.nextValue = nextValue;
+        }
+
+        public Map<Class<? extends Annotation>, Map<String, Object>> getSourceAnnotationMap() {
+            return sourceAnnotationMap;
+        }
+
+        public void setSourceAnnotationMap(Map<Class<? extends Annotation>, Map<String, Object>> sourceAnnotationMap) {
+            this.sourceAnnotationMap = sourceAnnotationMap;
+        }
+
+        public Map<Class<? extends Annotation>, Map<String, Object>> getFieldAnnotationMap() {
+            return fieldAnnotationMap;
+        }
+
+        public void setFieldAnnotationMap(Map<Class<? extends Annotation>, Map<String, Object>> fieldAnnotationMap) {
+            this.fieldAnnotationMap = fieldAnnotationMap;
+        }
+
+        public Map<Class<? extends Annotation>, Map<String, Object>> getDataAnnotationMap() {
+            return dataAnnotationMap;
+        }
+
+        public void setDataAnnotationMap(Map<Class<? extends Annotation>, Map<String, Object>> dataAnnotationMap) {
+            this.dataAnnotationMap = dataAnnotationMap;
         }
 
         @Override
@@ -546,7 +687,6 @@ public class DifferentComparatorUtil {
         }
     }
 
-    @Data
     public static class BaseTypePair implements Pair {
         private Value left;
         private Value right;
@@ -556,6 +696,26 @@ public class DifferentComparatorUtil {
             this.right = Objects.requireNonNull(right);
             this.left.parent = this;
             this.right.parent = this;
+        }
+
+        @Override
+        public Value getLeft() {
+            return left;
+        }
+
+        @Override
+        public void setLeft(Value left) {
+            this.left = left;
+        }
+
+        @Override
+        public Value getRight() {
+            return right;
+        }
+
+        @Override
+        public void setRight(Value right) {
+            this.right = right;
         }
 
         @Override
@@ -569,7 +729,6 @@ public class DifferentComparatorUtil {
         }
     }
 
-    @Data
     public static class BeanOrMapPair implements Pair {
         private Value left;
         private Value right;
@@ -581,6 +740,34 @@ public class DifferentComparatorUtil {
             this.left.parent = this;
             this.right.parent = this;
             this.fieldName = Objects.requireNonNull(fieldName);
+        }
+
+        @Override
+        public Value getLeft() {
+            return left;
+        }
+
+        @Override
+        public void setLeft(Value left) {
+            this.left = left;
+        }
+
+        @Override
+        public Value getRight() {
+            return right;
+        }
+
+        @Override
+        public void setRight(Value right) {
+            this.right = right;
+        }
+
+        public String getFieldName() {
+            return fieldName;
+        }
+
+        public void setFieldName(String fieldName) {
+            this.fieldName = fieldName;
         }
 
         @Override

@@ -6,10 +6,8 @@ import com.github.dts.util.DifferentComparatorUtil.BeanOrMapPair;
 import com.github.dts.util.DifferentComparatorUtil.Diff;
 import com.github.dts.util.DifferentComparatorUtil.Pair;
 import com.github.dts.util.DifferentComparatorUtil.Value;
-import lombok.Getter;
-import lombok.SneakyThrows;
-import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
@@ -28,8 +26,8 @@ import static com.github.dts.util.DifferentComparatorUtil.diff;
  * @Author Freecao
  * @Date 2019/3/25 10:52
  **/
-@Slf4j
 public class ObjectModifyHistoryUtil {
+    private static final Logger log = LoggerFactory.getLogger(ObjectModifyHistoryUtil.class);
 
     /**
      * 用户信息友好的变更记录
@@ -184,12 +182,11 @@ public class ObjectModifyHistoryUtil {
             return ((Map) object).isEmpty();
         }
         if (object instanceof String) {
-            return StringUtils.isBlank((String) object);
+            return Util.isBlank((String) object);
         }
         return false;
     }
 
-    @Getter
     public static class ModifyHistory implements Comparable<ModifyHistory> {
         private final String pathDelimiter;
         private final Value field;
@@ -223,6 +220,42 @@ public class ObjectModifyHistoryUtil {
                 list.add(data);
             }
             return list;
+        }
+
+        public String getPathDelimiter() {
+            return pathDelimiter;
+        }
+
+        public Value getField() {
+            return field;
+        }
+
+        public Enum getObjectEnum() {
+            return objectEnum;
+        }
+
+        public Map<String, Object> getFieldAnnotationMap() {
+            return fieldAnnotationMap;
+        }
+
+        public Map<String, Object> getSourcedAnnotationMap() {
+            return sourcedAnnotationMap;
+        }
+
+        public List<Diff> getInsertList() {
+            return insertList;
+        }
+
+        public List<Diff> getUpdateList() {
+            return updateList;
+        }
+
+        public List<Diff> getDeleteList() {
+            return deleteList;
+        }
+
+        public Class<? extends Annotation> getLogComparerClass() {
+            return logComparerClass;
         }
 
         public Map<String, Object> getAnnotationMap() {
@@ -433,40 +466,44 @@ public class ObjectModifyHistoryUtil {
             return result;
         }
 
-        @SneakyThrows
         public Enum getAnnotationObjectEnum(Map fieldAnnotation, Value value) {
-            Enum objectEnum;
-            String invokeGetterObjectEnum = (String) fieldAnnotation.get("invokeGetterObjectEnum");
-            if (invokeGetterObjectEnum != null && invokeGetterObjectEnum.length() > 0) {
-                List<Object> dataList = flatMap(value.getData());
-                if (dataList.isEmpty()) {
-                    objectEnum = null;
-                } else if (dataList.size() == 1) {
-                    Object data = dataList.get(0);
-                    Method invokeGetterObjectEnumMethod = data.getClass().getDeclaredMethod(invokeGetterObjectEnum);
-                    objectEnum = (Enum) invokeGetterObjectEnumMethod.invoke(data);
-                } else {
-                    Set<Enum> enumList = new LinkedHashSet<>();
-                    for (Object data : dataList) {
+            try {
+                Enum objectEnum;
+                String invokeGetterObjectEnum = (String) fieldAnnotation.get("invokeGetterObjectEnum");
+                if (invokeGetterObjectEnum != null && invokeGetterObjectEnum.length() > 0) {
+                    List<Object> dataList = flatMap(value.getData());
+                    if (dataList.isEmpty()) {
+                        objectEnum = null;
+                    } else if (dataList.size() == 1) {
+                        Object data = dataList.get(0);
                         Method invokeGetterObjectEnumMethod = data.getClass().getDeclaredMethod(invokeGetterObjectEnum);
-                        Enum e = (Enum) invokeGetterObjectEnumMethod.invoke(data);
-                        if (e != null) {
-                            enumList.add(e);
+                        objectEnum = (Enum) invokeGetterObjectEnumMethod.invoke(data);
+                    } else {
+                        Set<Enum> enumList = new LinkedHashSet<>();
+                        for (Object data : dataList) {
+                            Method invokeGetterObjectEnumMethod = data.getClass().getDeclaredMethod(invokeGetterObjectEnum);
+                            Enum e = (Enum) invokeGetterObjectEnumMethod.invoke(data);
+                            if (e != null) {
+                                enumList.add(e);
+                            }
+                        }
+                        if (enumList.isEmpty()) {
+                            objectEnum = null;
+                        } else if (enumList.size() == 1) {
+                            objectEnum = enumList.iterator().next();
+                        } else {
+                            objectEnum = enumList.iterator().next();
+                            log.warn("enumList = {}", enumList);
                         }
                     }
-                    if (enumList.isEmpty()) {
-                        objectEnum = null;
-                    } else if (enumList.size() == 1) {
-                        objectEnum = enumList.iterator().next();
-                    } else {
-                        objectEnum = enumList.iterator().next();
-                        log.warn("enumList = {}", enumList);
-                    }
+                } else {
+                    objectEnum = (Enum) fieldAnnotation.get("objectEnum");
                 }
-            } else {
-                objectEnum = (Enum) fieldAnnotation.get("objectEnum");
+                return objectEnum;
+            } catch (Throwable t) {
+                Util.sneakyThrows(t);
+                return null;
             }
-            return objectEnum;
         }
 
         public String getAnnotationValueFormat(Map fieldAnnotation) {

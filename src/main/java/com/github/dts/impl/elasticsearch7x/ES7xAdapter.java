@@ -25,8 +25,6 @@ import java.util.stream.Collectors;
 /**
  * ES外部适配器
  */
-@Component
-@Scope("prototype")
 public class ES7xAdapter implements Adapter {
     private static final Logger log = LoggerFactory.getLogger(ES7xAdapter.class);
     private final Map<String, ESSyncConfig> esSyncConfig = new ConcurrentHashMap<>(); // 文件名对应配置

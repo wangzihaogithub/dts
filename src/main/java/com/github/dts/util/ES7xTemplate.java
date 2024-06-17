@@ -1,9 +1,7 @@
 package com.github.dts.util;
 
 import com.github.dts.util.ESSyncConfig.ESMapping;
-import com.github.dts.util.SchemaItem.ColumnItem;
 import com.github.dts.util.SchemaItem.FieldItem;
-import org.apache.commons.lang.StringUtils;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.cluster.metadata.MappingMetaData;
 import org.elasticsearch.index.query.BoolQueryBuilder;
@@ -56,7 +54,7 @@ public class ES7xTemplate implements ESTemplate {
             String parentVal = (String) esFieldData.remove("$parent_routing");
             ESBulkRequest.ESUpdateRequest updateRequest = new ES7xConnection.ES7xUpdateRequest(mapping.get_index(),
                     pkVal.toString()).setDoc(esFieldData).setDocAsUpsert(true);
-            if (StringUtils.isNotEmpty(parentVal)) {
+            if (Util.isNotEmpty(parentVal)) {
                 updateRequest.setRouting(parentVal);
             }
             addRequest(updateRequest, bulkRequestList);
@@ -326,7 +324,7 @@ public class ES7xTemplate implements ESTemplate {
             String parentVal = (String) esFieldData.remove("$parent_routing");
             ES7xConnection.ES7xUpdateRequest esUpdateRequest = new ES7xConnection.ES7xUpdateRequest(mapping.get_index(),
                     pkVal.toString()).setDoc(esFieldData).setDocAsUpsert(mapping.isUpsert());
-            if (StringUtils.isNotEmpty(parentVal)) {
+            if (Util.isNotEmpty(parentVal)) {
                 esUpdateRequest.setRouting(parentVal);
             }
             addRequest(esUpdateRequest, bulkRequestList);
@@ -601,7 +599,7 @@ public class ES7xTemplate implements ESTemplate {
                 FieldItem parentFieldItem = schemaItem.getSelectFields().get(relationMapping.getParent());
                 Object parentVal;
                 try {
-                    parentVal = getValFromRS(mapping,resultSet, parentFieldItem.getFieldName(), parentFieldItem.getColumnName(),
+                    parentVal = getValFromRS(mapping, resultSet, parentFieldItem.getFieldName(), parentFieldItem.getColumnName(),
                             data);
                 } catch (SQLException e) {
                     Util.sneakyThrows(e);
@@ -624,14 +622,13 @@ public class ES7xTemplate implements ESTemplate {
             mapping.getRelations().forEach((relationField, relationMapping) -> {
                 Map<String, Object> relations = new HashMap<>();
                 relations.put("name", relationMapping.getName());
-                if (StringUtils.isNotEmpty(relationMapping.getParent())) {
+                if (Util.isNotEmpty(relationMapping.getParent())) {
                     FieldItem parentFieldItem = schemaItem.getSelectFields().get(relationMapping.getParent());
                     String columnName = parentFieldItem.getColumnItems().iterator().next().getColumnName();
                     Object parentVal = getValFromData(mapping, dmlData, parentFieldItem.getFieldName(), columnName);
                     if (parentVal != null) {
                         relations.put("parent", parentVal.toString());
                         esFieldData.put("$parent_routing", parentVal.toString());
-
                     }
                 }
                 esFieldData.put(relationField, relations);

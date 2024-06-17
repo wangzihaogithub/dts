@@ -1,6 +1,5 @@
 package com.github.dts.util;
 
-import lombok.SneakyThrows;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.MapPropertySource;
 import org.springframework.core.env.MutablePropertySources;
@@ -13,6 +12,7 @@ import org.springframework.core.io.ResourceLoader;
 
 import javax.annotation.PostConstruct;
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.Charset;
@@ -28,7 +28,6 @@ public class IGPlaceholdersResolver {
     private ResourceLoader resourceLoader;
     private ConfigurableEnvironment configurableEnvironment;
 
-    @SneakyThrows
     public static String readString(InputStream inputStream, Charset charset) {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, charset))) {
             StringBuilder sb = new StringBuilder();
@@ -40,6 +39,9 @@ public class IGPlaceholdersResolver {
                 sb.setLength(sb.length() - 1);
             }
             return sb.toString();
+        } catch (IOException e) {
+            Util.sneakyThrows(e);
+            return null;
         }
     }
 
@@ -50,12 +52,12 @@ public class IGPlaceholdersResolver {
         return INSTANCE;
     }
 
-    @Autowired
+    @Autowired(required = false)
     public void setConfigurableEnvironment(ConfigurableEnvironment configurableEnvironment) {
         this.configurableEnvironment = configurableEnvironment;
     }
 
-    @Autowired
+    @Autowired(required = false)
     public void setResourceLoader(ResourceLoader resourceLoader) {
         this.resourceLoader = resourceLoader;
     }
@@ -70,9 +72,14 @@ public class IGPlaceholdersResolver {
      *
      * @param metadata metadata
      */
-    @SneakyThrows
     public String resolve(Resource template, Object metadata) {
-        String string = readString(template.getInputStream(), Charset.forName("UTF-8"));
+        String string;
+        try {
+            string = readString(template.getInputStream(), Charset.forName("UTF-8"));
+        } catch (IOException e) {
+            Util.sneakyThrows(e);
+            return null;
+        }
         return resolve(string, metadata);
     }
 
@@ -106,12 +113,17 @@ public class IGPlaceholdersResolver {
         Map map = BeanMap.toMap(metadata);
         org.springframework.core.env.MutablePropertySources propertySources = new MutablePropertySources();
         org.springframework.core.env.PropertySourcesPropertyResolver resolver = new PropertySourcesPropertyResolver(propertySources) {
-            @SneakyThrows
+
             @Override
             protected String getPropertyAsRawString(String key) {
                 Resource resource = getResource(key);
                 if (resource != null) {
-                    return readString(resource.getInputStream(), Charset.forName("UTF-8"));
+                    try {
+                        return readString(resource.getInputStream(), Charset.forName("UTF-8"));
+                    } catch (IOException e) {
+                        Util.sneakyThrows(e);
+                        return null;
+                    }
                 }
                 String[] keys = key.split("[.]");
                 if (keys.length == 1) {

@@ -1,65 +1,53 @@
 package com.github.dts.util;
 
-import lombok.SneakyThrows;
-import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.codec.binary.Base64;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
-import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.net.URLEncoder;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 
-@Slf4j
-@Component
-public class MessageServiceImpl {
+public abstract class AbstractMessageService {
     private final SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
     private final RestTemplate restTemplate = new RestTemplate(requestFactory);
     @Value("${spring.profiles.active:}")
     private String env;
+
     {
         requestFactory.setConnectTimeout(1000);
         requestFactory.setReadTimeout(3000);
     }
 
-    @SneakyThrows
-    private static String sign(String secret) {
-        Long timestamp = System.currentTimeMillis();
-
-        String stringToSign = timestamp + "\n" + secret;
-        Mac mac = Mac.getInstance("HmacSHA256");
-        mac.init(new SecretKeySpec(secret.getBytes("UTF-8"), "HmacSHA256"));
-        byte[] signData = mac.doFinal(stringToSign.getBytes("UTF-8"));
-        String sign = URLEncoder.encode(new String(Base64.encodeBase64(signData)), "UTF-8");
-        return sign;
+    private static String sign(String secret, long timestamp) {
+        try {
+            String stringToSign = timestamp + "\n" + secret;
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(secret.getBytes("UTF-8"), "HmacSHA256"));
+            byte[] signData = mac.doFinal(stringToSign.getBytes("UTF-8"));
+            String sign = URLEncoder.encode(new String(Base64.getEncoder().encode(signData)), "UTF-8");
+            return sign;
+        } catch (Throwable t) {
+            Util.sneakyThrows(t);
+            return null;
+        }
     }
 
-    public static void main(String[] args) {
-        MessageServiceImpl service = new MessageServiceImpl();
-        Map qwe = service.send("qwe", "bbd\nfdsdfs\nwaeqew");
-    }
-
-    public Map send(String title, String content) {
-        return send(title, content,
-                "0713e564365e0c9fd781c1d6f3ad65b60a2a89e4b08e425736f22c8ad78207e8",
-                "SEC452f93eedc12963dd90b6fdfba2da75b5afbb58cafb81bfec041230b4251e229"
-        );
-    }
+    public abstract Map send(String title, String content);
 
     /**
-     * 发boss-hi
+     * 发ding
      *
      * @param title
      * @param content
      * @return
      */
-    public Map send(String title, String content, String bossHiId, String secret) {
+    public Map sendDingtalk(String title, String content, String token, String secret) {
         title = title + "(" + Util.getIPAddress() + " " + env + ")";
 
         HttpHeaders headers = new HttpHeaders();
@@ -74,10 +62,12 @@ public class MessageServiceImpl {
         body.put("msgtype", "markdown");
         body.put("markdown", markdown);
 
+        long timeMillis = System.currentTimeMillis();
+
         String url = String.format("https://oapi.dingtalk.com/robot/send?access_token=%s&timestamp=%s&sign=%s",
-                bossHiId,
-                System.currentTimeMillis(),
-                sign(secret)
+                token,
+                timeMillis,
+                sign(secret, timeMillis)
         );
         Map map = restTemplate.postForObject(url, new HttpEntity<>(body, headers), Map.class);
         return map;

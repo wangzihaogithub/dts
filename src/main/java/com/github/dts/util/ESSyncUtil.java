@@ -5,8 +5,6 @@ import com.github.dts.impl.elasticsearch7x.NestedFieldWriter;
 import com.github.dts.util.ESSyncConfig.ESMapping;
 import com.github.dts.util.SchemaItem.ColumnItem;
 import com.github.dts.util.SchemaItem.TableItem;
-import org.apache.commons.codec.binary.Base64;
-import org.apache.commons.lang.StringUtils;
 import org.joda.time.DateTime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,6 +13,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import javax.sql.DataSource;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.sql.Blob;
 import java.sql.SQLException;
@@ -221,7 +220,7 @@ public class ESSyncUtil {
         switch (objectField.getType()) {
             case ARRAY: {
                 String varStr = val.toString();
-                if (StringUtils.isEmpty(varStr)) {
+                if (Util.isEmpty(varStr)) {
                     return null;
                 }
                 String[] values = varStr.split(objectField.getSplit());
@@ -413,17 +412,14 @@ public class ESSyncUtil {
             }
         } else if ("binary".equals(esType)) {
             if (val instanceof byte[]) {
-                Base64 base64 = new Base64();
-                res = base64.encodeAsString((byte[]) val);
+                res = new String(Base64.getEncoder().encode((byte[]) val), Charset.forName("UTF-8"));
             } else if (val instanceof Blob) {
                 byte[] b = blobToBytes((Blob) val);
-                Base64 base64 = new Base64();
-                res = base64.encodeAsString(b);
+                res = new String(Base64.getEncoder().encode(b), Charset.forName("UTF-8"));
             } else if (val instanceof String) {
                 // 对应canal中的单字节编码
                 byte[] b = ((String) val).getBytes(StandardCharsets.ISO_8859_1);
-                Base64 base64 = new Base64();
-                res = base64.encodeAsString(b);
+                res = new String(Base64.getEncoder().encode(b), Charset.forName("UTF-8"));
             }
         } else if ("geo_point".equals(esType)) {
             if (!(val instanceof String)) {

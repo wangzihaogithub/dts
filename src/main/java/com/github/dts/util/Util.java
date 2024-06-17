@@ -1,6 +1,5 @@
 package com.github.dts.util;
 
-import org.apache.commons.lang.StringUtils;
 import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
 import org.slf4j.Logger;
@@ -118,6 +117,25 @@ public class Util {
         return column;
     }
 
+    public static boolean isBlank(String str) {
+        int strLen;
+        if (str != null && (strLen = str.length()) != 0) {
+            for (int i = 0; i < strLen; ++i) {
+                if (!Character.isWhitespace(str.charAt(i))) {
+                    return false;
+                }
+            }
+
+            return true;
+        } else {
+            return true;
+        }
+    }
+
+    public static boolean isNotBlank(String str) {
+        return !isBlank(str);
+    }
+
     public static String getIPAddress() {
         if (port != null && port > 0) {
             return getIPAddress0() + ":" + port;
@@ -221,6 +239,14 @@ public class Util {
                 });
     }
 
+    public static boolean isEmpty(String str) {
+        return str == null || str.isEmpty();
+    }
+
+    public static boolean isNotEmpty(String str) {
+        return !isEmpty(str);
+    }
+
     /**
      * 通用日期时间字符解析
      *
@@ -228,7 +254,7 @@ public class Util {
      * @return Date
      */
     public static Date parseDate(String datetimeStr) {
-        if (StringUtils.isEmpty(datetimeStr)) {
+        if (isEmpty(datetimeStr)) {
             return null;
         }
         if (datetimeStr.startsWith("0000-00-00")) {
@@ -252,14 +278,8 @@ public class Util {
         return dateTime.toDate();
     }
 
-    public static void main(String[] args) {
-        Date date = parseDate("1970");
-
-
-    }
-
     public static Date parseDate2(String datetimeStr) {
-        if (StringUtils.isEmpty(datetimeStr)) {
+        if (isEmpty(datetimeStr)) {
             return null;
         }
         try {

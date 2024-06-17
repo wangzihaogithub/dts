@@ -1,7 +1,7 @@
 package com.github.dts.util;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.PropertyValues;
 import org.springframework.beans.factory.FactoryBean;
@@ -34,18 +34,12 @@ public class PropertiesConfigurationFactory<T> implements FactoryBean<T>, Applic
 
     private static final char[] TARGET_NAME_DELIMITERS = {'_', '.'};
 
-    private static final Log logger = LogFactory.getLog(PropertiesConfigurationFactory.class);
-
-    private boolean ignoreUnknownFields = true;
-
-    private boolean ignoreInvalidFields;
-
-    private boolean exceptionIfInvalid = true;
-
-    private PropertySources propertySources;
-
+    private static final Logger logger = LoggerFactory.getLogger(PropertiesConfigurationFactory.class);
     private final T target;
-
+    private boolean ignoreUnknownFields = true;
+    private boolean ignoreInvalidFields;
+    private boolean exceptionIfInvalid = true;
+    private PropertySources propertySources;
     private Validator validator;
 
     private ApplicationContext applicationContext;
@@ -336,7 +330,7 @@ public class PropertiesConfigurationFactory<T> implements FactoryBean<T>, Applic
             logger.error("Properties configuration failed validation");
             for (ObjectError error : errors.getAllErrors()) {
                 logger.error(this.messageSource != null ? this.messageSource.getMessage(error, Locale.getDefault())
-                        + " (" + error + ")" : error);
+                        + " (" + error + ")" : error.toString());
             }
             if (this.exceptionIfInvalid) {
                 throw new BindException(errors);

@@ -16,8 +16,6 @@ import java.util.stream.Collectors;
 /**
  * RDS外部适配器
  */
-@Component
-@Scope("prototype")
 public class RDSAdapter implements Adapter {
     private static final Logger log = LoggerFactory.getLogger(RDSAdapter.class);
     private CanalConfig.OuterAdapterConfig configuration;

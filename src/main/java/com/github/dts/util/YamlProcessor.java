@@ -1,7 +1,7 @@
 package com.github.dts.util;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.util.Assert;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.Constructor;
@@ -22,7 +22,7 @@ import java.util.*;
  */
 public abstract class YamlProcessor {
 
-    private final Log logger = LogFactory.getLog(getClass());
+    private final Logger logger = LoggerFactory.getLogger(getClass());
 
     private ResolutionMethod resolutionMethod = ResolutionMethod.OVERRIDE;
 

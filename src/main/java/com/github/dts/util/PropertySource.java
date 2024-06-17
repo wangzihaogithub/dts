@@ -1,7 +1,7 @@
 package com.github.dts.util;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.util.Assert;
 import org.springframework.util.ObjectUtils;
 
@@ -16,7 +16,7 @@ import org.springframework.util.ObjectUtils;
  * <p>
  * {@code PropertySource} objects are not typically used in isolation, but
  * rather through a {@link PropertySources} object, which aggregates property
- * sources and in conjunction with a {@link PropertyResolver} implementation
+ * sources and in conjunction with a {@link org.springframework.core.env.PropertyResolver} implementation
  * that can perform precedence-based searches across the set of
  * {@code PropertySources}.
  * <p>
@@ -41,7 +41,7 @@ import org.springframework.util.ObjectUtils;
  */
 public abstract class PropertySource<T> {
 
-    protected final Log logger = LogFactory.getLog(getClass());
+    protected final Logger logger = LoggerFactory.getLogger(getClass());
 
     protected final String name;
 
@@ -138,7 +138,6 @@ public abstract class PropertySource<T> {
      * property pairs, potentially leading to difficult to read exception and log
      * messages.
      *
-     * @see Log#isDebugEnabled()
      */
     @Override
     public String toString() {

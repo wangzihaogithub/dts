@@ -5,8 +5,8 @@ import com.github.dts.impl.elasticsearch7x.ES7xAdapter;
 import com.github.dts.impl.rds.RDSAdapter;
 import com.github.dts.util.Adapter;
 import com.github.dts.util.CanalConfig;
-import com.github.dts.util.MessageServiceImpl;
-import lombok.SneakyThrows;
+import com.github.dts.util.AbstractMessageService;
+import com.github.dts.util.Util;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.BeanFactory;
@@ -17,7 +17,6 @@ import org.springframework.core.annotation.Order;
 import org.springframework.core.env.EnumerablePropertySource;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.StandardEnvironment;
-import org.springframework.stereotype.Component;
 
 import javax.annotation.PreDestroy;
 import javax.annotation.Resource;
@@ -28,7 +27,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-@Component
 @Order(Integer.MIN_VALUE)
 public class StartupServer implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(StartupServer.class);
@@ -37,7 +35,7 @@ public class StartupServer implements ApplicationRunner {
     @Autowired
     private BeanFactory beanFactory;
     @Autowired
-    private MessageServiceImpl messageService;
+    private AbstractMessageService messageService;
     @Resource
     private CanalConfig canalConfig;
     private volatile boolean running = false;
@@ -184,11 +182,11 @@ public class StartupServer implements ApplicationRunner {
         private final CanalConfig canalConfig;
         private final CanalConfig.CanalAdapter config;
         private final List<Adapter> adapterList;
-        private final MessageServiceImpl messageService;
+        private final AbstractMessageService messageService;
         private CanalThread canalThread;
 
         public ThreadRef(CanalConfig canalConfig, CanalConfig.CanalAdapter config,
-                         List<Adapter> adapterList, MessageServiceImpl messageService) {
+                         List<Adapter> adapterList, AbstractMessageService messageService) {
             this.canalConfig = canalConfig;
             this.config = config;
             this.adapterList = adapterList;
@@ -196,17 +194,20 @@ public class StartupServer implements ApplicationRunner {
             startThread();
         }
 
-        @SneakyThrows
         public void startThread() {
-            CanalConnector canalConnector = config.newCanalConnector(canalConfig);
-            canalThread = new CanalThread(canalConfig, config, adapterList, messageService,
-                    canalConnector,
-                    t -> {
-                        t.setRunning(false);
-                        new Thread(ThreadRef.this::startThread).start();
-                    });
-            if (canalConfig.isEnablePull()) {
-                canalThread.start();
+            try {
+                CanalConnector canalConnector = config.newCanalConnector(canalConfig);
+                canalThread = new CanalThread(canalConfig, config, adapterList, messageService,
+                        canalConnector,
+                        t -> {
+                            t.setRunning(false);
+                            new Thread(ThreadRef.this::startThread).start();
+                        });
+                if (canalConfig.isEnablePull()) {
+                    canalThread.start();
+                }
+            } catch (Throwable t) {
+                Util.sneakyThrows(t);
             }
         }
 

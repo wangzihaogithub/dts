@@ -20,7 +20,7 @@ public class CanalThread extends Thread {
     private final Logger logger = LoggerFactory.getLogger(this.getClass());
     private final CanalConnector connector;
     private final CanalConfig.CanalAdapter config;
-    private final MessageServiceImpl messageService;
+    private final AbstractMessageService messageService;
     protected String groupId = null;                                                  // groupId
     protected List<Adapter> adapterList;                                              // 外部适配器
     protected CanalConfig canalConfig;                                               // 配置
@@ -38,7 +38,7 @@ public class CanalThread extends Thread {
      * @param adapterList 外部适配器组
      */
     public CanalThread(CanalConfig canalConfig, CanalConfig.CanalAdapter config,
-                       List<Adapter> adapterList, MessageServiceImpl messageService, CanalConnector connector,
+                       List<Adapter> adapterList, AbstractMessageService messageService, CanalConnector connector,
                        Consumer<CanalThread> rebuild) {
         this.adapterList = adapterList;
         this.canalConfig = canalConfig;

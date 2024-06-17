@@ -1,7 +1,7 @@
 package com.github.dts.util;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.env.PropertyResolver;
 import org.springframework.core.env.PropertySourcesPropertyResolver;
 
@@ -26,7 +26,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  */
 public class MutablePropertySources implements PropertySources {
 
-    private final Log logger;
+    private final Logger logger;
 
     private final List<PropertySource<?>> propertySourceList = new CopyOnWriteArrayList<PropertySource<?>>();
 
@@ -35,7 +35,7 @@ public class MutablePropertySources implements PropertySources {
      * object.
      */
     public MutablePropertySources() {
-        this.logger = LogFactory.getLog(getClass());
+        this.logger = LoggerFactory.getLogger(getClass());
     }
 
     /**
@@ -53,9 +53,9 @@ public class MutablePropertySources implements PropertySources {
     /**
      * Create a new {@link MutablePropertySources}
      * object and inherit the given logger, usually from an enclosing
-     * {@link Environment}.
+     * {@link org.springframework.core.env.Environment}.
      */
-    MutablePropertySources(Log logger) {
+    MutablePropertySources(Logger logger) {
         this.logger = logger;
     }
 

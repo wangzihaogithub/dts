@@ -4,9 +4,9 @@ canal.conf:
   enable-pull: true
   srcDataSources:
     defaultDS:
-      url: 'jdbc:mysql://rm-2ze3p58061s26ev8i1o.mysql.rds.aliyuncs.com:3306/cnwy?useUnicode=true&characterEncoding=utf-8&allowMultiQueries=true&rewriteBatchedStatements=true&zeroDateTimeBehavior=CONVERT_TO_NULL'
-      username: 'test_cnwy'
-      password: 'ZnC+7PVvGXG4'
+      url: 'jdbc:mysql://xx:3306/xx?useUnicode=true&characterEncoding=utf-8&allowMultiQueries=true&rewriteBatchedStatements=true&zeroDateTimeBehavior=CONVERT_TO_NULL'
+      username: 'xx'
+      password: 'xx'
   canalAdapters:
     # KafkaCanalConnector
     - destination: 'job_es'
@@ -32,8 +32,7 @@ canal.conf:
         - outerAdapters:
             - name: 'adapterES7'
               es7x:
-                address: 'es-cn-omn3newed000a7nef.xx.elasticsearch.aliyuncs.com:9200'
-#                address: 'es-cn-omn3newed000a7nef.xxelasticsearch.aliyuncs.com:9200'
+                address: 'xx.com:9200'
                 username: 'xx'
                 password: 'xx'
 

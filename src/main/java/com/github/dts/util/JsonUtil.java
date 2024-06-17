@@ -2,7 +2,8 @@ package com.github.dts.util;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.*;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -12,9 +13,9 @@ import java.util.Map;
 import java.util.TimeZone;
 import java.util.function.Supplier;
 
-@Slf4j
 public class JsonUtil {
     public static final byte[] EMPTY = {};
+    private static final Logger log = LoggerFactory.getLogger(JsonUtil.class);
 
     private JsonUtil() {
     }
@@ -72,7 +73,7 @@ public class JsonUtil {
         try {
             return toBeanThrows(json, clazz);
         } catch (Exception e) {
-            log.error("toBean error, json = " + json, e);
+            log.error("toBean error, json = {}", json, e);
             return null;
         }
     }
