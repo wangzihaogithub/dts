@@ -5,7 +5,7 @@ import com.github.dts.impl.elasticsearch7x.ES7xAdapter;
 import com.github.dts.impl.rds.RDSAdapter;
 import com.github.dts.util.AbstractMessageService;
 import com.github.dts.util.CanalConfig;
-import com.github.dts.util.IGPlaceholdersResolver;
+import com.github.dts.util.PlaceholdersResolver;
 import com.github.dts.util.Util;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,8 +41,8 @@ public class DtsAutoConfiguration {
     }
 
     @Bean
-    public IGPlaceholdersResolver placeholdersResolver() {
-        return new IGPlaceholdersResolver();
+    public PlaceholdersResolver placeholdersResolver() {
+        return new PlaceholdersResolver();
     }
 
     @Bean

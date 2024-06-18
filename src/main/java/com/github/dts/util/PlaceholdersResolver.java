@@ -23,8 +23,8 @@ import java.util.Map;
  *
  * @author hao 2021-09-07
  */
-public class IGPlaceholdersResolver {
-    private static IGPlaceholdersResolver INSTANCE;
+public class PlaceholdersResolver {
+    private static PlaceholdersResolver INSTANCE;
     private ResourceLoader resourceLoader;
     private ConfigurableEnvironment configurableEnvironment;
 
@@ -45,9 +45,9 @@ public class IGPlaceholdersResolver {
         }
     }
 
-    public static synchronized IGPlaceholdersResolver getInstance() {
+    public static synchronized PlaceholdersResolver getInstance() {
         if (INSTANCE == null) {
-            INSTANCE = new IGPlaceholdersResolver();
+            INSTANCE = new PlaceholdersResolver();
         }
         return INSTANCE;
     }

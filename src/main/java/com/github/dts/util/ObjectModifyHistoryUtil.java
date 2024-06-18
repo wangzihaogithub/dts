@@ -356,13 +356,13 @@ public class ObjectModifyHistoryUtil {
             return joiner.toString();
         }
 
-        private IGPlaceholdersResolver getResolver() {
-            IGPlaceholdersResolver resolver = IGPlaceholdersResolver.getInstance();
+        private PlaceholdersResolver getResolver() {
+            PlaceholdersResolver resolver = PlaceholdersResolver.getInstance();
             return resolver;
         }
 
         private String getPathNames(List<Pair> pairList, String pathDelimiter) {
-            IGPlaceholdersResolver resolver = getResolver();
+            PlaceholdersResolver resolver = getResolver();
             return pairList.stream()
                     .filter(e -> e instanceof BeanOrMapPair)
                     .map(e -> (BeanOrMapPair) e)
@@ -383,7 +383,7 @@ public class ObjectModifyHistoryUtil {
         }
 
         private String toString(Value value) {
-            IGPlaceholdersResolver resolver = getResolver();
+            PlaceholdersResolver resolver = getResolver();
             Object valueObject = value.getData();
             String result;
             Map<String, Object> annotationMap = null;
@@ -526,7 +526,7 @@ public class ObjectModifyHistoryUtil {
 
         public String getPrefix(Map fieldAnnotation) {
             String template = getAnnotationValue(fieldAnnotation);
-            IGPlaceholdersResolver resolver = getResolver();
+            PlaceholdersResolver resolver = getResolver();
             if (resolver.existResolve(template)) {
                 return "";
             } else {
