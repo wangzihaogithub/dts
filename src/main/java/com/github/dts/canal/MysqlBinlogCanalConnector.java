@@ -377,7 +377,7 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
         return instance;
     }
 
-    public void waitMaxDumpThread() {
+    public void waitMaxDumpThread() throws InterruptedException {
         try {
             while (true) {
                 List<Map<String, Object>> list = selectShowProcesslist(dataSource);
@@ -391,14 +391,18 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
                 }
                 Thread.sleep(1000);
             }
-        } catch (SQLException | InterruptedException e) {
+        } catch (SQLException e) {
             Util.sneakyThrows(e);
         }
     }
 
     @Override
     public void connect() {
-        waitMaxDumpThread();
+        try {
+            waitMaxDumpThread();
+        } catch (InterruptedException e) {
+            return;
+        }
         if (!server.isStart()) {
             server.start();
         }
@@ -407,23 +411,31 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
 
     @Override
     public void subscribe(String[] topic) {
-        waitMaxDumpThread();
+        try {
+            waitMaxDumpThread();
+        } catch (InterruptedException e) {
+            return;
+        }
 
-        CanalInstanceWithSpring subscribe = this.subscribe = newInstance(topic);
-        canalInstanceMap.put(identity.getDestination(), subscribe);
+        if (connect) {
+            CanalInstanceWithSpring subscribe = this.subscribe = newInstance(topic);
+            canalInstanceMap.put(identity.getDestination(), subscribe);
 
-        server.start(identity.getDestination());
-        server.subscribe(identity);
+            server.start(identity.getDestination());
+            server.subscribe(identity);
+        }
     }
 
     @Override
     public void rollback() {
-        server.rollback(identity);
+        if (connect) {
+            server.rollback(identity);
+        }
     }
 
     @Override
     public void ack() {
-        if (lastMessage != null) {
+        if (connect && lastMessage != null) {
             server.ack(identity, lastMessage.getId());
         }
     }
@@ -450,8 +462,10 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
 
     @Override
     public void disconnect() {
-        server.unsubscribe(identity);
-        server.stop(identity.getDestination());
+        if (connect) {
+            server.unsubscribe(identity);
+            server.stop(identity.getDestination());
+        }
     }
 
     @Override
