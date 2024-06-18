@@ -5,9 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Scope;
 import org.springframework.core.annotation.AnnotationAwareOrderComparator;
-import org.springframework.stereotype.Component;
 import org.springframework.util.CollectionUtils;
 
 import java.io.File;
@@ -39,6 +37,8 @@ public class ES7xAdapter implements Adapter {
     private NestedFieldWriter nestedFieldWriter;
     @Value("${spring.profiles.active:}")
     private String env;
+    private boolean refresh = true;
+    private int refreshThreshold = 10;
 
     private static String getEsSyncConfigKey(String destination, String database, String table) {
         return destination + "_" + database + "_" + table;
@@ -90,6 +90,14 @@ public class ES7xAdapter implements Adapter {
         return map;
     }
 
+    public int getRefreshThreshold() {
+        return refreshThreshold;
+    }
+
+    public void setRefreshThreshold(int refreshThreshold) {
+        this.refreshThreshold = refreshThreshold;
+    }
+
     public Map<String, ESSyncConfig> getEsSyncConfig(String database, String table) {
         return dbTableEsSyncConfig.get(getEsSyncConfigKey(getDestination(), database, table));
     }
@@ -97,11 +105,13 @@ public class ES7xAdapter implements Adapter {
     @Override
     public void init(CanalConfig.OuterAdapterConfig configuration, Properties envProperties) {
         this.configuration = configuration;
+        this.refresh = configuration.getEs7x().isRefresh();
+        this.refreshThreshold = configuration.getEs7x().getRefreshThreshold();
         this.esConnection = new ES7xConnection(configuration.getEs7x());
         this.esTemplate = new ES7xTemplate(esConnection);
         this.basicFieldWriter = new BasicFieldWriter(esTemplate);
         this.listenerExecutor = Util.newFixedThreadPool(
-                50,
+                configuration.getEs7x().getListenerThreads(),
                 60_000L, "ES-listener", false);
         loadESSyncConfig(dbTableEsSyncConfig, esSyncConfig, envProperties, configuration.getEs7x().resourcesDir(), env);
 
@@ -112,7 +122,7 @@ public class ES7xAdapter implements Adapter {
 
     @Override
     public void sync(List<Dml> dmls) {
-        sync(dmls, true);
+        sync(dmls, refresh);
     }
 
     public void sync(List<Dml> dmls, boolean refresh) {
@@ -177,7 +187,7 @@ public class ES7xAdapter implements Adapter {
         }
 
         // refresh
-        if (refresh && dmls.size() < 10) {
+        if (refresh && dmls.size() < refreshThreshold) {
             esTemplate.refresh(indices);
         }
     }

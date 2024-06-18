@@ -21,6 +21,7 @@ public class CanalThread extends Thread {
     private final CanalConnector connector;
     private final CanalConfig.CanalAdapter config;
     private final AbstractMessageService messageService;
+    private final String name;
     protected String groupId = null;                                                  // groupId
     protected List<Adapter> adapterList;                                              // 外部适配器
     protected CanalConfig canalConfig;                                               // 配置
@@ -28,8 +29,6 @@ public class CanalThread extends Thread {
     protected volatile boolean running = false;                                                 // 是否运行中
     protected Thread thread = null;
     protected UncaughtExceptionHandler handler = (t, e) -> logger.error("parse events has an error", e);
-
-    private final String name;
     private boolean suspend;
 
     public CanalThread(CanalConfig canalConfig, CanalConfig.CanalAdapter config,
@@ -90,8 +89,14 @@ public class CanalThread extends Thread {
             try {
                 logger.info("=============> Start to connect destination: {} <=============", this.name);
                 connector.connect();
+                if (!running) {
+                    break;
+                }
                 logger.info("=============> Start to subscribe destination: {} <=============", this.name);
                 connector.subscribe(config.getTopics());
+                if (!running) {
+                    break;
+                }
                 logger.info("=============> Subscribe destination: {} succeed <=============", this.name);
                 connector.rollback();
                 while (running) {

@@ -346,6 +346,33 @@ public class CanalConfig {
             private int maxRetryCount = 10;// 错误请求重试几次
             private int concurrentBulkRequest = 16;// 最大并发bulk请求
             private int bulkCommitSize = 200;//每次bulk请求的大约提交条数
+            private boolean refresh = true;
+            private int refreshThreshold = 10;
+            private int listenerThreads = 50;
+
+            public int getListenerThreads() {
+                return listenerThreads;
+            }
+
+            public void setListenerThreads(int listenerThreads) {
+                this.listenerThreads = listenerThreads;
+            }
+
+            public int getRefreshThreshold() {
+                return refreshThreshold;
+            }
+
+            public void setRefreshThreshold(int refreshThreshold) {
+                this.refreshThreshold = refreshThreshold;
+            }
+
+            public boolean isRefresh() {
+                return refresh;
+            }
+
+            public void setRefresh(boolean refresh) {
+                this.refresh = refresh;
+            }
 
             public int getMaxRetryCount() {
                 return maxRetryCount;
