@@ -29,7 +29,7 @@ public class CanalThread extends Thread {
     protected Thread thread = null;
     protected UncaughtExceptionHandler handler = (t, e) -> logger.error("parse events has an error", e);
 
-    private String name;
+    private final String name;
     private boolean suspend;
 
     public CanalThread(CanalConfig canalConfig, CanalConfig.CanalAdapter config,
@@ -302,7 +302,13 @@ public class CanalThread extends Thread {
             logger.info("destination {} is waiting for adapters' worker thread die!", this.name);
             if (thread != null) {
                 try {
-                    thread.join();
+                    thread.join(10000);
+                } catch (InterruptedException e) {
+                    // ignore
+                }
+                thread.interrupt();
+                try {
+                    thread.join(10000);
                 } catch (InterruptedException e) {
                     // ignore
                 }
