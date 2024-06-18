@@ -95,9 +95,9 @@ public class BeanUtil {
      * 支持嵌套集合深拷贝,
      * class不同也支持拷贝
      *
-     * @param source
-     * @param <R>
-     * @return
+     * @param source source
+     * @param <R> R
+     * @return R
      */
     public static <R> R copy(R source) {
         return transform(source, null);
@@ -401,10 +401,10 @@ public class BeanUtil {
      * class不同也支持拷贝
      * 支持循环依赖
      *
-     * @param source
-     * @param returnType
-     * @param <R>
-     * @return
+     * @param source source
+     * @param returnType returnType
+     * @param <R> R
+     * @return R
      */
     public static <R> R transform(Object source, Class<R> returnType) {
         if (source == null) {
@@ -613,9 +613,9 @@ public class BeanUtil {
     /**
      * 复制数据，会覆盖
      *
-     * @param copySource
-     * @param copyTarget
-     * @param <T>
+     * @param copySource copySource
+     * @param copyTarget copyTarget
+     * @param <T> T
      */
     public static <T> void copyToIfModify(T copySource, T copyTarget) {
         copyToIfModify(copySource, copyTarget, false);
@@ -645,9 +645,9 @@ public class BeanUtil {
     /**
      * 填充数据，不会覆盖
      *
-     * @param copySource
-     * @param copyTarget
-     * @param <T>
+     * @param copySource copySource
+     * @param copyTarget copyTarget
+     * @param <T> T
      */
     public static <T> void fillIfNull(T copySource, T copyTarget) {
         if (copySource == null || copyTarget == null) {
@@ -769,8 +769,8 @@ public class BeanUtil {
      * 1. 解决循环引用
      * 2. 保留相同引用关系
      *
-     * @param <K>
-     * @param <V>
+     * @param <K> K
+     * @param <V> V
      */
     public static class IdentityHashMap<K, V> {
         private final HashMap<Integer, V> source = new HashMap<>();

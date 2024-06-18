@@ -67,11 +67,6 @@ public class PlaceholdersResolver {
         INSTANCE = this;
     }
 
-    /**
-     * 解析占位符
-     *
-     * @param metadata metadata
-     */
     public String resolve(Resource template, Object metadata) {
         String string;
         try {
@@ -101,11 +96,6 @@ public class PlaceholdersResolver {
         return null;
     }
 
-    /**
-     * 解析占位符
-     *
-     * @param metadata metadata
-     */
     public String resolve(String template, Object metadata) {
         if (template == null) {
             return null;

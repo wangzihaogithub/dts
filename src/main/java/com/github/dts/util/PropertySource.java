@@ -20,14 +20,6 @@ public abstract class PropertySource<T> {
         this.source = source;
     }
 
-    /**
-     * Create a new {@code PropertySource} with the given name and with a new
-     * {@code Object} instance as the underlying source.
-     * <p>
-     * Often useful in testing scenarios when creating anonymous implementations
-     * that never query an actual source but rather return hard-coded values.
-     */
-    @SuppressWarnings("unchecked")
     public PropertySource(String name) {
         this(name, (T) new Object());
     }
@@ -46,62 +38,23 @@ public abstract class PropertySource<T> {
         return this.source;
     }
 
-    /**
-     * Return whether this {@code PropertySource} contains the given name.
-     * <p>
-     * This implementation simply checks for a {@code null} return value from
-     * {@link #getProperty(String)}. Subclasses may wish to implement a more
-     * efficient algorithm if possible.
-     *
-     * @param name the property name to find
-     */
     public boolean containsProperty(String name) {
         return (getProperty(name) != null);
     }
 
-    /**
-     * Return the value associated with the given name, or {@code null} if not
-     * found.
-     *
-     * @param name the property to find
-     */
     public abstract Object getProperty(String name);
 
-    /**
-     * This {@code PropertySource} object is equal to the given object if:
-     * <ul>
-     * <li>they are the same instance
-     * <li>the {@code name} properties for both objects are equal
-     * </ul>
-     * <p>
-     * No properties other than {@code name} are evaluated.
-     */
     @Override
     public boolean equals(Object obj) {
         return (this == obj || (obj instanceof PropertySource
                 && ObjectUtils.nullSafeEquals(this.name, ((PropertySource<?>) obj).name)));
     }
 
-    /**
-     * Return a hash code derived from the {@code name} property of this
-     * {@code PropertySource} object.
-     */
     @Override
     public int hashCode() {
         return ObjectUtils.nullSafeHashCode(this.name);
     }
 
-    /**
-     * Produce concise output (type and name) if the current log level does not
-     * include debug. If debug is enabled, produce verbose output including the hash
-     * code of the PropertySource instance and every name/value property pair.
-     * <p>
-     * This variable verbosity is useful as a property source such as system
-     * properties or environment variables may contain an arbitrary number of
-     * property pairs, potentially leading to difficult to read exception and log
-     * messages.
-     *
-     */
     @Override
     public String toString() {
         if (logger.isDebugEnabled()) {
@@ -122,9 +75,6 @@ public abstract class PropertySource<T> {
             super(name, new Object());
         }
 
-        /**
-         * Always returns {@code null}.
-         */
         @Override
         public String getProperty(String name) {
             return null;

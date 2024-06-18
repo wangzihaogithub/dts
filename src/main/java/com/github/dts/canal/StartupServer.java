@@ -65,10 +65,6 @@ public class StartupServer implements ApplicationRunner {
         return type.cast(adapterMap.get(name));
     }
 
-    /**
-     * 初始化canal-client
-     * (用spring容器替代SPI 2019年4月29日 15:31:23)
-     */
     public void start(CanalConfig canalClientConfig) {
         // 初始化canal-client的适配器
         if (canalClientConfig.getCanalAdapters() == null) {

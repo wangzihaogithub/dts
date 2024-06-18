@@ -38,11 +38,6 @@ public class MutablePropertySources implements PropertySources {
         this.logger = LoggerFactory.getLogger(getClass());
     }
 
-    /**
-     * Create a new {@code MutablePropertySources} from the given propertySources
-     * object, preserving the original order of contained {@code PropertySource}
-     * objects.
-     */
     public MutablePropertySources(PropertySources propertySources) {
         this();
         for (PropertySource<?> propertySource : propertySources) {
@@ -75,9 +70,6 @@ public class MutablePropertySources implements PropertySources {
         return this.propertySourceList.iterator();
     }
 
-    /**
-     * Add the given property source object with highest precedence.
-     */
     public void addFirst(PropertySource<?> propertySource) {
         if (logger.isDebugEnabled()) {
             logger.debug("Adding PropertySource '" + propertySource.getName() + "' with highest search precedence");
@@ -86,9 +78,6 @@ public class MutablePropertySources implements PropertySources {
         this.propertySourceList.add(0, propertySource);
     }
 
-    /**
-     * Add the given property source object with lowest precedence.
-     */
     public void addLast(PropertySource<?> propertySource) {
         if (logger.isDebugEnabled()) {
             logger.debug("Adding PropertySource '" + propertySource.getName() + "' with lowest search precedence");
@@ -97,10 +86,6 @@ public class MutablePropertySources implements PropertySources {
         this.propertySourceList.add(propertySource);
     }
 
-    /**
-     * Add the given property source object with precedence immediately higher than
-     * the named relative property source.
-     */
     public void addBefore(String relativePropertySourceName, PropertySource<?> propertySource) {
         if (logger.isDebugEnabled()) {
             logger.debug("Adding PropertySource '" + propertySource.getName()
@@ -112,10 +97,6 @@ public class MutablePropertySources implements PropertySources {
         addAtIndex(index, propertySource);
     }
 
-    /**
-     * Add the given property source object with precedence immediately lower than
-     * the named relative property source.
-     */
     public void addAfter(String relativePropertySourceName, PropertySource<?> propertySource) {
         if (logger.isDebugEnabled()) {
             logger.debug("Adding PropertySource '" + propertySource.getName()
@@ -127,19 +108,10 @@ public class MutablePropertySources implements PropertySources {
         addAtIndex(index + 1, propertySource);
     }
 
-    /**
-     * Return the precedence of the given property source, {@code -1} if not found.
-     */
     public int precedenceOf(PropertySource<?> propertySource) {
         return this.propertySourceList.indexOf(propertySource);
     }
 
-    /**
-     * Remove and return the property source with the given name, {@code null} if
-     * not found.
-     *
-     * @param name the name of the property source to find and remove
-     */
     public PropertySource<?> remove(String name) {
         if (logger.isDebugEnabled()) {
             logger.debug("Removing PropertySource '" + name + "'");
@@ -166,9 +138,6 @@ public class MutablePropertySources implements PropertySources {
         this.propertySourceList.set(index, propertySource);
     }
 
-    /**
-     * Return the number of {@link PropertySource} objects contained.
-     */
     public int size() {
         return this.propertySourceList.size();
     }

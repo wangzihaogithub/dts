@@ -45,7 +45,7 @@ public class ESSyncUtil {
      * 多个集合合并为一个集合
      *
      * @param lists 多个集合
-     * @param <T>
+     * @param <T> T
      * @return 一个集合
      */
     public static <T> List<T> mergeList(List<T>... lists) {
@@ -108,7 +108,8 @@ public class ESSyncUtil {
 
     /**
      * 根据ES类型 获取所有索引
-     *
+     * @param destination destination
+     * @param esSyncConfigs esSyncConfigs
      * @return 所有索引
      */
     public static List<ESSyncConfig.ESMapping> getESMappingByESType(String destination, Collection<ESSyncConfig> esSyncConfigs) {
@@ -118,12 +119,6 @@ public class ESSyncUtil {
                 .collect(Collectors.toList());
     }
 
-    /**
-     * 更新所有此ES类型的数据 (条件=主键)
-     *
-     * @param pkValue     主键
-     * @param esFieldData 需要修改的数据
-     */
     public static void updateESByPrimaryKey(Object pkValue,
                                             Map<String, Object> esFieldData,
                                             ESSyncConfig.ESMapping esMapping, ESTemplate esTemplate, ESTemplate.BulkRequestList bulkRequestList) {
@@ -138,12 +133,6 @@ public class ESSyncUtil {
         esTemplate.update(esMapping, pkValue, esFieldData, bulkRequestList);
     }
 
-    /**
-     * 更新所有此ES类型的数据
-     *
-     * @param updateWhere 更新条件
-     * @param esFieldData 需要修改的数据
-     */
     public static void updateESByQuery(Map<String, Object> updateWhere,
                                        Map<String, Object> esFieldData, Collection<ESSyncConfig.ESMapping> esMappingByESType,
                                        ESTemplate esTemplate, ESTemplate.BulkRequestList bulkRequestList) {
@@ -177,12 +166,6 @@ public class ESSyncUtil {
         }
     }
 
-    /**
-     * 脚本更新
-     *
-     * @param idOrCode 脚本
-     * @param pkValue  主键
-     */
     public static void updateByScript(String idOrCode, int scriptTypeId, Object pkValue, String lang,
                                       Map<String, Object> params, Collection<ESSyncConfig.ESMapping> esMappingByESType,
                                       ESTemplate esTemplate, ESTemplate.BulkRequestList bulkRequestList) {
@@ -202,13 +185,13 @@ public class ESSyncUtil {
      * |数组     | 对象      |数组sql查询多条  |对象sql查询单条   |
      * <p>
      * 该方法只实现 ARRAY与OBJECT
-     * ARRAY_SQL与OBJECT_SQL的实现 -> {@link NestedFieldWriter}
+     * ARRAY_SQL与OBJECT_SQL的实现 - {@link NestedFieldWriter}
      *
-     * @param val
-     * @param mapping
-     * @param fieldName
-     * @param data
-     * @return
+     * @param val val
+     * @param mapping mapping
+     * @param fieldName fieldName
+     * @param data data
+     * @return ES对象
      * @see ESSyncServiceListener#onSyncAfter(List, ES7xAdapter, ESTemplate.BulkRequestList)
      */
     public static Object convertToEsObj(Object val, ESMapping mapping, String fieldName, Map<String, Object> data) {
@@ -280,6 +263,9 @@ public class ESSyncUtil {
 
     /**
      * 类型转换为Mapping中对应的类型
+     * @param val val
+     * @param esType esType
+     * @return Mapping中对应的类型
      */
     public static Object typeConvert(Object val, String esType) {
         if (val == null) {
@@ -469,9 +455,6 @@ public class ESSyncUtil {
         return res;
     }
 
-    /**
-     * Blob转byte[]
-     */
     private static byte[] blobToBytes(Blob blob) {
         try (InputStream is = blob.getBinaryStream()) {
             byte[] b = new byte[(int) blob.length()];
@@ -489,9 +472,9 @@ public class ESSyncUtil {
     /**
      * 拼接主键条件
      *
-     * @param mapping
-     * @param data
-     * @return
+     * @param mapping mapping
+     * @param data data
+     * @return 主键条件
      */
     public static String pkConditionSql(ESMapping mapping, Map<String, Object> data) {
         Set<ColumnItem> idColumns = new LinkedHashSet<>();

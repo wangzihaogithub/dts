@@ -111,12 +111,6 @@ public class JsonUtil {
         }
     }
 
-    /**
-     * 对象转字节 json(UTF8编码)
-     *
-     * @param object 对象
-     * @return byte[]
-     */
     public static byte[] toJsonUTF8Bytes(Object object, boolean containNull, boolean indentOutput) {
         if (object == null) {
             return EMPTY;

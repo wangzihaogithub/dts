@@ -14,12 +14,6 @@ public interface ESSyncServiceListener {
 
     void init(Map<String, ESSyncConfig> map);
 
-    /**
-     * 监听事件
-     *
-     * @param dml
-     * @param adapter
-     */
     void onSyncAfter(List<Dml> dml, ES7xAdapter adapter, ESTemplate.BulkRequestList bulkRequestList);
 
 }

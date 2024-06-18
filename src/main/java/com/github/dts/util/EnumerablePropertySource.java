@@ -35,15 +35,6 @@ public abstract class EnumerablePropertySource<T> extends PropertySource<T> {
         super(name);
     }
 
-    /**
-     * Return whether this {@code PropertySource} contains a property with the given
-     * name.
-     * <p>
-     * This implementation checks for the presence of the given name within the
-     * {@link #getPropertyNames()} array.
-     *
-     * @param name the name of the property to find
-     */
     @Override
     public boolean containsProperty(String name) {
         return ObjectUtils.containsElement(getPropertyNames(), name);

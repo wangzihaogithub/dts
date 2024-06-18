@@ -29,6 +29,8 @@ public class ObjectModifyHistoryUtil {
      *
      * @param before 旧值
      * @param after  新值
+     * @param maxDepth maxDepth
+     * @param logClass logClass
      * @return 变更记录
      * //     * @see LogComparer
      */

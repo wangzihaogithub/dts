@@ -16,6 +16,7 @@ public interface ESTemplate extends AutoCloseable {
      * @param mapping     配置对象
      * @param pkVal       主键值
      * @param esFieldData 数据Map
+     * @param bulkRequestList bulkRequestList
      */
     void insert(ESMapping mapping, Object pkVal, Map<String, Object> esFieldData, BulkRequestList bulkRequestList);
 
@@ -25,6 +26,7 @@ public interface ESTemplate extends AutoCloseable {
      * @param mapping     配置对象
      * @param pkVal       主键值
      * @param esFieldData 数据Map
+     * @param bulkRequestList bulkRequestList
      */
     void update(ESMapping mapping, Object pkVal, Map<String, Object> esFieldData, BulkRequestList bulkRequestList);
 
@@ -34,11 +36,16 @@ public interface ESTemplate extends AutoCloseable {
      * @param config      配置对象
      * @param paramsTmp   sql查询条件
      * @param esFieldData 数据Map
+     * @param bulkRequestList bulkRequestList
      */
     void updateByQuery(ESSyncConfig config, Map<String, Object> paramsTmp, Map<String, Object> esFieldData, BulkRequestList bulkRequestList);
 
     /**
      * delete by range
+     * @param mapping mapping
+     * @param maxId maxId
+     * @param minId minId
+     * @return ESBulkResponse
      */
     ESBulkRequest.ESBulkResponse deleteByIdRange(ESMapping mapping, Integer minId, Integer maxId);
 
@@ -48,6 +55,7 @@ public interface ESTemplate extends AutoCloseable {
      * @param mapping     配置对象
      * @param pkVal       主键值
      * @param esFieldData 数据Map
+     * @param bulkRequestList bulkRequestList
      */
     void delete(ESMapping mapping, Object pkVal, Map<String, Object> esFieldData, BulkRequestList bulkRequestList);
 
@@ -58,6 +66,8 @@ public interface ESTemplate extends AutoCloseable {
 
     /**
      * 刷盘
+     * @param indices indices
+     * @return 刷盘结果
      */
     CompletableFuture<ESBulkRequest.EsRefreshResponse> refresh(Collection<String> indices);
 
