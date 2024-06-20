@@ -71,7 +71,7 @@ public class KafkaCanalConnector implements CanalConnector {
     @Override
     public Map<String, Object> setDiscard(boolean discard) throws InterruptedException {
         this.discard = discard;
-        if (connected && discard) {
+        if (lastTopic != null && connected && discard) {
             while (this.discard) {
                 Thread.sleep(100);
             }

@@ -380,6 +380,9 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
     public void waitMaxDumpThread() throws InterruptedException {
         try {
             while (true) {
+                if (setDiscard) {
+                    setDiscard = false;
+                }
                 List<Map<String, Object>> list = selectShowProcesslist(dataSource);
                 List<Map<String, Object>> dumpThreadList = list.stream()
                         .filter(e -> Objects.equals(username, e.get("User"))
@@ -435,7 +438,7 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
 
     @Override
     public void ack() {
-        if (connect && lastMessage != null) {
+        if (lastMessage != null) {
             server.ack(identity, lastMessage.getId());
         }
     }
@@ -475,7 +478,6 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
 
     private Map<String, Object> discard() {
         Long minId = lastMessage == null ? null : lastMessage.getId();
-        ack();
         Long maxId = null;
         while (true) {
             Message message = server.getWithoutAck(identity, 500, null, TimeUnit.MILLISECONDS);
@@ -511,7 +513,9 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
             if (msg != null && msg.contains("Could not find first log file name in binary log index file")) {
                 if (rebuildConsumer != null) {
                     File file = new File(new File(dataDir, destination), "meta.dat");
-                    deleteDir(file);
+                    if (deleteDir(file)) {
+                        lastMessage = null;
+                    }
                     rebuildConsumer.accept(MysqlBinlogCanalConnector.this);
                 }
             }
