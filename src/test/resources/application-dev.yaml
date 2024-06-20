@@ -48,7 +48,7 @@ canal.conf:
         - '${cnwy.binlog-prefix}job_specialty'
       properties: {
         dataSource: 'defaultDS',
-        maxDumpThread: 111,
+        maxDumpThread: 1,
         enableGTID: true
       }
       groups:
