@@ -25,13 +25,14 @@
     
 -  1.仅导入上面的maven包就行
 
-
-    @SpringBootApplication
-    public class Application {
-        public static void main(String[] args) {
-            SpringApplication.run(Application.class, args);
+    
+        @SpringBootApplication
+        public class Application {
+            public static void main(String[] args) {
+                SpringApplication.run(Application.class, args);
+            }
         }
-    }
+
 
 - 2.application-dev.yaml 配置
 
