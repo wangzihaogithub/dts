@@ -113,35 +113,30 @@ public class CanalThread extends Thread {
                         }
                         if (suspend) {
                             Thread.sleep(10_000);
+                        } else if (message.isEmpty()) {
+                            // next
                         } else {
-                            String batchId = messageID(message);
-                            String[] offset = logfileOffset(message, 20);
                             try {
-                                int size = message.size();
-                                if (message.isEmpty()) {
-                                    Thread.sleep(500);
-                                } else {
-                                    if (logger.isDebugEnabled()) {
-                                        logger.debug("destination: {} batchId: {} batchSize: {} offset: {}",
-                                                this.name,
-                                                batchId,
-                                                size,
-                                                offset);
-                                    }
-                                    long begin = System.currentTimeMillis();
-                                    writeOut(message);
-                                    if (logger.isTraceEnabled()) {
-                                        logger.debug("destination: {} batchId: {} elapsed time: {} ms",
-                                                this.name,
-                                                batchId,
-                                                System.currentTimeMillis() - begin);
-                                    }
-                                    connector.ack(); // 提交确认
-                                    if (exception != null) {
-                                        sendRecover(exception, batchId, offset);
-                                        lastErrorTimestamp = 0;
-                                        exception = null;
-                                    }
+                                if (logger.isDebugEnabled()) {
+                                    logger.debug("destination: {} batchId: {} batchSize: {} offset: {}",
+                                            this.name,
+                                            messageID(message),
+                                            message.size(),
+                                            logfileOffset(message, 20));
+                                }
+                                long begin = System.currentTimeMillis();
+                                writeOut(message);
+                                if (logger.isTraceEnabled()) {
+                                    logger.debug("destination: {} batchId: {} elapsed time: {} ms",
+                                            this.name,
+                                            messageID(message),
+                                            System.currentTimeMillis() - begin);
+                                }
+                                connector.ack(); // 提交确认
+                                if (exception != null) {
+                                    sendRecover(exception, messageID(message), logfileOffset(message, 20));
+                                    lastErrorTimestamp = 0;
+                                    exception = null;
                                 }
                             } catch (Exception e) {
                                 exception = e;
@@ -149,7 +144,7 @@ public class CanalThread extends Thread {
                                 if (lastErrorTimestamp == 0
                                         // 10分钟内闭嘴
                                         || System.currentTimeMillis() - lastErrorTimestamp > 1000 * 60 * 10) {
-                                    sendError(e, batchId, offset, message);
+                                    sendError(e, messageID(message), logfileOffset(message, 20), message);
                                     lastErrorTimestamp = System.currentTimeMillis();
                                 }
                                 Thread.sleep(500);

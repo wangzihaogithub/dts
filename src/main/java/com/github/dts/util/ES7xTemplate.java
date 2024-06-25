@@ -28,6 +28,7 @@ public class ES7xTemplate implements ESTemplate {
     private static final ConcurrentMap<String, EsFieldTypesCache> esFieldTypes = new ConcurrentHashMap<>();
     private final ES7xConnection esConnection;
     private final ES7xConnection.ES7xBulkRequest esBulkRequest;
+    private int deleteByIdRangeBatch = 1000;
 
     public ES7xTemplate(ES7xConnection esConnection) {
         this.esConnection = esConnection;
@@ -221,6 +222,14 @@ public class ES7xTemplate implements ESTemplate {
         }
     }
 
+    public int getDeleteByIdRangeBatch() {
+        return deleteByIdRangeBatch;
+    }
+
+    public void setDeleteByIdRangeBatch(int deleteByIdRangeBatch) {
+        this.deleteByIdRangeBatch = deleteByIdRangeBatch;
+    }
+
     @Override
     public ESBulkRequest.ESBulkResponse deleteByIdRange(ESMapping mapping, Integer minId, Integer maxId) {
         if (minId == null || maxId == null) {
@@ -231,16 +240,17 @@ public class ES7xTemplate implements ESTemplate {
             return null;
         }
         String indexName = mapping.get_index();
-
-        ES7xConnection.ESSearchRequest esSearchRequest = new ES7xConnection.ESSearchRequest(indexName)
-                .setQuery(QueryBuilders.rangeQuery(idColName).lte(maxId).gte(minId))
-                .fetchSource(idColName)
-                .size(10000);
-        SearchResponse response = esSearchRequest.getResponse(this.esConnection);
-
+        int add = deleteByIdRangeBatch;
         ES7xConnection.ES7xBulkRequest bulkRequest = new ES7xConnection.ES7xBulkRequest(esConnection);
-        for (SearchHit hit : response.getHits()) {
-            bulkRequest.add(new ES7xConnection.ES7xDeleteRequest(indexName, hit.getId()));
+        for (int i = minId + add, slot = minId; i <= maxId; slot = i, i += add) {
+            ES7xConnection.ESSearchRequest esSearchRequest = new ES7xConnection.ESSearchRequest(indexName)
+                    .setQuery(QueryBuilders.rangeQuery(idColName).lte(i).gte(Math.max(slot, minId)))
+                    .fetchSource(idColName)
+                    .size(add);
+            SearchResponse response = esSearchRequest.getResponse(this.esConnection);
+            for (SearchHit hit : response.getHits()) {
+                bulkRequest.add(new ES7xConnection.ES7xDeleteRequest(indexName, hit.getId()));
+            }
         }
         return bulkRequest.bulk();
     }
