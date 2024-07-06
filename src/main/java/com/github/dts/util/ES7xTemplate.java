@@ -255,6 +255,25 @@ public class ES7xTemplate implements ESTemplate {
         return bulkRequest.bulk();
     }
 
+    @Override
+    public ESBulkRequest.ESBulkResponse deleteByRange(ESMapping mapping, String fieldName,Object minValue, Object maxValue) {
+        if (fieldName == null || fieldName.isEmpty()) {
+            return null;
+        }
+        String indexName = mapping.get_index();
+        int add = deleteByIdRangeBatch;
+        ES7xConnection.ES7xBulkRequest bulkRequest = new ES7xConnection.ES7xBulkRequest(esConnection);
+        ES7xConnection.ESSearchRequest esSearchRequest = new ES7xConnection.ESSearchRequest(indexName)
+                .setQuery(QueryBuilders.rangeQuery(fieldName).lte(maxValue).gte(minValue))
+                .fetchSource(fieldName)
+                .size(add);
+        SearchResponse response = esSearchRequest.getResponse(this.esConnection);
+        for (SearchHit hit : response.getHits()) {
+            bulkRequest.add(new ES7xConnection.ES7xDeleteRequest(indexName, hit.getId()));
+        }
+        return bulkRequest.bulk();
+    }
+
     /**
      * 通过主键删除数据
      *

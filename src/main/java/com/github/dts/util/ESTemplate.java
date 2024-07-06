@@ -49,6 +49,8 @@ public interface ESTemplate extends AutoCloseable {
      */
     ESBulkRequest.ESBulkResponse deleteByIdRange(ESMapping mapping, Integer minId, Integer maxId);
 
+    ESBulkRequest.ESBulkResponse deleteByRange(ESMapping mapping, String fieldName, Object minValue, Object maxValue);
+
     /**
      * 通过主键删除数据
      *
