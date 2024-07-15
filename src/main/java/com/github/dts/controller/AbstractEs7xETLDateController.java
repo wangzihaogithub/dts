@@ -3,7 +3,6 @@ package com.github.dts.controller;
 import com.github.dts.canal.StartupServer;
 import com.github.dts.impl.elasticsearch7x.ES7xAdapter;
 import com.github.dts.util.*;
-import org.apache.commons.lang.time.DateUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,11 +17,11 @@ import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
 
-public abstract class AbstractEs7xETLByDateController {
-    private static final Logger log = LoggerFactory.getLogger(AbstractEs7xETLByDateController.class);
+public abstract class AbstractEs7xETLDateController {
+    private static final Logger log = LoggerFactory.getLogger(AbstractEs7xETLDateController.class);
 
     private final ExecutorService executorService = Util.newFixedThreadPool(1000, 5000L,
-            "controller-date", true);
+            getClass().getSimpleName(), true);
     @Autowired(required = false)
     protected StartupServer startupServer;
     @Autowired(required = false)
@@ -59,7 +58,8 @@ public abstract class AbstractEs7xETLByDateController {
             @RequestParam String fieldName,
             @RequestParam(required = false, defaultValue = "600000") long offsetAdd,
             @RequestParam(required = false, defaultValue = "defaultDS") String ds,
-            @RequestParam(required = false, defaultValue = "true") boolean append) {
+            @RequestParam(required = false, defaultValue = "true") boolean append,
+            @RequestParam(required = false, defaultValue = "false") boolean discard) {
         JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(ds);
         String catalog = CanalConfig.DatasourceConfig.getCatalog(ds);
 
@@ -69,16 +69,18 @@ public abstract class AbstractEs7xETLByDateController {
         long offsetStartDate = offsetStartParse.getTime();
         Long offsetEndDate = offsetEndParse == null ? null : offsetEndParse.getTime();
 
-        String destination = getES7xAdapter().getDestination();
-        new Thread(() -> {
-            try {
-                discard(destination);
-            } catch (InterruptedException e) {
-                log.info("discard {}", e, e);
-            }
-        }).start();
+        String clientIdentity = getES7xAdapter().getClientIdentity();
+        if (discard) {
+            new Thread(() -> {
+                try {
+                    discard(clientIdentity);
+                } catch (InterruptedException e) {
+                    log.info("discard {}", e, e);
+                }
+            }).start();
+        }
 
-        setSuspendEs7x(true, destination);
+        setSuspendEs7x(true, clientIdentity);
         this.stop = false;
 
         long maxId = offsetEndDate == null ?
@@ -89,7 +91,7 @@ public abstract class AbstractEs7xETLByDateController {
         AtomicInteger done = new AtomicInteger(0);
         AtomicInteger dmlSize = new AtomicInteger(0);
         for (int i = 0; i < threads; i++) {
-            runnableList.add(new SyncRunnable(messageService, i, offsetStartDate, maxId, threads) {
+            runnableList.add(new SyncRunnable(getClass().getSimpleName(), messageService, i, offsetStartDate, maxId, threads) {
                 @Override
                 public long run0(long offset) {
                     if (stop) {
@@ -113,7 +115,7 @@ public abstract class AbstractEs7xETLByDateController {
                         if (log.isInfoEnabled()) {
                             log.info("syncAll done {}", this);
                         }
-                        setSuspendEs7x(false, destination);
+                        setSuspendEs7x(false, clientIdentity);
                         sendDone(runnableList, timestamp, dmlSize.intValue());
                     }
                 }
@@ -127,13 +129,13 @@ public abstract class AbstractEs7xETLByDateController {
 
     @RequestMapping("/suspend")
     public boolean suspend(boolean suspend) {
-        setSuspendEs7x(suspend, getES7xAdapter().getDestination());
+        setSuspendEs7x(suspend, getES7xAdapter().getClientIdentity());
         return suspend;
     }
 
     @RequestMapping("/discard")
     public List<Map> discard() throws InterruptedException {
-        return discard(getES7xAdapter().getDestination());
+        return discard(getES7xAdapter().getClientIdentity());
     }
 
     @RequestMapping("/stop")
@@ -142,16 +144,16 @@ public abstract class AbstractEs7xETLByDateController {
         return stop;
     }
 
-    private List<Map> discard(String destination) throws InterruptedException {
+    private List<Map> discard(String clientIdentity) throws InterruptedException {
         List<Map> list = new ArrayList<>();
-        for (StartupServer.ThreadRef thread : startupServer.getCanalThread(destination)) {
+        for (StartupServer.ThreadRef thread : startupServer.getCanalThread(clientIdentity)) {
             list.add(thread.getCanalThread().getConnector().setDiscard(true));
         }
         return list;
     }
 
-    private void setSuspendEs7x(boolean suspend, String destination) {
-        List<StartupServer.ThreadRef> canalThread = startupServer.getCanalThread(destination);
+    private void setSuspendEs7x(boolean suspend, String clientIdentity) {
+        List<StartupServer.ThreadRef> canalThread = startupServer.getCanalThread(clientIdentity);
         for (StartupServer.ThreadRef thread : canalThread) {
             if (suspend) {
                 thread.stopThread();
@@ -170,6 +172,9 @@ public abstract class AbstractEs7xETLByDateController {
         Timestamp maxIdDate = new Timestamp(maxId);
 
         List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, minIdDate, maxIdDate);
+        if (dmlList.isEmpty()) {
+            return 0;
+        }
         ES7xAdapter esAdapter = getES7xAdapter();
         for (Dml dml : dmlList) {
             dml.setDestination(esAdapter.getConfiguration().getCanalAdapter().getDestination());
@@ -179,21 +184,18 @@ public abstract class AbstractEs7xETLByDateController {
             for (Dml dml : dmlList) {
                 tableNameSet.add(dml.getTable());
             }
-            List<Map<String, ESSyncConfig>> configMapList = new ArrayList<>();
+            Set<Map<String, ESSyncConfig>> configMapList = Collections.newSetFromMap(new IdentityHashMap<>());
             for (String tableName : tableNameSet) {
-                Map<String, ESSyncConfig> configMap = esAdapter.getEsSyncConfig(catalog, tableName);
-                if (configMap != null) {
-                    configMapList.add(configMap);
-                }
+                configMapList.addAll(esAdapter.getEsSyncConfig(catalog, tableName));
             }
             for (Map<String, ESSyncConfig> configMap : configMapList) {
                 for (ESSyncConfig config : configMap.values()) {
-                    ESBulkRequest.ESBulkResponse esBulkResponse = esAdapter.getEsTemplate().deleteByRange(config.getEsMapping(), fieldName, minIdDate, maxIdDate);
+                    ESBulkRequest.ESBulkResponse esBulkResponse = esAdapter.getEsTemplate().deleteByRange(config.getEsMapping(), fieldName, minIdDate, maxIdDate, null);
                     esBulkResponse.isEmpty();
                 }
             }
         }
-        esAdapter.sync(dmlList, false);
+        esAdapter.sync(dmlList, false, true, MetaDataRepository.NULL_ACK);
         return dmlList.size();
     }
 
@@ -204,6 +206,7 @@ public abstract class AbstractEs7xETLByDateController {
                 + ",\n\n 开始时间 = " + startTime
                 + ",\n\n 结束时间 = " + new Timestamp(System.currentTimeMillis())
                 + ",\n\n DML条数 = " + dmlSize
+                + ",\n\n 对象 = " + getClass().getSimpleName()
                 + ",\n\n 明细 = " + runnableList;
         messageService.send(title, content);
     }
@@ -217,10 +220,12 @@ public abstract class AbstractEs7xETLByDateController {
         private final long endOffset;
         private final long offsetStart;
         private final AbstractMessageService messageService;
+        private final String name;
         protected long cOffset;
         private boolean done;
 
-        public SyncRunnable(AbstractMessageService messageService, int threadIndex, long offsetStart, long maxId, int threads) {
+        public SyncRunnable(String name, AbstractMessageService messageService, int threadIndex, long offsetStart, long maxId, int threads) {
+            this.name = name;
             this.messageService = messageService;
             this.threadIndex = threadIndex;
             this.maxId = maxId;
@@ -256,6 +261,7 @@ public abstract class AbstractEs7xETLByDateController {
 
             String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                     + " \n\n   ---  "
+                    + ",\n\n 对象 = " + name
                     + ",\n\n threadIndex = " + threadIndex
                     + ",\n\n minOffset = " + minOffset
                     + ",\n\n currentOffset = " + cOffset

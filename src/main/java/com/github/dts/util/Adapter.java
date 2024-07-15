@@ -24,7 +24,7 @@ public interface Adapter {
      *
      * @param dmls 数据包
      */
-    void sync(List<Dml> dmls);
+    void sync(List<Dml> dmls, MetaDataRepository.Acknowledge acknowledge);
 
     /**
      * 外部适配器销毁接口
@@ -33,7 +33,11 @@ public interface Adapter {
 
     CanalConfig.OuterAdapterConfig getConfiguration();
 
-    default String getDestination() {
+    default String[] getDestination() {
         return getConfiguration().getCanalAdapter().getDestination();
+    }
+
+    default String getClientIdentity() {
+        return getConfiguration().getCanalAdapter().clientIdentity();
     }
 }

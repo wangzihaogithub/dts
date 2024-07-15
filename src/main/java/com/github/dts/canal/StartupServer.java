@@ -3,14 +3,15 @@ package com.github.dts.canal;
 import com.alibaba.druid.pool.DruidDataSource;
 import com.github.dts.impl.elasticsearch7x.ES7xAdapter;
 import com.github.dts.impl.rds.RDSAdapter;
+import com.github.dts.util.AbstractMessageService;
 import com.github.dts.util.Adapter;
 import com.github.dts.util.CanalConfig;
-import com.github.dts.util.AbstractMessageService;
 import com.github.dts.util.Util;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.core.annotation.Order;
@@ -39,9 +40,19 @@ public class StartupServer implements ApplicationRunner {
     @Resource
     private CanalConfig canalConfig;
     private volatile boolean running = false;
+    @Value("${spring.profiles.active:}")
+    private String env;
 
-    public List<ThreadRef> getCanalThread(String destination) {
-        List<ThreadRef> threadRef = canalThreadMap.get(destination);
+    public String getEnv() {
+        return env;
+    }
+
+    public BeanFactory getBeanFactory() {
+        return beanFactory;
+    }
+
+    public List<ThreadRef> getCanalThread(String clientIdentity) {
+        List<ThreadRef> threadRef = canalThreadMap.get(clientIdentity);
         return threadRef != null ? threadRef : Collections.emptyList();
     }
 
@@ -84,11 +95,12 @@ public class StartupServer implements ApplicationRunner {
                 }
             }
 
+            String clientIdentity = canalAdapter.clientIdentity();
             ThreadRef thread = new ThreadRef(canalClientConfig,
-                    canalAdapter, adapterList, messageService);
-            canalThreadMap.computeIfAbsent(canalAdapter.getDestination(), e -> new ArrayList<>())
+                    canalAdapter, adapterList, messageService, this);
+            canalThreadMap.computeIfAbsent(clientIdentity, e -> new ArrayList<>())
                     .add(thread);
-            log.info("Start adapter for canal destination: {} succeed", canalAdapter.getDestination());
+            log.info("Start adapter for canal clientIdentity: {} succeed", clientIdentity);
         }
     }
 
@@ -99,7 +111,7 @@ public class StartupServer implements ApplicationRunner {
             if (env instanceof StandardEnvironment) {
                 evnProperties = new Properties();
                 for (org.springframework.core.env.PropertySource<?> propertySource : ((StandardEnvironment) env).getPropertySources()) {
-                    if (propertySource instanceof org.springframework.core.env.EnumerablePropertySource) {
+                    if (propertySource instanceof EnumerablePropertySource) {
                         String[] names = ((EnumerablePropertySource<?>) propertySource).getPropertyNames();
                         for (String name : names) {
                             Object val = propertySource.getProperty(name);
@@ -179,10 +191,13 @@ public class StartupServer implements ApplicationRunner {
         private final CanalConfig.CanalAdapter config;
         private final List<Adapter> adapterList;
         private final AbstractMessageService messageService;
+        private final StartupServer startupServer;
         private CanalThread canalThread;
 
         public ThreadRef(CanalConfig canalConfig, CanalConfig.CanalAdapter config,
-                         List<Adapter> adapterList, AbstractMessageService messageService) {
+                         List<Adapter> adapterList, AbstractMessageService messageService,
+                         StartupServer startupServer) {
+            this.startupServer = startupServer;
             this.canalConfig = canalConfig;
             this.config = config;
             this.adapterList = adapterList;
@@ -192,9 +207,10 @@ public class StartupServer implements ApplicationRunner {
 
         public void startThread() {
             try {
-                CanalConnector canalConnector = config.newCanalConnector(canalConfig);
+                CanalThread parent = this.canalThread;
                 canalThread = new CanalThread(canalConfig, config, adapterList, messageService,
-                        canalConnector,
+                        startupServer,
+                        parent,
                         t -> {
                             t.setRunning(false);
                             new Thread(ThreadRef.this::startThread).start();

@@ -380,7 +380,7 @@ public class ES7xConnection {
         public SearchResponse getResponse(ES7xConnection es7xConnection) {
             try {
                 return es7xConnection.restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
-            } catch (IOException e) {
+            } catch (Exception e) {
                 Util.sneakyThrows(e);
                 return null;
             }

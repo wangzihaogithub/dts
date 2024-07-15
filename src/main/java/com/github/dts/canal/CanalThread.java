@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.lang.reflect.InvocationTargetException;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -13,6 +14,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 public class CanalThread extends Thread {
@@ -32,13 +34,15 @@ public class CanalThread extends Thread {
     private boolean suspend;
 
     public CanalThread(CanalConfig canalConfig, CanalConfig.CanalAdapter config,
-                       List<Adapter> adapterList, AbstractMessageService messageService, CanalConnector connector,
-                       Consumer<CanalThread> rebuild) {
+                       List<Adapter> adapterList, AbstractMessageService messageService,
+                       StartupServer startupServer, CanalThread parent,
+                       Consumer<CanalThread> rebuild) throws InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException {
+        CanalConnector connector = config.newCanalConnector(canalConfig, startupServer, parent != null);
         this.adapterList = adapterList;
         this.canalConfig = canalConfig;
         this.config = config;
         this.messageService = messageService;
-        this.name = config.getDestination() + limit(connector.getClass().getSimpleName(), 8);
+        this.name = config.clientIdentity() + limit(connector.getClass().getSimpleName(), 8);
 
         this.connector = connector;
         connector.rebuildConsumer(new Consumer<CanalConnector>() {
@@ -168,6 +172,7 @@ public class CanalThread extends Thread {
                 }
             }
         }
+        connector.close();
     }
 
     public ExecutorService getExecutorService() {
@@ -183,8 +188,10 @@ public class CanalThread extends Thread {
     }
 
     protected void writeOut(final List<Dml> message) {
+        List<Adapter> adapterList = this.adapterList;
+        MetaDataRepository.Acknowledge acknowledge = new AdapterAcknowledge(adapterList.size(), connector);
         if (adapterList.size() == 1) {
-            adapterList.get(0).sync(message);
+            adapterList.get(0).sync(message, acknowledge);
             return;
         }
 
@@ -195,7 +202,7 @@ public class CanalThread extends Thread {
             futures.add(service.submit(() -> {
                 try {
                     long begin = System.currentTimeMillis();
-                    adapter.sync(message);
+                    adapter.sync(message, acknowledge);
                     if (logger.isTraceEnabled()) {
                         logger.trace("{} elapsed time: {}",
                                 adapter.getClass().getName(),
@@ -321,6 +328,23 @@ public class CanalThread extends Thread {
             logger.info("destination {} all adapters destroyed!", this.name);
         } catch (Exception e) {
             logger.error(e.getMessage(), e);
+        }
+    }
+
+    static class AdapterAcknowledge implements MetaDataRepository.Acknowledge {
+        private final AtomicInteger i;
+        private final CanalConnector connector;
+
+        AdapterAcknowledge(int size, CanalConnector connector) {
+            this.i = new AtomicInteger(size);
+            this.connector = connector;
+        }
+
+        @Override
+        public void ack() {
+            if (i.decrementAndGet() == 0) {
+                connector.ack2();
+            }
         }
     }
 }

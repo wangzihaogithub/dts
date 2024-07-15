@@ -8,7 +8,6 @@ import java.util.function.Function;
 public class StaticMethodAccessor<T> implements Function<T, Object> {
     private final String classMethodName;
     private final Method method;
-    private Class<T> type;
 
     public StaticMethodAccessor(String classMethodName, Class<T> type) {
         Method method = null;

@@ -2,14 +2,10 @@ package com.github.dts.impl.elasticsearch7x;
 
 import com.github.dts.util.*;
 import com.google.common.collect.Lists;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.util.CollectionUtils;
-import org.springframework.util.LinkedMultiValueMap;
 
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
-import java.util.function.BiFunction;
 import java.util.stream.Collectors;
 
 /**
@@ -18,14 +14,11 @@ import java.util.stream.Collectors;
  * @author acer01
  */
 public class NestedFieldWriter {
-    private static final ThreadLocal<Map<String, Object>> MERGE_DATA_MAP_THREAD_LOCAL = ThreadLocal.withInitial(HashMap::new);
-    private static final ThreadLocal<Queue<Placeholder>> PLACEHOLDER_QUEUE_THREAD_LOCAL = ThreadLocal.withInitial(ArrayDeque::new);
-    private static final String PLACEHOLDER_BEGIN = "#{";
-    private static final String PLACEHOLDER_END = "}";
+
     private final Map<String, List<SchemaItem>> schemaItemMap;
     private final ESTemplate esTemplate;
     private final CacheMap cacheMap;
-    private final ExecutorService listenerExecutor;
+    private final ExecutorService mainTableListenerExecutor;
     private final int threads;
 
     public NestedFieldWriter(int nestedFieldThreads, Map<String, ESSyncConfig> map, ESTemplate esTemplate, CacheMap cacheMap) {
@@ -33,49 +26,51 @@ public class NestedFieldWriter {
         this.esTemplate = esTemplate;
         this.cacheMap = cacheMap;
         this.threads = nestedFieldThreads;
-        this.listenerExecutor = Util.newFixedThreadPool(
+        this.mainTableListenerExecutor = Util.newFixedThreadPool(
+                1,
                 nestedFieldThreads,
-                60_000L, "ES-NestedFieldWriter", true);
+                60_000L, "ESNestedMainWriter", true, false);
     }
 
     /**
-     * 循环所有依赖影响的字段
+     * 获取所有依赖SQL
      *
-     * @param dml  dml数据
-     * @param call 每一次发现有依赖字段的回调方法
+     * @param dml dml数据
+     * @return Dependent
      */
-    private static void forEachSqlField(List<SchemaItem> schemaItemList, Dml dml, BiFunction<Integer, SchemaItem, Boolean> call) {
+    private static DependentGroup getDependentList(List<SchemaItem> schemaItemList, Dml dml) {
+        if (schemaItemList == null || schemaItemList.isEmpty()) {
+            return null;
+        }
         //当前表所依赖的所有sql
-        for (SchemaItem schemaItem : schemaItemList) {
-            //获取当前表在这个sql中的别名
-            for (String alias : schemaItem.getTableItemAliases(dml.getTable())) {
-                //批量多条DML
-                int dmlIndex = 0;
-                if (!CollectionUtils.isEmpty(dml.getOld())) {
-                    for (Map<String, Object> old : dml.getOld()) {
-                        //DML的字段
-                        for (String field : old.keySet()) {
-                            //寻找依赖字段
-                            if (!schemaItem.getFields().containsKey(alias + "." + field)) {
-                                continue;
-                            }
-                            //如果不需要往下继续执行
-                            boolean isNext = call.apply(dmlIndex, schemaItem);
-                            if (!isNext) {
-                                return;
-                            }
-                        }
-                        dmlIndex++;
-                    }
-                } else {
-                    boolean isNext = call.apply(dmlIndex, schemaItem);
-                    if (!isNext) {
-                        return;
-                    }
-                }
+        List<Map<String, Object>> oldList = dml.getOld();
+        if (oldList == null) {
+            oldList = Collections.emptyList();
+        }
+        List<Map<String, Object>> dataList = dml.getData();
+        if (dataList == null) {
+            dataList = Collections.emptyList();
+        }
 
+        int size = Math.max(oldList.size(), dataList.size());
+        DependentGroup dependentGroup = new DependentGroup();
+        for (SchemaItem schemaItem : schemaItemList) {
+            SchemaItem.TableItem indexMainTable = schemaItem.getObjectField().getEsMapping().getSchemaItem().getMainTable();
+            SchemaItem.TableItem nestedMainTable = schemaItem.getObjectField().getSchemaItem().getMainTable();
+            List<SchemaItem.TableItem> nestedSlaveTableList = schemaItem.getObjectField().getSchemaItem().getSlaveTableList();
+
+            for (int i = 0; i < size; i++) {
+                Dependent dependent = new Dependent(schemaItem, i,
+                        indexMainTable, nestedMainTable, nestedSlaveTableList,
+                        dml);
+                if (dependent.isMainTable()) {
+                    dependentGroup.addMain(dependent);
+                } else {
+                    dependentGroup.addSlave(dependent);
+                }
             }
         }
+        return dependentGroup;
     }
 
     /**
@@ -84,146 +79,119 @@ public class NestedFieldWriter {
      * @return 表与sql的关系
      */
     private static Map<String, List<SchemaItem>> toListenerMap(Map<String, ESSyncConfig> esSyncConfigMap) {
-        LinkedMultiValueMap<String, SchemaItem> schemaItemMap = new LinkedMultiValueMap<>();
-        esSyncConfigMap.values().stream()
-                .map(ESSyncConfig::getEsMapping)
-                .map(ESSyncConfig.ESMapping::getObjFields)
-                .map(Map::values)
-                .flatMap(Collection::stream)
-                .map(ESSyncConfig.ObjectField::getSchemaItem)
-                .filter(Objects::nonNull)
-                .forEach(schemaItem -> {
-                    for (String tableName : schemaItem.getTableItemAliases().keySet()) {
-                        schemaItemMap.add(tableName, schemaItem);
-                    }
-                });
+        Map<String, List<SchemaItem>> schemaItemMap = new LinkedHashMap<>();
+        for (ESSyncConfig syncConfig : esSyncConfigMap.values()) {
+            for (ESSyncConfig.ObjectField objectField : syncConfig.getEsMapping().getObjFields().values()) {
+                SchemaItem schemaItem = objectField.getSchemaItem();
+                if (schemaItem == null) {
+                    continue;
+                }
+                SchemaItem.TableItem mainTable = syncConfig.getEsMapping().getSchemaItem().getMainTable();
+                String mainTableName = mainTable.getTableName();
+                Set<String> tableNameSet = schemaItem.getTableItemAliases().keySet();
+                for (String tableName : tableNameSet) {
+                    schemaItemMap.computeIfAbsent(tableName, e -> new ArrayList<>(2))
+                            .add(schemaItem);
+                }
+                if (!tableNameSet.contains(mainTableName)) {
+                    schemaItemMap.computeIfAbsent(mainTableName, e -> new ArrayList<>(2))
+                            .add(schemaItem);
+                }
+            }
+        }
         return Collections.unmodifiableMap(schemaItemMap);
     }
 
-    /**
-     * 将sql表达式与参数 转换为JDBC所需的sql对象
-     *
-     * @param expressionsSql sql表达式
-     * @param args           参数
-     * @return JDBC所需的sql对象
-     */
-    private static SQL convertToSql(String expressionsSql, Map<String, Object> args, SchemaItem schemaItem) {
-        Queue<Placeholder> placeholderQueue = getPlaceholderQueue(expressionsSql);
 
-        List<Object> argsList = new ArrayList<>();
-        StringBuilder sqlBuffer = new StringBuilder(expressionsSql);
-        Placeholder placeholder;
-        while ((placeholder = placeholderQueue.poll()) != null) {
-            int offset = expressionsSql.length() - sqlBuffer.length();
-            sqlBuffer.replace(
-                    placeholder.getBeginIndex() - PLACEHOLDER_BEGIN.length() - offset,
-                    placeholder.getEndIndex() + PLACEHOLDER_END.length() - offset,
-                    "?");
-            Object value = args.get(placeholder.getKey());
-            argsList.add(value);
-        }
-        return new SQL(sqlBuffer.toString(), argsList.toArray(), args, schemaItem);
-    }
+    private static Set<DependentSQL> convertToSql(List<Dependent> mainTableDependentList, boolean autoUpdateChildren) {
+        Set<DependentSQL> sqlList = new LinkedHashSet<>();
+        for (Dependent dependent : mainTableDependentList) {
+            ESSyncConfig.ObjectField objectField = dependent.getSchemaItem().getObjectField();
+            int dmlIndex = dependent.getIndex();
+            Dml dml = dependent.getDml();
 
-    /**
-     * 获取占位符
-     *
-     * @param str 表达式
-     * @return 多个占位符
-     */
-    private static Queue<Placeholder> getPlaceholderQueue(String str) {
-        int charAt = 0;
-
-        Queue<Placeholder> keys = PLACEHOLDER_QUEUE_THREAD_LOCAL.get();
-        keys.clear();
-        while (true) {
-            charAt = str.indexOf(PLACEHOLDER_BEGIN, charAt);
-            if (charAt == -1) {
-                return keys;
+            Map<String, Object> mergeDataMap = new HashMap<>();
+            if (!ESSyncUtil.isEmpty(dml.getOld()) && dmlIndex < dml.getOld().size()) {
+                mergeDataMap.putAll(dml.getOld().get(dmlIndex));
             }
-            charAt = charAt + PLACEHOLDER_BEGIN.length();
-            keys.add(new Placeholder(str, charAt, str.indexOf(PLACEHOLDER_END, charAt)));
-        }
-    }
-
-    /**
-     * 转换类型
-     *
-     * @param esMapping     es映射关系
-     * @param dmlDataMap    DML数据
-     * @param theConvertMap 需要转换的数据
-     */
-    private static void convertValueType(ESSyncConfig.ESMapping esMapping,
-                                         Map<String, Object> dmlDataMap,
-                                         Map<String, Object> theConvertMap, ESTemplate esTemplate) {
-        for (Map.Entry<String, Object> entry : theConvertMap.entrySet()) {
-            String fieldName = entry.getKey();
-            Object fieldValue = entry.getValue();
-            Object newValue = esTemplate.getValFromValue(
-                    esMapping, fieldValue,
-                    dmlDataMap, fieldName);
-            entry.setValue(newValue);
-        }
-    }
-
-    public void write(List<Dml> dmls, ESTemplate.BulkRequestList bulkRequestList) {
-        Set<SQL> sqlList = new LinkedHashSet<>();
-        for (Dml dml : dmls) {
-            if (Boolean.TRUE.equals(dml.getIsDdl())) {
+            if (!ESSyncUtil.isEmpty(dml.getData()) && dmlIndex < dml.getData().size()) {
+                mergeDataMap.putAll(dml.getData().get(dmlIndex));
+            }
+            if (mergeDataMap.isEmpty()) {
                 continue;
             }
-            sqlList.addAll(convertToSql(dml));
+            String fullSql = objectField.getFullSql(dependent.isIndexMainTable());
+            SQL sql = SQL.convertToSql(fullSql, mergeDataMap);
+            sqlList.add(new DependentSQL(sql, dependent, autoUpdateChildren));
         }
-        if (sqlList.isEmpty()) {
+        return sqlList;
+    }
+
+    public static void executeMergeUpdateES(List<MergeJdbcTemplateSQL<DependentSQL>> mergeSqlList,
+                                            ESTemplate.BulkRequestList bulkRequestList,
+                                            CacheMap cacheMap,
+                                            ESTemplate es7xTemplate,
+                                            ExecutorService executorService,
+                                            int threads) {
+        if (mergeSqlList.isEmpty()) {
             return;
         }
-        List<List<SQL>> partition = Lists.partition(new ArrayList<>(sqlList), Math.max(5, (sqlList.size() + 1) / threads));
-        List<Future> futures = partition.stream().map(e -> listenerExecutor.submit(() -> writeSql(e, bulkRequestList))).collect(Collectors.toList());
-        for (Future future : futures) {
-            try {
-                future.get();
-            } catch (Exception e) {
-                Util.sneakyThrows(e);
+        if (executorService == null) {
+            executeUpdateES(mergeSqlList, bulkRequestList, cacheMap, es7xTemplate);
+        } else {
+            List<List<MergeJdbcTemplateSQL<DependentSQL>>> partition = Lists.partition(new ArrayList<>(mergeSqlList),
+                    Math.max(5, (mergeSqlList.size() + 1) / threads));
+            if (partition.size() == 1) {
+                executeUpdateES(mergeSqlList, bulkRequestList, cacheMap, es7xTemplate);
+            } else {
+                List<Future> futures = partition.stream()
+                        .map(e -> executorService.submit(() -> executeUpdateES(e, bulkRequestList, cacheMap, es7xTemplate)))
+                        .collect(Collectors.toList());
+                for (Future future : futures) {
+                    try {
+                        future.get();
+                    } catch (Exception e) {
+                        Util.sneakyThrows(e);
+                    }
+                }
             }
         }
     }
 
-    private void writeSql(List<SQL> sqlList, ESTemplate.BulkRequestList bulkRequestList) {
-        for (SQL sql : sqlList) {
-            ESSyncConfig.ObjectField objectField = sql.schemaItem.getObjectField();
-            ESSyncConfig.ESMapping esMapping = objectField.getEsMapping();
-            ESSyncConfig esSyncConfig = esMapping.getConfig();
-            JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(esSyncConfig.getDataSourceKey());
-            Map<String, Object> mergeDataMap = sql.argsMap;
+    public static void executeUpdateES(List<MergeJdbcTemplateSQL<DependentSQL>> sqlList,
+                                       ESTemplate.BulkRequestList bulkRequestList,
+                                       CacheMap cacheMap,
+                                       ESTemplate esTemplate) {
+        Map<DependentSQL, List<Map<String, Object>>> batchRowGetterMap = MergeJdbcTemplateSQL.executeQueryList(sqlList, cacheMap);
+        for (Map.Entry<DependentSQL, List<Map<String, Object>>> entry : batchRowGetterMap.entrySet()) {
+            DependentSQL sql = entry.getKey();
+            Object pkValue = sql.getPkValue();
+            if (pkValue == null) {
+                continue;
+            }
+            SchemaItem schemaItem = sql.getDependent().getSchemaItem();
+            ESSyncConfig.ESMapping esMapping = schemaItem.getEsMapping();
+            ESSyncConfig.ObjectField objectField = schemaItem.getObjectField();
             switch (objectField.getType()) {
                 case ARRAY_SQL: {
-                    String cacheKey = "ARRAY_SQL_" + sql.getExprSql() + "_" + Arrays.toString(sql.getArgs());
-                    List<Map<String, Object>> resultList = cacheMap.cacheComputeIfAbsent(cacheKey, () -> {
-                        return jdbcTemplate.queryForList(sql.getExprSql(), sql.getArgs());
-                    });
-                    for (Map<String, Object> each : resultList) {
-                        convertValueType(esMapping, mergeDataMap, each, esTemplate);
+                    List<Map<String, Object>> rowList = entry.getValue();
+                    for (Map<String, Object> row : rowList) {
+                        esTemplate.convertValueType(esMapping, objectField.getFieldName(),row);
                     }
-                    Object pkValue = mergeDataMap.get(objectField.getParentDocumentId());
-                    if (pkValue != null) {
-                        //更新ES文档 (执行完会统一提交, 这里不用commit)
-                        esTemplate.update(esMapping, pkValue, Collections.singletonMap(
-                                objectField.getFieldName(), resultList), bulkRequestList);
-                    }
+                    //更新ES文档 (执行完会统一提交, 这里不用commit)
+                    esTemplate.update(esMapping, pkValue, Collections.singletonMap(
+                            objectField.getFieldName(), rowList), bulkRequestList);
                     break;
                 }
                 case OBJECT_SQL: {
-                    String cacheKey = "OBJECT_SQL_" + sql.getExprSql() + "_" + Arrays.toString(sql.getArgs());
-                    Map<String, Object> resultMap = cacheMap.cacheComputeIfAbsent(cacheKey, () -> {
-                        return jdbcTemplate.queryForMap(sql.getExprSql(), sql.getArgs());
-                    });
-                    convertValueType(esMapping, mergeDataMap, resultMap, esTemplate);
-                    Object pkValue = mergeDataMap.get(objectField.getParentDocumentId());
-                    if (pkValue != null) {
-                        //更新ES文档 (执行完会统一提交, 这里不用commit)
-                        esTemplate.update(esMapping, pkValue, Collections.singletonMap(
-                                objectField.getFieldName(), resultMap), bulkRequestList);
+                    List<Map<String, Object>> rowList = entry.getValue();
+                    Map<String, Object> resultMap = rowList == null || rowList.isEmpty() ? null : rowList.get(0);
+                    if (resultMap != null) {
+                        esTemplate.convertValueType(esMapping, objectField.getFieldName(), resultMap);
                     }
+                    //更新ES文档 (执行完会统一提交, 这里不用commit)
+                    esTemplate.update(esMapping, pkValue, Collections.singletonMap(
+                            objectField.getFieldName(), resultMap), bulkRequestList);
                     break;
                 }
                 default: {
@@ -232,119 +200,73 @@ public class NestedFieldWriter {
         }
     }
 
-    public List<SQL> convertToSql(Dml dml) {
-        List<SchemaItem> schemaItemList = schemaItemMap.get(dml.getTable());
-        if (schemaItemList == null) {
-            return Collections.emptyList();
-        }
-        if (CollectionUtils.isEmpty(dml.getData()) && CollectionUtils.isEmpty(dml.getOld())) {
-            return Collections.emptyList();
-        }
-        List<SQL> sqlList = new ArrayList<>();
-        forEachSqlField(schemaItemList, dml, (dmlIndex, schemaItem) -> {
-            Map<String, Object> mergeDataMap = MERGE_DATA_MAP_THREAD_LOCAL.get();
-            try {
-                ESSyncConfig.ObjectField objectField = schemaItem.getObjectField();
-                ESSyncConfig.ESMapping esMapping = objectField.getEsMapping();
-                if (!CollectionUtils.isEmpty(dml.getOld()) && dmlIndex < dml.getOld().size()) {
-                    mergeDataMap.putAll(dml.getOld().get(dmlIndex));
-                }
-                if (!CollectionUtils.isEmpty(dml.getData()) && dmlIndex < dml.getData().size()) {
-                    mergeDataMap.putAll(dml.getData().get(dmlIndex));
-                }
-                if (mergeDataMap == null || mergeDataMap.isEmpty()) {
-                    return false;
-                }
-                boolean isParentChange = dml.getTable().equals(esMapping.getSchemaItem().getMainTable().getTableName());
-                String fullSql = objectField.getFullSql(isParentChange);
-                SQL sql = convertToSql(fullSql, new HashMap<>(mergeDataMap), schemaItem);
-                sqlList.add(sql);
-                return true;
-            } finally {
-                if (mergeDataMap != null) {
-                    mergeDataMap.clear();
-                }
+    public DependentGroup convertToDependentGroup(List<Dml> dmls) {
+        DependentGroup dependentGroup = new DependentGroup();
+        for (Dml dml : dmls) {
+            if (Boolean.TRUE.equals(dml.getIsDdl())) {
+                continue;
             }
-        });
-        return sqlList;
+            DependentGroup dmlDependentGroup = getDependentList(schemaItemMap.get(dml.getTable()), dml);
+            if (dmlDependentGroup != null) {
+                dependentGroup.add(dmlDependentGroup);
+            }
+        }
+        return dependentGroup;
     }
 
-    /**
-     * sql语句
-     */
-    private static class SQL {
-        private final String exprSql;
-        private final Object[] args;
-        private final Map<String, Object> argsMap;
-        private final SchemaItem schemaItem;
+    public void writeMainTable(List<Dependent> mainTableDependentList,
+                               ESTemplate.BulkRequestList bulkRequestList,
+                               boolean autoUpdateChildren) {
+        Set<DependentSQL> sqlList = convertToSql(mainTableDependentList, autoUpdateChildren);
+        List<MergeJdbcTemplateSQL<DependentSQL>> mergeSqlList = MergeJdbcTemplateSQL.merge(sqlList, 1000, false);
+        executeMergeUpdateES(mergeSqlList, bulkRequestList, cacheMap, esTemplate, mainTableListenerExecutor, threads);
+    }
 
-        SQL(String exprSql, Object[] args, Map<String, Object> argsMap,
-            SchemaItem schemaItem) {
-            this.exprSql = exprSql;
-            this.args = args;
-            this.argsMap = argsMap;
-            this.schemaItem = schemaItem;
+    public static class DependentSQL extends JdbcTemplateSQL {
+        private final Dependent dependent;
+        private final boolean autoUpdateChildren;
+
+        DependentSQL(SQL sql, Dependent dependent, boolean autoUpdateChildren) {
+            super(sql.getExprSql(), sql.getArgs(), sql.getArgsMap(),
+                    dependent.getSchemaItem().getEsMapping().getConfig().getDataSourceKey());
+            this.dependent = dependent;
+            this.autoUpdateChildren = autoUpdateChildren;
         }
 
-        String getExprSql() {
-            return exprSql;
+        public Dependent getDependent() {
+            return dependent;
         }
 
-        Object[] getArgs() {
-            return args;
+        public Object getPkValue() {
+            ESSyncConfig.ObjectField objectField = dependent.getSchemaItem().getObjectField();
+            ESSyncConfig.ESMapping esMapping = objectField.getEsMapping();
+            Map<String, Object> valueMap = getArgsMap();
+            Object pkValue;
+            if (dependent.isIndexMainTable()) {
+                if (autoUpdateChildren) {
+                    pkValue = valueMap.containsKey(esMapping.getPk()) ?
+                            valueMap.get(esMapping.getPk()) : valueMap.get(esMapping.get_id());
+                } else {
+                    pkValue = null;
+                }
+            } else {
+                pkValue = valueMap.get(objectField.getParentDocumentId());
+            }
+            return pkValue;
         }
 
         @Override
         public boolean equals(Object o) {
             if (this == o) return true;
-            if (!(o instanceof SQL)) return false;
-            SQL sql = (SQL) o;
-            return Objects.equals(exprSql, sql.exprSql) && Objects.deepEquals(args, sql.args) && Objects.equals(schemaItem, sql.schemaItem);
+            if (!(o instanceof DependentSQL)) return false;
+            if (!super.equals(o)) return false;
+            DependentSQL that = (DependentSQL) o;
+            return Objects.equals(dependent, that.dependent);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(exprSql, Arrays.hashCode(args), schemaItem);
-        }
-
-        @Override
-        public String toString() {
-            return "SQL{" +
-                    "exprSql='" + exprSql + '\'' +
-                    ", args=" + Arrays.toString(args) +
-                    '}';
-        }
-    }
-
-    /**
-     * 占位符
-     */
-    private static class Placeholder {
-        private String source;
-        private int beginIndex;
-        private int endIndex;
-
-        Placeholder(String source, int beginIndex, int endIndex) {
-            this.source = source;
-            this.beginIndex = beginIndex;
-            this.endIndex = endIndex;
-        }
-
-        int getBeginIndex() {
-            return beginIndex;
-        }
-
-        int getEndIndex() {
-            return endIndex;
-        }
-
-        public String getKey() {
-            return source.substring(beginIndex, endIndex);
-        }
-
-        @Override
-        public String toString() {
-            return getKey();
+            return Objects.hash(super.hashCode(), dependent);
         }
     }
 

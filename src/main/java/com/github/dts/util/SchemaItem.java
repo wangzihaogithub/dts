@@ -1,6 +1,7 @@
 package com.github.dts.util;
 
 import com.github.dts.util.ESSyncConfig.ESMapping;
+import org.springframework.util.LinkedCaseInsensitiveMap;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -12,20 +13,39 @@ import java.util.stream.Collectors;
  * @version 1.0.0
  */
 public class SchemaItem {
-    public SchemaItem() {
-    }
-
-    private Map<String, TableItem> aliasTableItems = new LinkedHashMap<>(); // 别名对应表名
-    private Map<String, FieldItem> selectFields = new LinkedHashMap<>(); // 查询字段
+    private Map<String, TableItem> aliasTableItems = new LinkedCaseInsensitiveMap<>(); // 别名对应表名
+    private Map<String, FieldItem> selectFields = new LinkedCaseInsensitiveMap<>(); // 查询字段
     private String sql;
-
-    private volatile Map<String, FieldItem> fields = new LinkedHashMap<>();
+    private volatile Map<String, FieldItem> fields = new LinkedCaseInsensitiveMap<>();
     private volatile Map<String, List<TableItem>> tableItemAliases;
     private volatile Map<String, List<FieldItem>> columnFields;
     private volatile Boolean allFieldsSimple;
     private ESSyncConfig.ObjectField objectField;
+    private ESMapping esMapping;
+    private TableItem mainTable;
+    private List<TableItem> slaveTableList;
+    private FieldItem idField;
 
-    public void init() {
+    public SchemaItem() {
+    }
+
+    public static Object getColumnValue(Map<String, Object> data, String columnName) {
+        return data.get(columnName);
+    }
+
+    public static void main(String[] args) {
+        Map<String, List<String>> columnList = SqlParser.getColumnList("WHERE corpRelationTag.corp_id = #{corp_id} ");
+
+    }
+
+    @Override
+    public String toString() {
+        return mainTable == null ? "" : mainTable.tableName + "[" + sql + "]";
+    }
+
+    public void init(ESSyncConfig.ObjectField objectField, ESMapping esMapping) {
+        this.objectField = objectField;
+        this.esMapping = esMapping;
         this.getTableItemAliases();
         this.getColumnFields();
         this.isAllFieldsSimple();
@@ -33,14 +53,33 @@ public class SchemaItem {
             tableItem.getRelationTableFields();
             tableItem.getRelationSelectFieldItems();
         });
+        TableItem mainTable = getMainTable();
+        if (mainTable != null) {
+            mainTable.main = true;
+        }
+        getSlaveTableList();
+    }
+
+    public FieldItem getIdField() {
+        if (idField == null) {
+            SchemaItem schemaItem = esMapping.getSchemaItem();
+            String idFieldName = esMapping.get_id() == null ? esMapping.getPk() : esMapping.get_id();
+            for (FieldItem fieldItem : schemaItem.getSelectFields().values()) {
+                if (fieldItem.equalsField(idFieldName)) {
+                    idField = fieldItem;
+                    break;
+                }
+            }
+        }
+        return idField;
+    }
+
+    public ESMapping getEsMapping() {
+        return esMapping;
     }
 
     public ESSyncConfig.ObjectField getObjectField() {
         return objectField;
-    }
-
-    public void setObjectField(ESSyncConfig.ObjectField objectField) {
-        this.objectField = objectField;
     }
 
     public Map<String, TableItem> getAliasTableItems() {
@@ -67,17 +106,30 @@ public class SchemaItem {
         this.selectFields = selectFields;
     }
 
-    public String toSql() {
-        // todo
-        return null;
-    }
+    public ColumnItem getAnyColumnItem(String tableName, Collection<String> fieldNames) {
+        // HashSet 快速搜索
+        Set<String> fieldNameSet = Collections.newSetFromMap(new LinkedCaseInsensitiveMap<>());
+        fieldNameSet.addAll(fieldNames);
 
-    public void setFields(Map<String, FieldItem> fields) {
-        this.fields = fields;
+        for (FieldItem fieldItem : selectFields.values()) {
+            for (ColumnItem columnItem : fieldItem.getColumnItems()) {
+                TableItem tableItem = aliasTableItems.get(columnItem.getOwner());
+                if (tableItem != null
+                        && tableName.equalsIgnoreCase(tableItem.getTableName())
+                        && fieldNameSet.contains(columnItem.getColumnName())) {
+                    return columnItem;
+                }
+            }
+        }
+        return null;
     }
 
     public Map<String, FieldItem> getFields() {
         return fields;
+    }
+
+    public void setFields(Map<String, FieldItem> fields) {
+        this.fields = fields;
     }
 
     public Map<String, List<TableItem>> getTableItemAliases() {
@@ -154,11 +206,59 @@ public class SchemaItem {
     }
 
     public TableItem getMainTable() {
-        if (!aliasTableItems.isEmpty()) {
-            return aliasTableItems.values().iterator().next();
-        } else {
-            return null;
+        if (mainTable == null) {
+            if (aliasTableItems.size() == 1) {
+                mainTable = aliasTableItems.values().iterator().next();
+            } else {
+                if (objectField != null) {
+                    Map<String, List<String>> childColumnList = SqlParser.getColumnList(objectField.getOnChildChangeWhereSql());
+                    String owner;
+                    if (!childColumnList.isEmpty()) {
+                        owner = childColumnList.keySet().iterator().next();
+                    } else {
+                        Map<String, List<String>> parentColumnList = SqlParser.getColumnList(objectField.getOnParentChangeWhereSql());
+                        if (!parentColumnList.isEmpty()) {
+                            owner = parentColumnList.keySet().iterator().next();
+                        } else {
+                            owner = "";
+                        }
+                    }
+                    mainTable = aliasTableItems.get(owner);
+                } else if (esMapping != null) {
+                    SchemaItem schemaItem = esMapping.getSchemaItem();
+                    if (schemaItem == null) {
+                        System.out.println("schemaItem = " + schemaItem);
+                    }
+                    FieldItem pkFieldItem = schemaItem.getSelectFields().get(esMapping.getPk());
+                    if (pkFieldItem == null) {
+                        pkFieldItem = schemaItem.getSelectFields().get(esMapping.get_id());
+                    }
+                    String owner = Objects.toString(pkFieldItem.getOwner(), "");
+                    mainTable = aliasTableItems.get(owner);
+                } else {
+                    mainTable = aliasTableItems.values().iterator().next();
+                }
+            }
         }
+        return mainTable;
+    }
+
+    public List<TableItem> getSlaveTableList() {
+        if (slaveTableList == null) {
+            if (aliasTableItems.size() > 1) {
+                List<TableItem> list = new ArrayList<>(aliasTableItems.size() - 1);
+                TableItem mainTable = getMainTable();
+                for (TableItem tableItem : aliasTableItems.values()) {
+                    if (mainTable != tableItem) {
+                        list.add(tableItem);
+                    }
+                }
+                slaveTableList = list;
+            } else {
+                slaveTableList = Collections.emptyList();
+            }
+        }
+        return slaveTableList;
     }
 
     public FieldItem getIdFieldItem(ESMapping mapping) {
@@ -167,6 +267,16 @@ public class SchemaItem {
         } else {
             return getSelectFields().get(mapping.getPk());
         }
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        return super.equals(obj);
+    }
+
+    @Override
+    public int hashCode() {
+        return super.hashCode();
     }
 
     public static class TableItem {
@@ -188,6 +298,11 @@ public class SchemaItem {
 
         public TableItem(SchemaItem schemaItem) {
             this.schemaItem = schemaItem;
+        }
+
+        @Override
+        public String toString() {
+            return Objects.toString(alias, "") + "." + tableName + " " + relationTableFields.keySet();
         }
 
         public SchemaItem getSchemaItem() {
@@ -234,10 +349,6 @@ public class SchemaItem {
             return main;
         }
 
-        public void setMain(boolean main) {
-            this.main = main;
-        }
-
         public boolean isSubQuery() {
             return subQuery;
         }
@@ -252,6 +363,32 @@ public class SchemaItem {
 
         public void setSubQueryFields(List<FieldItem> subQueryFields) {
             this.subQueryFields = subQueryFields;
+        }
+
+        public boolean containsOwnerColumn(List<String> columnNameList) {
+            if (columnNameList == null || columnNameList.isEmpty()) {
+                return false;
+            }
+            for (String columnName : columnNameList) {
+                if (!containsOwnerColumn(columnName)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private boolean containsOwnerColumn(String columnName) {
+            for (RelationFieldsPair relationField : relationFields) {
+                FieldItem leftFieldItem = relationField.getLeftFieldItem();
+                FieldItem rightFieldItem = relationField.getRightFieldItem();
+
+                if ((leftFieldItem != null && leftFieldItem.containsOwnerColumn(alias, columnName))
+                        || (rightFieldItem != null && rightFieldItem.containsOwnerColumn(alias, columnName))
+                ) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         public List<RelationFieldsPair> getRelationFields() {
@@ -291,7 +428,7 @@ public class SchemaItem {
                                         relationTableFields.put(currentTableRelField, selectFieldItem);
                                     } else {
                                         throw new UnsupportedOperationException(
-                                                "Relation condition column must in select columns.");
+                                                tableName + "Relation condition column must in select columns.");
                                     }
                                 }
                             }
@@ -330,6 +467,14 @@ public class SchemaItem {
             this.rightFieldItem = rightFieldItem;
         }
 
+        @Override
+        public String toString() {
+            return "Pair{" +
+                    "left=" + leftFieldItem +
+                    ", right=" + rightFieldItem +
+                    '}';
+        }
+
         public FieldItem getLeftFieldItem() {
             return leftFieldItem;
         }
@@ -357,13 +502,32 @@ public class SchemaItem {
         private boolean method;
         private boolean binaryOp;
 
+        @Override
+        public String toString() {
+            return expr;
+        }
+
         public String getColumnName() {
             return columnItems.isEmpty() ? null : columnItems.get(0).getColumnName();
         }
 
-        public boolean containsOwner(Collection<String> columnNames) {
+        public boolean containsOwnerColumn(String owner, String columnName) {
+            if ("".equals(owner)) {
+                owner = null;
+            }
             for (ColumnItem columnItem : columnItems) {
-                if(columnNames.contains(columnItem.getOwner())){
+                if (Objects.equals(owner, columnItem.getOwner())
+                        && columnName.equalsIgnoreCase(columnItem.getColumnName())
+                ) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        public boolean containsOwner(Collection<String> owner) {
+            for (ColumnItem columnItem : columnItems) {
+                if (owner.contains(columnItem.getOwner())) {
                     return true;
                 }
             }
@@ -372,7 +536,7 @@ public class SchemaItem {
 
         public boolean containsColumnName(Collection<String> columnNames) {
             for (ColumnItem columnItem : columnItems) {
-                if(columnNames.contains(columnItem.getColumnName())){
+                if (columnNames.contains(columnItem.getColumnName())) {
                     return true;
                 }
             }
@@ -392,14 +556,14 @@ public class SchemaItem {
         public Object getValue(Map<String, Object> data) {
             String columnName = getColumnName();
             String fieldName = getFieldName();
-            Object o = data.get(columnName);
+            Object o = getColumnValue(data, columnName);
             if (o == null) {
                 o = data.get(fieldName);
             }
             return o;
         }
 
-        public  boolean equalsField(String name){
+        public boolean equalsField(String name) {
             String columnName = getColumnName();
             String fieldName = getFieldName();
 
@@ -411,7 +575,7 @@ public class SchemaItem {
         }
 
         public void setFieldName(String fieldName) {
-            this.fieldName = fieldName;;
+            this.fieldName = fieldName;
         }
 
         public String getExpr() {
@@ -454,7 +618,8 @@ public class SchemaItem {
             this.owners = owners;
         }
 
-        public void addColumn(ColumnItem columnItem) {
+        public void addColumn(String owner, ColumnItem columnItem) {
+            owners.add(owner);
             columnItems.add(columnItem);
         }
 
@@ -495,9 +660,13 @@ public class SchemaItem {
     }
 
     public static class ColumnItem {
-
         private String owner;
         private String columnName;
+
+        @Override
+        public String toString() {
+            return Objects.toString(owner, "") + "." + columnName;
+        }
 
         public String getOwner() {
             return owner;
@@ -514,15 +683,5 @@ public class SchemaItem {
         public void setColumnName(String columnName) {
             this.columnName = columnName;
         }
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-        return super.equals(obj);
-    }
-
-    @Override
-    public int hashCode() {
-        return super.hashCode();
     }
 }

@@ -49,7 +49,7 @@ public abstract class SQL implements Cloneable {
     private boolean skipUnknownDatabase = true;
     private List<String> pkNames;
     private Timestamp executeTime;
-    private String destination;                            // 对应canal的实例或者MQ的topic
+    private String[] destination;                            // 对应canal的实例或者MQ的topic
     private int index;
 
     public SQL() {
@@ -58,7 +58,7 @@ public abstract class SQL implements Cloneable {
 
     public SQL(int index, String type, String packetId, Map<String, Object> data, Map<String, Object> old,
                String database, String table, List<String> pkNames, long logfileOffset, String logfileName,
-               long executeTime, String destination) {
+               long executeTime, String[] destination) {
         this.index = index;
         this.packetId = packetId;
         this.type = type;
@@ -180,7 +180,7 @@ public abstract class SQL implements Cloneable {
         return executeTime;
     }
 
-    public String getDestination() {
+    public String[] getDestination() {
         return destination;
     }
 
@@ -491,7 +491,7 @@ public abstract class SQL implements Cloneable {
         }
 
         private static class DdlSQL extends SQL {
-            DdlSQL(int index, String packetId, String type, String sql, String database, String table, List<String> pkNames, long logfileOffset, String logfileName, long es, String destination) {
+            DdlSQL(int index, String packetId, String type, String sql, String database, String table, List<String> pkNames, long logfileOffset, String logfileName, long es, String[] destination) {
                 super(index, type, packetId, new HashMap<>(), new HashMap<>(), database, table, pkNames, logfileOffset, logfileName, es, destination);
                 super.values = new ArrayList<>();
                 super.preparedSql = sql;
@@ -548,7 +548,7 @@ public abstract class SQL implements Cloneable {
             private final StringBuilder sqlBuilder = new StringBuilder();
             private int flushVersion;
 
-            InsertSQL(int index, String packetId, Map<String, Object> data, Map<String, Object> old, String database, String table, List<String> pkNames, long logfileOffset, String logfileName, long es, String destination) {
+            InsertSQL(int index, String packetId, Map<String, Object> data, Map<String, Object> old, String database, String table, List<String> pkNames, long logfileOffset, String logfileName, long es, String[] destination) {
                 super(index, "INSERT", packetId, data, old, database, table, pkNames, logfileOffset, logfileName, es, destination);
             }
 
@@ -626,7 +626,7 @@ public abstract class SQL implements Cloneable {
             private final StringBuilder sqlBuilder = new StringBuilder();
             private int flushVersion;
 
-            UpdateSQL(int index, String packetId, Map<String, Object> data, Map<String, Object> old, String database, String table, List<String> pkNames, long logfileOffset, String logfileName, long es, String destination) {
+            UpdateSQL(int index, String packetId, Map<String, Object> data, Map<String, Object> old, String database, String table, List<String> pkNames, long logfileOffset, String logfileName, long es, String[] destination) {
                 super(index, "UPDATE", packetId, data, old, database, table, pkNames, logfileOffset, logfileName, es, destination);
             }
 
@@ -709,7 +709,7 @@ public abstract class SQL implements Cloneable {
             private final StringBuilder sqlBuilder = new StringBuilder();
             private int flushVersion;
 
-            DeleteSQL(int index, String packetId, Map<String, Object> data, Map<String, Object> old, String database, String table, List<String> pkNames, long logfileOffset, String logfileName, long es, String destination) {
+            DeleteSQL(int index, String packetId, Map<String, Object> data, Map<String, Object> old, String database, String table, List<String> pkNames, long logfileOffset, String logfileName, long es, String[] destination) {
                 super(index, "DELETE", packetId, data, old, database, table, pkNames, logfileOffset, logfileName, es, destination);
             }
 

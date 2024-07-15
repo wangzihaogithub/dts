@@ -1,13 +1,8 @@
 package com.github.dts.impl.rds;
 
-import com.github.dts.util.Adapter;
-import com.github.dts.util.CanalConfig;
-import com.github.dts.util.Dml;
-import com.github.dts.util.SQL;
+import com.github.dts.util.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.annotation.Scope;
-import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Properties;
@@ -26,7 +21,8 @@ public class RDSAdapter implements Adapter {
     }
 
     @Override
-    public void sync(List<Dml> dmls) {
+    public void sync(List<Dml> dmls, MetaDataRepository.Acknowledge acknowledge) {
+        acknowledge.ack();
         List<SQL> sqlList = SQL.DEFAULT_BUILDER.convert(dmls.stream().limit(20).collect(Collectors.toList()));
         log.info("rds {}", sqlList);
     }

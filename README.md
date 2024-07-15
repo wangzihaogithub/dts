@@ -19,7 +19,7 @@
 <dependency>
   <groupId>com.github.wangzihaogithub</groupId>
   <artifactId>dts</artifactId>
-  <version>1.1.1</version>
+  <version>1.1.2</version>
 </dependency>
 ```
     
@@ -113,7 +113,6 @@
                            FROM job_region region "
                        onParentChangeWhereSql: 'WHERE region.id = #{id} '
                        onChildChangeWhereSql: 'WHERE region.job_id = #{job_id} '
-                       parentDocumentId: job_id
 
        `
 

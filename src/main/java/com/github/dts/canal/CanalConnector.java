@@ -16,6 +16,8 @@ public interface CanalConnector {
 
     void ack();
 
+    void ack2();
+
     List<Dml> getListWithoutAck(Duration timeout);
 
     void disconnect();
@@ -25,6 +27,10 @@ public interface CanalConnector {
     Map<String, Object> setDiscard(boolean discard) throws InterruptedException;
 
     default void rebuildConsumer(Consumer<CanalConnector> rebuildConsumer) {
+
+    }
+
+    default void close() {
 
     }
 }

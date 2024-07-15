@@ -6,26 +6,19 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.concurrent.CustomizableThreadFactory;
 
-import javax.sql.DataSource;
 import java.io.File;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.URL;
-import java.sql.Connection;
-import java.sql.ResultSet;
-import java.sql.Statement;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.util.Date;
 import java.util.Enumeration;
 import java.util.Objects;
 import java.util.TimeZone;
-import java.util.concurrent.SynchronousQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
-import java.util.function.Function;
+import java.util.concurrent.*;
 import java.util.stream.Stream;
 
 public class Util {
@@ -57,18 +50,6 @@ public class Util {
         throw (E) t;
     }
 
-    public static Object sqlRS(DataSource ds, String sql, Function<ResultSet, Object> fun) {
-        try (Connection conn = ds.getConnection();
-             Statement stmt = conn.createStatement()) {
-            try (ResultSet rs = stmt.executeQuery(sql)) {
-                return fun.apply(rs);
-            }
-        } catch (Exception e) {
-            logger.error("sqlRs has error, sql: {} ,异常信息：{}", sql, getStackTrace(e));
-            Util.sneakyThrows(e);
-            return null;
-        }
-    }
 
     public static String getStackTrace(Throwable throwable) {
         StringWriter sw = new StringWriter();
@@ -111,7 +92,7 @@ public class Util {
             column = column.replaceAll("\"", "");
         }
 
-        return column;
+        return ESSyncUtil.stringCache(column);
     }
 
     public static boolean isBlank(String str) {
@@ -180,8 +161,48 @@ public class Util {
         }
     }
 
+    public static ScheduledExecutorService newScheduled(int nThreads, String name, boolean wrapper) {
+        return new ScheduledThreadPoolExecutor(
+                nThreads,
+                new CustomizableThreadFactory(name) {
+                    @Override
+                    public Thread newThread(Runnable runnable) {
+                        Thread thread = super.newThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                if (wrapper) {
+                                    try {
+                                        runnable.run();
+                                    } catch (Exception e) {
+                                        logger.warn("Scheduled error {}", e, e);
+                                        throw e;
+                                    }
+                                } else {
+                                    runnable.run();
+                                }
+                            }
+                        });
+                        thread.setDaemon(true);
+                        return thread;
+                    }
+                },
+                (r, exe) -> {
+                    if (!exe.isShutdown()) {
+                        try {
+                            exe.getQueue().put(r);
+                        } catch (InterruptedException e) {
+                            // ignore
+                        }
+                    }
+                });
+    }
+
     public static ThreadPoolExecutor newFixedThreadPool(int nThreads, long keepAliveTime, String name, boolean wrapper) {
-        ThreadPoolExecutor executor = new ThreadPoolExecutor(nThreads,
+        return newFixedThreadPool(nThreads, nThreads, keepAliveTime, name, wrapper, true);
+    }
+
+    public static ThreadPoolExecutor newFixedThreadPool(int core, int nThreads, long keepAliveTime, String name, boolean wrapper, boolean allowCoreThreadTimeOut) {
+        ThreadPoolExecutor executor = new ThreadPoolExecutor(core,
                 nThreads,
                 keepAliveTime,
                 TimeUnit.MILLISECONDS,
@@ -215,7 +236,7 @@ public class Util {
                         }
                     }
                 });
-        executor.allowCoreThreadTimeOut(true);
+        executor.allowCoreThreadTimeOut(allowCoreThreadTimeOut);
         return executor;
     }
 

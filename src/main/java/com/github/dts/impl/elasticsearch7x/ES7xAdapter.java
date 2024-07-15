@@ -13,10 +13,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.sql.Timestamp;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Future;
+import java.util.concurrent.*;
 import java.util.stream.Collectors;
 
 
@@ -28,16 +25,18 @@ public class ES7xAdapter implements Adapter {
     private final Map<String, ESSyncConfig> esSyncConfig = new ConcurrentHashMap<>(); // 文件名对应配置
     private final Map<String, Map<String, ESSyncConfig>> dbTableEsSyncConfig = new ConcurrentHashMap<>(); // schema-table对应配置
     private final List<ESSyncServiceListener> listenerList = new ArrayList<>();
-    private final CacheMap cacheMap = new CacheMap();
+    private CacheMap cacheMap;
     private ES7xConnection esConnection;
     private CanalConfig.OuterAdapterConfig configuration;
     private ESTemplate esTemplate;
     private ExecutorService listenerExecutor;
+    private Executor slaveTableListenerExecutor;
     private BasicFieldWriter basicFieldWriter;
     private NestedFieldWriter nestedFieldWriter;
     @Value("${spring.profiles.active:}")
     private String env;
     private boolean refresh = true;
+    private boolean autoUpdateChildren = false;
     private int refreshThreshold = 10;
 
     private static String getEsSyncConfigKey(String destination, String database, String table) {
@@ -90,6 +89,18 @@ public class ES7xAdapter implements Adapter {
         return map;
     }
 
+    public boolean isAutoUpdateChildren() {
+        return autoUpdateChildren;
+    }
+
+    public void setAutoUpdateChildren(boolean autoUpdateChildren) {
+        this.autoUpdateChildren = autoUpdateChildren;
+    }
+
+    public boolean isRefresh() {
+        return refresh;
+    }
+
     public int getRefreshThreshold() {
         return refreshThreshold;
     }
@@ -98,13 +109,22 @@ public class ES7xAdapter implements Adapter {
         this.refreshThreshold = refreshThreshold;
     }
 
-    public Map<String, ESSyncConfig> getEsSyncConfig(String database, String table) {
-        return dbTableEsSyncConfig.get(getEsSyncConfigKey(getDestination(), database, table));
+    public List<Map<String, ESSyncConfig>> getEsSyncConfig(String database, String table) {
+        String[] destination = getDestination();
+        List<Map<String, ESSyncConfig>> list = new ArrayList<>();
+        for (String s : destination) {
+            Map<String, ESSyncConfig> configMap = dbTableEsSyncConfig.get(getEsSyncConfigKey(s, database, table));
+            if (configMap != null) {
+                list.add(configMap);
+            }
+        }
+        return list;
     }
 
     @Override
     public void init(CanalConfig.OuterAdapterConfig configuration, Properties envProperties) {
         this.configuration = configuration;
+        this.cacheMap = new CacheMap(configuration.getEs7x().getMaxQueryCacheSize());
         this.refresh = configuration.getEs7x().isRefresh();
         this.refreshThreshold = configuration.getEs7x().getRefreshThreshold();
         this.esConnection = new ES7xConnection(configuration.getEs7x());
@@ -113,6 +133,12 @@ public class ES7xAdapter implements Adapter {
         this.listenerExecutor = Util.newFixedThreadPool(
                 configuration.getEs7x().getListenerThreads(),
                 60_000L, "ES-listener", false);
+        this.slaveTableListenerExecutor = configuration.getEs7x().isWriteSlaveTableBlock() ?
+                Runnable::run :
+                Util.newFixedThreadPool(
+                        1,
+                        configuration.getEs7x().getNestedFieldThreads(),
+                        60_000L, "ESNestedSlaveWriter", true, false);
         loadESSyncConfig(dbTableEsSyncConfig, esSyncConfig, envProperties, configuration.getEs7x().resourcesDir(), env);
 
         this.listenerList.sort(AnnotationAwareOrderComparator.INSTANCE);
@@ -120,12 +146,16 @@ public class ES7xAdapter implements Adapter {
         this.nestedFieldWriter = new NestedFieldWriter(configuration.getEs7x().getNestedFieldThreads(), esSyncConfig, esTemplate, cacheMap);
     }
 
-    @Override
-    public void sync(List<Dml> dmls) {
-        sync(dmls, refresh);
+    public ES7xTemplate newES7xTemplate() {
+        return new ES7xTemplate(new ES7xConnection(configuration.getEs7x()));
     }
 
-    public void sync(List<Dml> dmls, boolean refresh) {
+    @Override
+    public void sync(List<Dml> dmls, MetaDataRepository.Acknowledge acknowledge) {
+        sync(dmls, refresh, autoUpdateChildren, acknowledge);
+    }
+
+    public void sync(List<Dml> dmls, boolean refresh, boolean autoUpdateChildren, MetaDataRepository.Acknowledge acknowledge) {
         if (dmls == null || dmls.isEmpty()) {
             return;
         }
@@ -136,14 +166,19 @@ public class ES7xAdapter implements Adapter {
         Timestamp maxTimestamp = max == null ? null : new Timestamp(max.getEs());
 
         Set<String> indices = new LinkedHashSet<>();
-        long timstamp = System.currentTimeMillis();
+        long timestamp = System.currentTimeMillis();
         long basicFieldWriterCost;
         try {
-            Map<Map<String, ESSyncConfig>, List<Dml>> groupByMap = syncDmlList.stream()
-                    .collect(Collectors.groupingBy(dml -> {
-                        String key = getEsSyncConfigKey(dml.getDestination(), dml.getDatabase(), dml.getTable());
-                        return Objects.requireNonNull(dbTableEsSyncConfig.get(key), "Miss ESSyncConfig " + key);
-                    }));
+            Map<Map<String, ESSyncConfig>, List<Dml>> groupByMap = new IdentityHashMap<>();
+            for (Dml dml : syncDmlList) {
+                for (String s : dml.getDestination()) {
+                    String key = getEsSyncConfigKey(s, dml.getDatabase(), dml.getTable());
+                    Map<String, ESSyncConfig> configMap = dbTableEsSyncConfig.get(key);
+                    if (configMap != null) {
+                        groupByMap.computeIfAbsent(configMap, e -> new ArrayList<>()).add(dml);
+                    }
+                }
+            }
             for (Map.Entry<Map<String, ESSyncConfig>, List<Dml>> entry : groupByMap.entrySet()) {
                 for (ESSyncConfig value : entry.getKey().values()) {
                     indices.add(value.getEsMapping().get_index());
@@ -151,7 +186,7 @@ public class ES7xAdapter implements Adapter {
                 basicFieldWriter.write(entry.getKey().values(), entry.getValue(), bulkRequestList);
             }
         } finally {
-            basicFieldWriterCost = System.currentTimeMillis() - timstamp;
+            basicFieldWriterCost = System.currentTimeMillis() - timestamp;
             cacheMap.cacheClear();
             commit(bulkRequestList);
 
@@ -161,17 +196,31 @@ public class ES7xAdapter implements Adapter {
             }
         }
 
-        timstamp = System.currentTimeMillis();
+        timestamp = System.currentTimeMillis();
+        DependentGroup dependentGroup = nestedFieldWriter.convertToDependentGroup(syncDmlList);
         try {
-            nestedFieldWriter.write(syncDmlList, bulkRequestList);
+            // nested type ： main table change
+            nestedFieldWriter.writeMainTable(dependentGroup.getMainTableDependentList(), bulkRequestList, autoUpdateChildren);
         } finally {
             log.info("sync(dml[{}]).BasicFieldWriter={}ms, NestedFieldWriter={}ms, {}, table={}",
                     syncDmlList.size(),
                     basicFieldWriterCost,
-                    System.currentTimeMillis() - timstamp,
+                    System.currentTimeMillis() - timestamp,
                     maxTimestamp, tables);
             cacheMap.cacheClear();
             commit(bulkRequestList);
+        }
+
+        // nested type ：join table change
+        List<Dependent> slaveTableList = dependentGroup.getSlaveTableDependentList().stream()
+                .filter(e -> e.getDml().isTypeUpdate())
+                .collect(Collectors.toList());
+        if (!slaveTableList.isEmpty()) {
+            slaveTableListenerExecutor.execute(new NestedSlaveTableRunnable(
+                    slaveTableList, this::newES7xTemplate,
+                    cacheMap.getMaxSize(), maxTimestamp, acknowledge));
+        } else {
+            acknowledge.ack();
         }
 
         // call listeners
@@ -212,12 +261,9 @@ public class ES7xAdapter implements Adapter {
                 }
             }));
         }
-        Watch watch = new Watch();
-        watch.start("es7.call.listeners(). size=" + listenerList.size());
         for (Future<Object> future : futures) {
             future.get();
         }
-        watch.stop();
     }
 
     private void loadESSyncConfig(Map<String, Map<String, ESSyncConfig>> map,
