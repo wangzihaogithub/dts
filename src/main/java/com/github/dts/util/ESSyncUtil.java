@@ -2,6 +2,7 @@ package com.github.dts.util;
 
 import com.github.dts.impl.elasticsearch7x.ES7xAdapter;
 import com.github.dts.impl.elasticsearch7x.NestedFieldWriter;
+import com.github.dts.impl.elasticsearch7x.nested.SQL;
 import com.github.dts.util.ESSyncConfig.ESMapping;
 import com.github.dts.util.SchemaItem.ColumnItem;
 import com.github.dts.util.SchemaItem.TableItem;

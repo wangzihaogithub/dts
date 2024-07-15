@@ -1,6 +1,8 @@
 package com.github.dts.impl.elasticsearch7x;
 
 import com.github.dts.impl.elasticsearch7x.NestedFieldWriter.DependentSQL;
+import com.github.dts.impl.elasticsearch7x.nested.MergeJdbcTemplateSQL;
+import com.github.dts.impl.elasticsearch7x.nested.SQL;
 import com.github.dts.util.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

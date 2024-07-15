@@ -1,51 +1,26 @@
-cnwy.kafka-prefix: 'dev_'
 cnwy.binlog-prefix: 'cnwy.'
 canal.conf:
-  enable-pull: true
   srcDataSources:
     defaultDS:
-      url: 'jdbc:mysql://xx:3306/xx?useUnicode=true&characterEncoding=utf-8&allowMultiQueries=true&rewriteBatchedStatements=true&zeroDateTimeBehavior=CONVERT_TO_NULL'
-      username: 'xx'
-      password: 'xx'
+      url: 'jdbc:mysql://xxx.com:3306/cnwy?useUnicode=true&characterEncoding=utf-8&allowMultiQueries=true&rewriteBatchedStatements=true&zeroDateTimeBehavior=CONVERT_TO_NULL'
+      username: 'xxx'
+      password: 'xxx'
   canalAdapters:
-    # KafkaCanalConnector
-    - destination: 'job_es'
-      connector: com.github.dts.canal.KafkaCanalConnector
-      enable: true
-      batchSize: 500
-      pull-timeout: 50
-      topics:
-        - '${cnwy.kafka-prefix}job'
-        - '${cnwy.kafka-prefix}job_region'
-        - '${cnwy.kafka-prefix}job_specialty'
-      properties: {
-        bootstrap.servers: 'xx:9093',
-        group.id: 'dev_group',
-        security.protocol: 'SASL_SSL',
-        sasl.mechanism: 'PLAIN',
-        ssl.endpoint.identification.algorithm: '',
-        ssl.truststore.location: '/kafkajks/mix.4096.client.truststore.jks',
-        ssl.truststore.password: 'KafkaOnsClient',
-        sasl.jaas.config: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="alikafka_post-cn-o493or7rj00a" password="3gZip4seQRqhGTEwtR67Ib3HrzBji3nl";'
-      }
-      groups:
-        - outerAdapters:
-            - name: 'adapterES7'
-              es7x:
-                address: 'xx.com:9200'
-                username: 'xx'
-                password: 'xx'
-
-    # MysqlBinlogCanalConnector
-    - destination: 'job_es'
+    - destination: 'cnwybinlog'
       connector: com.github.dts.canal.MysqlBinlogCanalConnector
-      enable: true
-      batchSize: 500
-      pull-timeout: 5
       topics:
         - '${cnwy.binlog-prefix}job'
         - '${cnwy.binlog-prefix}job_region'
         - '${cnwy.binlog-prefix}job_specialty'
+        - '${cnwy.binlog-prefix}corp'
+        - '${cnwy.binlog-prefix}corp_name'
+        - '${cnwy.binlog-prefix}corp_region'
+        - '${cnwy.binlog-prefix}region'
+        - '${cnwy.binlog-prefix}corp_relation_tag'
+        - '${cnwy.binlog-prefix}corp_tag'
+        - '${cnwy.binlog-prefix}corp_category'
+        - '${cnwy.binlog-prefix}notice'
+        - '${cnwy.binlog-prefix}corp_recruit_url'
       properties: {
         dataSource: 'defaultDS',
         maxDumpThread: 1,
@@ -54,3 +29,15 @@ canal.conf:
       groups:
         - outerAdapters:
             - name: 'adapterES7'
+              es7x:
+                address: 'xxx:9200'
+                username: 'xxx'
+                password: 'xxx'
+
+# redis非必填：配置上可以支持记忆增量指针，重启后也不会丢数据
+# 默认用本地文件存储
+spring:
+  redis:
+    host: 'xx.com'
+    password: 'xxx'
+    database: 2

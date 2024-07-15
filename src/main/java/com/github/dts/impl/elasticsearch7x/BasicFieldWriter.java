@@ -1,6 +1,8 @@
 package com.github.dts.impl.elasticsearch7x;
 
 import com.github.dts.impl.elasticsearch7x.basic.*;
+import com.github.dts.impl.elasticsearch7x.nested.MergeJdbcTemplateSQL;
+import com.github.dts.impl.elasticsearch7x.nested.SQL;
 import com.github.dts.util.*;
 import com.github.dts.util.ESSyncConfig.ESMapping;
 import com.github.dts.util.SchemaItem.ColumnItem;

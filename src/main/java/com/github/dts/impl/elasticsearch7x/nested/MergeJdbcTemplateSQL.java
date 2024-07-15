@@ -1,4 +1,4 @@
-package com.github.dts.impl.elasticsearch7x;
+package com.github.dts.impl.elasticsearch7x.nested;
 
 import com.github.dts.util.CacheMap;
 import com.github.dts.util.SqlParser;

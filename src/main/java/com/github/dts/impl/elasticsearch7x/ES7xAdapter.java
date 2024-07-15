@@ -18,7 +18,7 @@ import java.util.stream.Collectors;
 
 
 /**
- * ES外部适配器
+ * ES适配器
  */
 public class ES7xAdapter implements Adapter {
     private static final Logger log = LoggerFactory.getLogger(ES7xAdapter.class);
