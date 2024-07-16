@@ -2,6 +2,7 @@ package com.github.dts.util;
 
 import com.alibaba.druid.pool.DruidDataSource;
 import com.github.dts.canal.CanalConnector;
+import com.github.dts.canal.StartupServer;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import javax.sql.DataSource;
@@ -11,10 +12,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.sql.SQLException;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -194,16 +192,27 @@ public class CanalConfig {
     }
 
     public static class CanalAdapter {
-        private boolean enable;
+        private boolean enable = true;
         private Class<? extends CanalConnector> connector;
-        private String destination; // 实例名
+        private String clientIdentity;
+        private String[] destination; // 实例名
         private String[] topics; // mq topics
-        private List<CanalConfig.Group> groups;  // 适配器分组列表
+        private List<Group> groups;  // 适配器分组列表
         private Properties properties = new Properties();
         // 批大小
         private Integer batchSize = 500;
         // 毫秒时间内拉取
-        private Integer pullTimeout = 200;
+        private Integer pullTimeout = 5;
+        // redis- meta数据前缀
+        private String metaPrefix = "dts:";
+
+        public String getMetaPrefix() {
+            return metaPrefix;
+        }
+
+        public void setMetaPrefix(String metaPrefix) {
+            this.metaPrefix = metaPrefix;
+        }
 
         public Class<? extends CanalConnector> getConnector() {
             return connector;
@@ -213,10 +222,28 @@ public class CanalConfig {
             this.connector = connector;
         }
 
-        public CanalConnector newCanalConnector(CanalConfig canalConfig) throws NoSuchMethodException, InvocationTargetException, InstantiationException, IllegalAccessException {
-            Constructor<? extends CanalConnector> constructor = connector.getDeclaredConstructor(CanalConfig.class, CanalAdapter.class);
+        public CanalConnector newCanalConnector(CanalConfig canalConfig, StartupServer startupServer, boolean rebuild) throws NoSuchMethodException, InvocationTargetException, InstantiationException, IllegalAccessException {
+            Constructor<? extends CanalConnector> constructor = connector.getDeclaredConstructor(CanalConfig.class, CanalAdapter.class, StartupServer.class, boolean.class);
             constructor.setAccessible(true);
-            return constructor.newInstance(canalConfig, this);
+            return constructor.newInstance(canalConfig, this, startupServer, rebuild);
+        }
+
+        public String getClientIdentity() {
+            return clientIdentity;
+        }
+
+        public void setClientIdentity(String clientIdentity) {
+            this.clientIdentity = clientIdentity;
+        }
+
+        public String clientIdentity() {
+            if (clientIdentity != null && !clientIdentity.isEmpty()) {
+                return clientIdentity;
+            } else if (destination != null && destination.length > 0) {
+                return String.join(",", destination);
+            } else {
+                return null;
+            }
         }
 
         public Integer getBatchSize() {
@@ -246,7 +273,7 @@ public class CanalConfig {
         @Override
         public String toString() {
             return "CanalAdapter{" +
-                    "destination='" + destination + '\'' +
+                    "destination='" + Arrays.toString(destination) + '\'' +
                     ", groups=" + groups +
                     '}';
         }
@@ -259,14 +286,12 @@ public class CanalConfig {
             this.topics = topics;
         }
 
-        public String getDestination() {
+        public String[] getDestination() {
             return destination;
         }
 
-        public void setDestination(String destination) {
-            if (destination != null) {
-                this.destination = destination.trim();
-            }
+        public void setDestination(String[] destination) {
+            this.destination = destination;
         }
 
         public Properties getProperties() {
@@ -277,11 +302,11 @@ public class CanalConfig {
             this.properties = properties;
         }
 
-        public List<CanalConfig.Group> getGroups() {
+        public List<Group> getGroups() {
             return groups;
         }
 
-        public void setGroups(List<CanalConfig.Group> groups) {
+        public void setGroups(List<Group> groups) {
             this.groups = groups;
         }
     }
@@ -289,8 +314,8 @@ public class CanalConfig {
     public static class OuterAdapterConfig {
         private final Es7x es7x = new Es7x();
         private final Rds rds = new Rds();
-        private CanalConfig.Group connectorGroup;
-        private CanalConfig.CanalAdapter canalAdapter;
+        private Group connectorGroup;
+        private CanalAdapter canalAdapter;
         private String name;       // 适配器名称, 如: logger, hbase, es
 
         public Es7x getEs7x() {
@@ -308,19 +333,19 @@ public class CanalConfig {
                     '}';
         }
 
-        public CanalConfig.CanalAdapter getCanalAdapter() {
+        public CanalAdapter getCanalAdapter() {
             return canalAdapter;
         }
 
-        public void setCanalAdapter(CanalConfig.CanalAdapter canalAdapter) {
+        public void setCanalAdapter(CanalAdapter canalAdapter) {
             this.canalAdapter = canalAdapter;
         }
 
-        public CanalConfig.Group getConnectorGroup() {
+        public Group getConnectorGroup() {
             return connectorGroup;
         }
 
-        public void setConnectorGroup(CanalConfig.Group connectorGroup) {
+        public void setConnectorGroup(Group connectorGroup) {
             this.connectorGroup = connectorGroup;
         }
 
@@ -337,18 +362,36 @@ public class CanalConfig {
         }
 
         public static class Es7x {
+            private final SlaveNestedField slaveNestedField = new SlaveNestedField();
             private String resourcesDir = "es";
             private String[] address;// es 读地址
             private String username;// 账号，来源：租户账号
             private String password;// 密码，来源：租户密码
             private Map<String, String> properties; // 其余参数, 可填写适配器中的所需的配置信息
-            private int nestedFieldThreads = 10;
             private int maxRetryCount = 10;// 错误请求重试几次
             private int concurrentBulkRequest = 16;// 最大并发bulk请求
             private int bulkCommitSize = 200;//每次bulk请求的大约提交条数
             private boolean refresh = true;
             private int refreshThreshold = 10;
             private int listenerThreads = 50;
+            private int maxQueryCacheSize = 10000;//查询缓存大小
+            private int nestedFieldThreads = 10;
+
+            public int getNestedFieldThreads() {
+                return nestedFieldThreads;
+            }
+
+            public void setNestedFieldThreads(int nestedFieldThreads) {
+                this.nestedFieldThreads = nestedFieldThreads;
+            }
+
+            public int getMaxQueryCacheSize() {
+                return maxQueryCacheSize;
+            }
+
+            public void setMaxQueryCacheSize(int maxQueryCacheSize) {
+                this.maxQueryCacheSize = maxQueryCacheSize;
+            }
 
             public int getListenerThreads() {
                 return listenerThreads;
@@ -398,14 +441,6 @@ public class CanalConfig {
                 this.concurrentBulkRequest = concurrentBulkRequest;
             }
 
-            public int getNestedFieldThreads() {
-                return nestedFieldThreads;
-            }
-
-            public void setNestedFieldThreads(int nestedFieldThreads) {
-                this.nestedFieldThreads = nestedFieldThreads;
-            }
-
             public String getResourcesDir() {
                 return resourcesDir;
             }
@@ -448,6 +483,40 @@ public class CanalConfig {
 
             public void setProperties(Map<String, String> properties) {
                 this.properties = properties;
+            }
+
+            public SlaveNestedField getSlaveNestedField() {
+                return slaveNestedField;
+            }
+
+            public static class SlaveNestedField {
+                private int threads = 5;
+                private int queues = 100;
+                private boolean block = false;// 写从表是否阻塞主表
+
+                public int getThreads() {
+                    return threads;
+                }
+
+                public void setThreads(int threads) {
+                    this.threads = threads;
+                }
+
+                public int getQueues() {
+                    return queues;
+                }
+
+                public void setQueues(int queues) {
+                    this.queues = queues;
+                }
+
+                public boolean isBlock() {
+                    return block;
+                }
+
+                public void setBlock(boolean block) {
+                    this.block = block;
+                }
             }
         }
 

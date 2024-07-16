@@ -6,39 +6,44 @@ import org.slf4j.LoggerFactory;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.lang.reflect.InvocationTargetException;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.function.Consumer;
 
 public class CanalThread extends Thread {
     private static final int DEFAULT_BATCH_SIZE = 50;
+    protected final Adapter[] adapterList;                                              // 外部适配器
     private final Logger logger = LoggerFactory.getLogger(this.getClass());
     private final CanalConnector connector;
     private final CanalConfig.CanalAdapter config;
     private final AbstractMessageService messageService;
     private final String name;
     protected String groupId = null;                                                  // groupId
-    protected List<Adapter> adapterList;                                              // 外部适配器
     protected CanalConfig canalConfig;                                               // 配置
     protected volatile ExecutorService executorService;                                       // 组内工作线程池
     protected volatile boolean running = false;                                                 // 是否运行中
     protected Thread thread = null;
     protected UncaughtExceptionHandler handler = (t, e) -> logger.error("parse events has an error", e);
     private boolean suspend;
+    private CompletableFuture<Void>[] lastFutureList = new CompletableFuture[0];
 
     public CanalThread(CanalConfig canalConfig, CanalConfig.CanalAdapter config,
-                       List<Adapter> adapterList, AbstractMessageService messageService, CanalConnector connector,
-                       Consumer<CanalThread> rebuild) {
-        this.adapterList = adapterList;
+                       List<Adapter> adapterList, AbstractMessageService messageService,
+                       StartupServer startupServer, CanalThread parent,
+                       Consumer<CanalThread> rebuild) throws InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException {
+        CanalConnector connector = config.newCanalConnector(canalConfig, startupServer, parent != null);
+        this.adapterList = adapterList.toArray(new Adapter[adapterList.size()]);
         this.canalConfig = canalConfig;
         this.config = config;
         this.messageService = messageService;
-        this.name = config.getDestination() + limit(connector.getClass().getSimpleName(), 8);
+        this.name = config.clientIdentity() + limit(connector.getClass().getSimpleName(), 8);
 
         this.connector = connector;
         connector.rebuildConsumer(new Consumer<CanalConnector>() {
@@ -168,13 +173,14 @@ public class CanalThread extends Thread {
                 }
             }
         }
+        connector.close();
     }
 
-    public ExecutorService getExecutorService() {
+    public ExecutorService getExecutor() {
         if (executorService == null) {
             synchronized (this) {
                 if (executorService == null) {
-                    executorService = Util.newFixedThreadPool(adapterList.size(),
+                    executorService = Util.newFixedThreadPool(adapterList.length,
                             5000L, name + "-fork", false);
                 }
             }
@@ -183,47 +189,43 @@ public class CanalThread extends Thread {
     }
 
     protected void writeOut(final List<Dml> message) {
-        if (adapterList.size() == 1) {
-            adapterList.get(0).sync(message);
-            return;
-        }
-
-        List<Future<Boolean>> futures = new ArrayList<>();
-        ExecutorService service = getExecutorService();
-        // 组间适配器并行运行
-        for (Adapter adapter : adapterList) {
-            futures.add(service.submit(() -> {
-                try {
-                    long begin = System.currentTimeMillis();
-                    adapter.sync(message);
-                    if (logger.isTraceEnabled()) {
-                        logger.trace("{} elapsed time: {}",
-                                adapter.getClass().getName(),
-                                (System.currentTimeMillis() - begin));
-                    }
-                    return true;
-                } catch (Exception e) {
-                    logger.error("writeOut 异常:{}", Util.getStackTrace(e));
-                    throw e;
-                }
-            }));
+        CanalConnector.Ack2 ack2 = connector.getAck2();
+        CompletableFuture<Void>[] futureList;
+        if (adapterList.length == 1) {
+            futureList = new CompletableFuture[]{adapterList[0].sync(message)};
+        } else {
+            // 组间适配器并行运行
+            Future<CompletableFuture<Void>>[] submitList = Arrays.stream(adapterList)
+                    .map(e -> getExecutor().submit(() -> e.sync(message)))
+                    .toArray(Future[]::new);
 
             // 等待所有适配器写入完成
             // 由于是组间并发操作，所以将阻塞直到耗时最久的工作组操作完成
-            Throwable exception = null;
-            for (Future<Boolean> future : futures) {
+            List<Throwable> exception = new ArrayList<>();
+            futureList = new CompletableFuture[adapterList.length];
+            for (int i = 0; i < submitList.length; i++) {
                 try {
-                    if (!future.get()) {
-                        exception = new RuntimeException("Outer adapter sync failed! ");
-                    }
+                    futureList[i] = submitList[i].get();
                 } catch (Throwable e) {
-                    exception = e;
+                    exception.add(e);
                 }
             }
-            if (exception != null) {
-                Util.sneakyThrows(exception);
+            if (!exception.isEmpty()) {
+                Util.sneakyThrows(exception.get(0));
             }
         }
+
+
+        CompletableFuture.allOf(this.lastFutureList).whenComplete((unused, throwable) -> {
+            if (throwable == null) {
+                CompletableFuture.allOf(futureList).whenComplete((unused1, throwable1) -> {
+                    if (throwable1 == null) {
+                        ack2.ack();
+                    }
+                });
+            }
+        });
+        this.lastFutureList = futureList;
     }
 
     public void start() {
@@ -317,10 +319,13 @@ public class CanalThread extends Thread {
                 executorService.shutdown();
             }
             logger.info("destination {} adapters worker thread dead!", this.name);
-            adapterList.forEach(Adapter::destroy);
+            for (Adapter adapter : adapterList) {
+                adapter.destroy();
+            }
             logger.info("destination {} all adapters destroyed!", this.name);
         } catch (Exception e) {
             logger.error(e.getMessage(), e);
         }
     }
+
 }

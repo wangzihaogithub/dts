@@ -6,11 +6,10 @@ import com.github.dts.util.Dml;
 import com.github.dts.util.SQL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.annotation.Scope;
-import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Properties;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 /**
@@ -26,9 +25,10 @@ public class RDSAdapter implements Adapter {
     }
 
     @Override
-    public void sync(List<Dml> dmls) {
+    public CompletableFuture<Void> sync(List<Dml> dmls) {
         List<SQL> sqlList = SQL.DEFAULT_BUILDER.convert(dmls.stream().limit(20).collect(Collectors.toList()));
         log.info("rds {}", sqlList);
+        return CompletableFuture.completedFuture(null);
     }
 
     @Override

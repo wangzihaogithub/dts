@@ -18,7 +18,7 @@ public class Dml implements Serializable {
     private int index = 0;
     private String packetId;
 
-    private String destination;                            // 对应canal的实例或者MQ的topic
+    private String[] destination;                            // 对应canal的实例或者MQ的topic
     private String groupId;                                // 对应mq的group id
     private String database;                               // 数据库或schema
     private String table;                                  // 表名
@@ -42,7 +42,14 @@ public class Dml implements Serializable {
     public static List<Dml> convertInsert(List<Map<String, Object>> rowList,
                                           List<String> pkNames,
                                           String table,
-                                          String catalog, String destination) {
+                                          String catalog) {
+        return convertInsert(rowList, pkNames, table, catalog, null);
+    }
+
+    public static List<Dml> convertInsert(List<Map<String, Object>> rowList,
+                                          List<String> pkNames,
+                                          String table,
+                                          String catalog, String[] destination) {
         List<Dml> dmlList = new ArrayList<>();
         for (Map row : rowList) {
             Dml dml = new Dml();
@@ -124,11 +131,15 @@ public class Dml implements Serializable {
         this.logfileName = logfileName;
     }
 
-    public String getDestination() {
+    public String[] getDestination() {
         return destination;
     }
 
     public void setDestination(String destination) {
+        this.destination = destination == null ? null : destination.isEmpty() ? new String[0] : destination.split(",");
+    }
+
+    public void setDestination(String[] destination) {
         this.destination = destination;
     }
 
@@ -170,6 +181,14 @@ public class Dml implements Serializable {
 
     public void setIsDdl(Boolean isDdl) {
         this.isDdl = isDdl;
+    }
+
+    public boolean isTypeDelete(){
+        return "DELETE".equalsIgnoreCase(type);
+    }
+
+    public boolean isTypeUpdate(){
+        return "UPDATE".equalsIgnoreCase(type);
     }
 
     public String getType() {
@@ -233,7 +252,7 @@ public class Dml implements Serializable {
 
     @Override
     public String toString() {
-        return "Dml{" + "destination='" + destination + '\'' + ", database='" + database + '\'' + ", table='" + table
+        return "Dml{" + "destination='" + Arrays.toString(destination) + '\'' + ", database='" + database + '\'' + ", table='" + table
                 + '\'' + ", type='" + type + '\'' + ", es=" + es + ", ts=" + ts + ", sql='" + sql + '\'' + ", data="
                 + data + ", old=" + old + '}';
     }

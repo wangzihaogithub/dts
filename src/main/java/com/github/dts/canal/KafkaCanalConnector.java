@@ -41,7 +41,8 @@ public class KafkaCanalConnector implements CanalConnector {
     private volatile Map<String, Object> discardResult;
     private Consumer<CanalConnector> rebuildConsumer;
 
-    public KafkaCanalConnector(CanalConfig canalConfig, CanalConfig.CanalAdapter config) {
+    public KafkaCanalConnector(CanalConfig canalConfig, CanalConfig.CanalAdapter config,
+                               StartupServer startupServer, boolean rebuild) {
         this(config.getProperties());
     }
 

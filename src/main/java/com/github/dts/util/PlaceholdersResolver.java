@@ -101,8 +101,8 @@ public class PlaceholdersResolver {
             return null;
         }
         Map map = BeanMap.toMap(metadata);
-        org.springframework.core.env.MutablePropertySources propertySources = new MutablePropertySources();
-        org.springframework.core.env.PropertySourcesPropertyResolver resolver = new PropertySourcesPropertyResolver(propertySources) {
+        MutablePropertySources propertySources = new MutablePropertySources();
+        PropertySourcesPropertyResolver resolver = new PropertySourcesPropertyResolver(propertySources) {
 
             @Override
             protected String getPropertyAsRawString(String key) {
@@ -138,7 +138,7 @@ public class PlaceholdersResolver {
             }
 
             @Override
-            protected void logKeyFound(String key, org.springframework.core.env.PropertySource<?> propertySource, Object value) {
+            protected void logKeyFound(String key, PropertySource<?> propertySource, Object value) {
 
             }
         };

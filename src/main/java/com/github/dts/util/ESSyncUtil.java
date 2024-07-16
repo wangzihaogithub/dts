@@ -2,6 +2,7 @@ package com.github.dts.util;
 
 import com.github.dts.impl.elasticsearch7x.ES7xAdapter;
 import com.github.dts.impl.elasticsearch7x.NestedFieldWriter;
+import com.github.dts.impl.elasticsearch7x.nested.SQL;
 import com.github.dts.util.ESSyncConfig.ESMapping;
 import com.github.dts.util.SchemaItem.ColumnItem;
 import com.github.dts.util.SchemaItem.TableItem;
@@ -9,16 +10,19 @@ import org.joda.time.DateTime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.util.CollectionUtils;
 
 import javax.sql.DataSource;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.sql.Blob;
 import java.sql.SQLException;
 import java.util.*;
-import java.util.stream.Collectors;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * ES 同步工具同类
@@ -29,6 +33,95 @@ import java.util.stream.Collectors;
 public class ESSyncUtil {
     private static final Map<String, JdbcTemplate> JDBC_TEMPLATE_MAP = new HashMap<>(3);
     private static final Logger log = LoggerFactory.getLogger(ESSyncUtil.class);
+    private static final String[] ES_FORMAT_SUPPORT = {"yyyy-MM-dd HH:mm:ss.SSS", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd"};
+    private static final Map<String, String> STRING_CACHE = new ConcurrentHashMap<>();
+    private static final Map<String, String> STRING_LRU_CACHE = Collections.synchronizedMap(new LinkedHashMap<String, String>(32, 0.75F, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry eldest) {
+            return size() > 5000;
+        }
+    });
+
+    public static String getEsSyncConfigKey(String destination, String database, String table) {
+        return destination + "_" + database + "_" + table;
+    }
+
+    public static Map<String, ESSyncConfig> loadYamlToBean(Properties envProperties, File resourcesDir, String env) {
+        log.info("## Start loading es mapping config ... {}", resourcesDir);
+        Map<String, ESSyncConfig> esSyncConfig = new LinkedHashMap<>();
+        Map<String, byte[]> yamlMap = loadYamlToBytes(resourcesDir);
+        for (Map.Entry<String, byte[]> entry : yamlMap.entrySet()) {
+            String fileName = entry.getKey();
+            byte[] content = entry.getValue();
+            ESSyncConfig config = YmlConfigBinder.bindYmlToObj(null, content, ESSyncConfig.class, envProperties);
+            if (config == null) {
+                continue;
+            }
+            if (!Objects.equals(env, config.getEsMapping().getEnv())) {
+                continue;
+            }
+            try {
+                config.init();
+            } catch (Exception e) {
+                throw new RuntimeException("ERROR Config: " + fileName + " " + e, e);
+            }
+            esSyncConfig.put(fileName, config);
+        }
+        log.info("## ES mapping config loaded");
+        return esSyncConfig;
+    }
+
+    public static Map<String, byte[]> loadYamlToBytes(File configDir) {
+        Map<String, byte[]> map = new LinkedHashMap<>();
+        // 先取本地文件，再取类路径
+        File[] files = configDir.listFiles();
+        if (files != null) {
+            for (File file : files) {
+                String fileName = file.getName();
+                if (!fileName.endsWith(".yml") && !fileName.endsWith(".yaml")) {
+                    continue;
+                }
+                try {
+                    byte[] bytes = Files.readAllBytes(file.toPath());
+                    map.put(fileName, bytes);
+                } catch (IOException e) {
+                    throw new RuntimeException("Read " + configDir + "mapping config: " + fileName + " error. ", e);
+                }
+            }
+        }
+        return map;
+    }
+
+    public static void loadESSyncConfig(Map<String, Map<String, ESSyncConfig>> map,
+                                         Map<String, ESSyncConfig> configMap,
+                                         Properties envProperties, File resourcesDir, String env) {
+        Map<String, ESSyncConfig> load = loadYamlToBean(envProperties, resourcesDir, env);
+        for (Map.Entry<String, ESSyncConfig> entry : load.entrySet()) {
+            ESSyncConfig config = entry.getValue();
+            if (!config.getEsMapping().isEnable()) {
+                continue;
+            }
+            String configName = entry.getKey();
+            configMap.put(configName, config);
+            String schema = CanalConfig.DatasourceConfig.getCatalog(config.getDataSourceKey());
+
+            for (TableItem item : config.getEsMapping().getSchemaItem().getAliasTableItems().values()) {
+                map.computeIfAbsent(getEsSyncConfigKey(config.getDestination(), schema, item.getTableName()),
+                        k -> new ConcurrentHashMap<>()).put(configName, config);
+            }
+            for (Map.Entry<String, ESSyncConfig.ObjectField> e : config.getEsMapping().getObjFields().entrySet()) {
+                ESSyncConfig.ObjectField v = e.getValue();
+                if (v.getSchemaItem() == null || CollectionUtils.isEmpty(v.getSchemaItem().getAliasTableItems())) {
+                    continue;
+                }
+                for (TableItem tableItem : v.getSchemaItem().getAliasTableItems().values()) {
+                    map.computeIfAbsent(getEsSyncConfigKey(config.getDestination(), schema, tableItem.getTableName()),
+                                    k -> new ConcurrentHashMap<>())
+                            .put(configName, config);
+                }
+            }
+        }
+    }
 
     public static String join(Collection list) {
         StringJoiner joiner = new StringJoiner(",");
@@ -39,21 +132,6 @@ public class ESSyncUtil {
             joiner.add(t.toString());
         }
         return joiner.toString();
-    }
-
-    /**
-     * 多个集合合并为一个集合
-     *
-     * @param lists 多个集合
-     * @param <T> T
-     * @return 一个集合
-     */
-    public static <T> List<T> mergeList(List<T>... lists) {
-        List<T> list = new ArrayList<>();
-        for (List<T> l : lists) {
-            list.addAll(l);
-        }
-        return list;
     }
 
     public static List<String> split(Object str, String separator) {
@@ -98,87 +176,6 @@ public class ESSyncUtil {
     }
 
     /**
-     * 获取默认的数据源
-     *
-     * @return 数据源
-     */
-    public static JdbcTemplate getJdbcTemplateByDefaultDS() {
-        return ESSyncUtil.getJdbcTemplateByKey("defaultDS");
-    }
-
-    /**
-     * 根据ES类型 获取所有索引
-     * @param destination destination
-     * @param esSyncConfigs esSyncConfigs
-     * @return 所有索引
-     */
-    public static List<ESSyncConfig.ESMapping> getESMappingByESType(String destination, Collection<ESSyncConfig> esSyncConfigs) {
-        return esSyncConfigs.stream()
-                .filter(e -> Objects.equals(e.getDestination(), destination))
-                .map(ESSyncConfig::getEsMapping)
-                .collect(Collectors.toList());
-    }
-
-    public static void updateESByPrimaryKey(Object pkValue,
-                                            Map<String, Object> esFieldData,
-                                            ESSyncConfig.ESMapping esMapping, ESTemplate esTemplate, ESTemplate.BulkRequestList bulkRequestList) {
-        if (log.isDebugEnabled()) {
-            log.debug("updateESByPrimaryKey -> pkValue={}", pkValue);
-        }
-
-        if (esFieldData == null || esFieldData.isEmpty()) {
-            return;
-        }
-        //更新ES文档 (执行完会统一提交, 这里不用commit)
-        esTemplate.update(esMapping, pkValue, esFieldData, bulkRequestList);
-    }
-
-    public static void updateESByQuery(Map<String, Object> updateWhere,
-                                       Map<String, Object> esFieldData, Collection<ESSyncConfig.ESMapping> esMappingByESType,
-                                       ESTemplate esTemplate, ESTemplate.BulkRequestList bulkRequestList) {
-        if (log.isDebugEnabled()) {
-            log.debug("updateESByQuery -> updateWhere={}, esFieldData={} ", updateWhere, esFieldData);
-        }
-
-        if (updateWhere == null || updateWhere.isEmpty()) {
-            return;
-        }
-        if (esFieldData == null || esFieldData.isEmpty()) {
-            return;
-        }
-        //更新ES文档 (执行完会统一提交, 这里不用commit)
-        for (ESSyncConfig.ESMapping esMapping : esMappingByESType) {
-            esTemplate.updateByQuery(esMapping, updateWhere, esFieldData, bulkRequestList);
-        }
-    }
-
-    public static void deleteEsByPrimaryKey(Object pkValue,
-                                            Map<String, Object> esFieldData,
-                                            Collection<ESSyncConfig.ESMapping> esMappingByESType, ESTemplate esTemplate,
-                                            ESTemplate.BulkRequestList bulkRequestList) {
-
-        if (pkValue == null) {
-            return;
-        }
-        //更新ES文档 (执行完会统一提交, 这里不用commit)
-        for (ESSyncConfig.ESMapping esMapping : esMappingByESType) {
-            esTemplate.delete(esMapping, pkValue, esFieldData, bulkRequestList);
-        }
-    }
-
-    public static void updateByScript(String idOrCode, int scriptTypeId, Object pkValue, String lang,
-                                      Map<String, Object> params, Collection<ESSyncConfig.ESMapping> esMappingByESType,
-                                      ESTemplate esTemplate, ESTemplate.BulkRequestList bulkRequestList) {
-        if (log.isDebugEnabled()) {
-            log.debug("updateByScript -> pkValue={}, script={} ", pkValue, idOrCode);
-        }
-
-        for (ESSyncConfig.ESMapping esMapping : esMappingByESType) {
-            esTemplate.updateByScript(esMapping, idOrCode, false, pkValue, scriptTypeId, lang, params, bulkRequestList);
-        }
-    }
-
-    /**
      * 转换为ES对象
      * <p>
      * |ARRAY   |OBJECT     |ARRAY_SQL      |OBJECT_SQL      |
@@ -187,14 +184,13 @@ public class ESSyncUtil {
      * 该方法只实现 ARRAY与OBJECT
      * ARRAY_SQL与OBJECT_SQL的实现 - {@link NestedFieldWriter}
      *
-     * @param val val
-     * @param mapping mapping
+     * @param val       val
+     * @param mapping   mapping
      * @param fieldName fieldName
-     * @param data data
      * @return ES对象
      * @see ESSyncServiceListener#onSyncAfter(List, ES7xAdapter, ESTemplate.BulkRequestList)
      */
-    public static Object convertToEsObj(Object val, ESMapping mapping, String fieldName, Map<String, Object> data) {
+    public static Object convertToEsObj(Object val, ESMapping mapping, String fieldName) {
         if (val == null) {
             return null;
         }
@@ -216,7 +212,7 @@ public class ESSyncUtil {
                 return castToBoolean(val);
             }
             case STATIC_METHOD: {
-                return objectField.staticMethodAccessor().apply(new ESStaticMethodParam(val, mapping, fieldName, data));
+                return objectField.staticMethodAccessor().apply(new ESStaticMethodParam(val, mapping, fieldName));
             }
             case ARRAY_SQL:
             case OBJECT_SQL:
@@ -263,18 +259,32 @@ public class ESSyncUtil {
 
     /**
      * 类型转换为Mapping中对应的类型
-     * @param val val
-     * @param esType esType
+     *
+     * @param val     val
+     * @param esTypes esTypes
      * @return Mapping中对应的类型
      */
-    public static Object typeConvert(Object val, String esType) {
+    public static Object typeConvert(Object val, String fileName, ESFieldTypesCache esTypes, String parentFieldName) {
         if (val == null) {
             return null;
         }
-        if (esType == null) {
+        if (esTypes == null) {
             return val;
         }
-        Object res = null;
+        Object esType;
+        if (parentFieldName != null) {
+            Map<String, Object> properties = esTypes.getPropertiesAttr(parentFieldName, "properties");
+            Object typeMap = properties.get(fileName);
+            if (typeMap instanceof Map) {
+                esType = ((Map<?, ?>) typeMap).get("type");
+            } else {
+                esType = typeMap;
+            }
+        } else {
+            esType = esTypes.get(fileName);
+        }
+
+        Object res = val;
         if ("integer".equals(esType)) {
             if (val instanceof Number) {
                 res = ((Number) val).intValue();
@@ -323,18 +333,10 @@ public class ESSyncUtil {
         } else if ("date".equals(esType)) {
             if (val instanceof java.sql.Time) {
                 DateTime dateTime = new DateTime(((java.sql.Time) val).getTime());
-                if (dateTime.getMillisOfSecond() != 0) {
-                    res = dateTime.toString("HH:mm:ss.SSS");
-                } else {
-                    res = dateTime.toString("HH:mm:ss");
-                }
+                res = parseDate(fileName, dateTime, esTypes);
             } else if (val instanceof java.sql.Timestamp) {
                 DateTime dateTime = new DateTime(((java.sql.Timestamp) val).getTime());
-                if (dateTime.getMillisOfSecond() != 0) {
-                    res = dateTime.toString("yyyy-MM-dd HH:mm:ss.SSS");
-                } else {
-                    res = dateTime.toString("yyyy-MM-dd HH:mm:ss");
-                }
+                res = parseDate(fileName, dateTime, esTypes);
             } else if (val instanceof java.sql.Date || val instanceof Date) {
                 DateTime dateTime;
                 if (val instanceof java.sql.Date) {
@@ -342,26 +344,10 @@ public class ESSyncUtil {
                 } else {
                     dateTime = new DateTime(((Date) val).getTime());
                 }
-                if (dateTime.getHourOfDay() == 0 && dateTime.getMinuteOfHour() == 0 && dateTime.getSecondOfMinute() == 0
-                        && dateTime.getMillisOfSecond() == 0) {
-                    res = dateTime.toString("yyyy-MM-dd");
-                } else {
-                    if (dateTime.getMillisOfSecond() != 0) {
-                        res = dateTime.toString("yyyy-MM-dd HH:mm:ss.SSS");
-                    } else {
-                        res = dateTime.toString("yyyy-MM-dd HH:mm:ss");
-                    }
-                }
+                res = parseDate(fileName, dateTime, esTypes);
             } else if (val instanceof Long) {
                 DateTime dateTime = new DateTime(((Long) val).longValue());
-                if (dateTime.getHourOfDay() == 0 && dateTime.getMinuteOfHour() == 0 && dateTime.getSecondOfMinute() == 0
-                        && dateTime.getMillisOfSecond() == 0) {
-                    res = dateTime.toString("yyyy-MM-dd");
-                } else if (dateTime.getMillisOfSecond() != 0) {
-                    res = dateTime.toString("yyyy-MM-dd HH:mm:ss.SSS");
-                } else {
-                    res = dateTime.toString("yyyy-MM-dd HH:mm:ss");
-                }
+                res = parseDate(fileName, dateTime, esTypes);
             } else if (val instanceof String) {
                 String v = ((String) val).trim();
                 if (v.length() > 18 && v.charAt(4) == '-' && v.charAt(7) == '-' && v.charAt(10) == ' '
@@ -370,29 +356,25 @@ public class ESSyncUtil {
                     Date date = Util.parseDate(dt);
                     if (date != null) {
                         DateTime dateTime = new DateTime(date);
-                        if (dateTime.getMillisOfSecond() != 0) {
-                            res = dateTime.toString("yyyy-MM-dd HH:mm:ss.SSS");
-                        } else {
-                            res = dateTime.toString("yyyy-MM-dd HH:mm:ss");
-                        }
+                        res = parseDate(fileName, dateTime, esTypes);
                     }
                 } else if (v.length() == 10 && v.charAt(4) == '-' && v.charAt(7) == '-') {
                     Date date = Util.parseDate(v);
                     if (date != null) {
                         DateTime dateTime = new DateTime(date);
-                        res = dateTime.toString("yyyy-MM-dd");
+                        res = parseDate(fileName, dateTime, esTypes);
                     }
                 } else if (v.length() == 7 && v.charAt(4) == '-') {
                     Date date = Util.parseDate(v);
                     if (date != null) {
                         DateTime dateTime = new DateTime(date);
-                        res = dateTime.toString("yyyy-MM");
+                        res = parseDate(fileName, dateTime, esTypes);
                     }
                 } else if (v.length() == 4) {
                     Date date = Util.parseDate(v);
                     if (date != null) {
                         DateTime dateTime = new DateTime(date);
-                        res = dateTime.toString("yyyy");
+                        res = parseDate(fileName, dateTime, esTypes);
                     }
                 }
             }
@@ -469,14 +451,60 @@ public class ESSyncUtil {
         }
     }
 
-    /**
-     * 拼接主键条件
-     *
-     * @param mapping mapping
-     * @param data data
-     * @return 主键条件
-     */
-    public static String pkConditionSql(ESMapping mapping, Map<String, Object> data) {
+    public static SQL convertSQLByMapping(ESMapping mapping, Map<String, Object> data,
+                                          Map<String, Object> old, TableItem tableItem) {
+        StringBuilder sql = new StringBuilder(mapping.getSql() + " WHERE ");
+        String alias = tableItem.getAlias();
+
+        List<Object> args = new ArrayList<>();
+        for (SchemaItem.FieldItem fkFieldItem : tableItem.getRelationTableFields().keySet()) {
+            String columnName = fkFieldItem.getColumn().getColumnName();
+            Object value = data.get(columnName);
+            if (alias != null) {
+                sql.append(alias).append(".");
+            }
+            sql.append(columnName).append("=").append('?').append(' ');
+            sql.append(" AND ");
+            args.add(value);
+        }
+        int len = sql.length();
+        sql.delete(len - " AND ".length(), len);
+
+        LinkedHashMap<String, Object> map = new LinkedHashMap<>(data);
+        if (old != null) {
+            map.putAll(old);
+        }
+        return new SQL(sql.toString(), args.toArray(), map);
+    }
+
+    public static SQL convertSQLBySubQuery(Map<String, Object> data,
+                                           Map<String, Object> old, TableItem tableItem) {
+        String alias = tableItem.getAlias();
+        StringBuilder sql = new StringBuilder(
+                "SELECT * FROM (" + tableItem.getSubQuerySql() + ") " + alias + " WHERE ");
+
+        List<Object> args = new ArrayList<>();
+        for (SchemaItem.FieldItem fkFieldItem : tableItem.getRelationTableFields().keySet()) {
+            String columnName = fkFieldItem.getColumn().getColumnName();
+            Object value = data.get(columnName);
+            if (alias != null) {
+                sql.append(alias).append(".");
+            }
+            sql.append(columnName).append("=").append('?').append(' ');
+            sql.append(" AND ");
+            args.add(value);
+        }
+        int len = sql.length();
+        sql.delete(len - " AND ".length(), len);
+
+        LinkedHashMap<String, Object> map = new LinkedHashMap<>(data);
+        if (old != null) {
+            map.putAll(old);
+        }
+        return new SQL(sql.toString(), args.toArray(), map);
+    }
+
+    public static SQL convertSqlByMapping(ESMapping mapping, Map<String, Object> data) {
         Set<ColumnItem> idColumns = new LinkedHashSet<>();
         SchemaItem schemaItem = mapping.getSchemaItem();
 
@@ -493,6 +521,7 @@ public class ESSyncUtil {
             throw new RuntimeException("Not found primary key field in main table");
         }
 
+        List<Object> args = new ArrayList<>();
         // 拼接condition
         StringBuilder condition = new StringBuilder(" ");
         for (ColumnItem idColumn : idColumns) {
@@ -501,30 +530,30 @@ public class ESSyncUtil {
                 condition.append(mainTable.getAlias()).append(".");
             }
             condition.append(idColumn.getColumnName()).append("=");
-            if (idVal instanceof String) {
-                condition.append("'").append(idVal).append("' AND ");
-            } else {
-                condition.append(idVal).append(" AND ");
-            }
+            condition.append('?').append(" AND ");
+            args.add(idVal);
         }
 
         if (condition.toString().endsWith("AND ")) {
             int len2 = condition.length();
             condition.delete(len2 - 4, len2);
         }
-        return condition.toString();
+
+        return new SQL(mapping.getSql() + " WHERE " + condition + " ", args.toArray(), data);
     }
 
-    public static String appendCondition(String sql, String condition) {
-        return sql + " WHERE " + condition + " ";
-    }
-
-    public static void appendCondition(StringBuilder sql, Object value, String owner, String columnName) {
-        if (value instanceof String) {
-            sql.append(owner).append(".").append(columnName).append("='").append(value).append("'  AND ");
-        } else {
-            sql.append(owner).append(".").append(columnName).append("=").append(value).append("  AND ");
+    public static String stringCacheLRU(String s) {
+        if (s == null) {
+            return null;
         }
+        return STRING_LRU_CACHE.computeIfAbsent(s, e -> e);
+    }
+
+    public static String stringCache(String s) {
+        if (s == null) {
+            return null;
+        }
+        return STRING_CACHE.computeIfAbsent(s, e -> e);
     }
 
     public static boolean isEmpty(Object object) {
@@ -543,25 +572,45 @@ public class ESSyncUtil {
         return false;
     }
 
-    public static boolean isNotEmpty(Object object) {
-        return !isEmpty(object);
+    private static Object parseDate(String k, DateTime dateTime, Map<String, Object> esFieldType) {
+        if (esFieldType instanceof ESFieldTypesCache) {
+            Set<String> esFormatSet = ((ESFieldTypesCache) esFieldType).getPropertiesAttrFormat(k);
+            if (esFormatSet != null) {
+                for (String format : ES_FORMAT_SUPPORT) {
+                    if (esFormatSet.contains(format)) {
+                        return dateTime.toString(format);
+                    }
+                }
+                if (esFormatSet.contains("epoch_millis")) {
+                    return dateTime.toDate().getTime();
+                }
+            }
+        }
+        if (dateTime.getHourOfDay() == 0 && dateTime.getMinuteOfHour() == 0 && dateTime.getSecondOfMinute() == 0
+                && dateTime.getMillisOfSecond() == 0) {
+            return dateTime.toString("yyyy-MM-dd");
+        } else {
+            if (dateTime.getMillisOfSecond() != 0) {
+                return dateTime.toString("yyyy-MM-dd HH:mm:ss.SSS");
+            } else {
+                return dateTime.toString("yyyy-MM-dd HH:mm:ss");
+            }
+        }
     }
 
-    public static Map<String, Object> convertType(Map<String, Object> esFieldData) {
+    public static Map<String, Object> convertType(Map<String, Object> esFieldData, Map<String, Object> esFieldType) {
         if (esFieldData == null || esFieldData.isEmpty()) {
             return esFieldData;
         }
         Map<String, Object> result = new HashMap<>();
-        esFieldData.forEach((k, val) -> {
+        for (Map.Entry<String, Object> entry : esFieldData.entrySet()) {
+            String k = entry.getKey();
+            Object val = entry.getValue();
             if (val != null) {
                 Object res = val;
                 if (val instanceof java.sql.Timestamp) {
                     DateTime dateTime = new DateTime(((java.sql.Timestamp) val).getTime());
-                    if (dateTime.getMillisOfSecond() != 0) {
-                        res = dateTime.toString("yyyy-MM-dd HH:mm:ss.SSS");
-                    } else {
-                        res = dateTime.toString("yyyy-MM-dd HH:mm:ss");
-                    }
+                    res = parseDate(k, dateTime, esFieldType);
                 } else if (val instanceof java.sql.Date || val instanceof Date) {
                     DateTime dateTime;
                     if (val instanceof java.sql.Date) {
@@ -569,24 +618,15 @@ public class ESSyncUtil {
                     } else {
                         dateTime = new DateTime(((Date) val).getTime());
                     }
-                    if (dateTime.getHourOfDay() == 0 && dateTime.getMinuteOfHour() == 0 && dateTime.getSecondOfMinute() == 0
-                            && dateTime.getMillisOfSecond() == 0) {
-                        res = dateTime.toString("yyyy-MM-dd");
-                    } else {
-                        if (dateTime.getMillisOfSecond() != 0) {
-                            res = dateTime.toString("yyyy-MM-dd HH:mm:ss.SSS");
-                        } else {
-                            res = dateTime.toString("yyyy-MM-dd HH:mm:ss");
-                        }
-                    }
+                    res = parseDate(k, dateTime, esFieldType);
                 } else if (val instanceof Map) {
-                    res = convertType((Map<String, Object>) val);
+                    res = convertType((Map<String, Object>) val, (Map) (esFieldType instanceof ESFieldTypesCache ? ((ESFieldTypesCache) esFieldType).getPropertiesAttr(k, "properties") : Collections.emptyMap()));
                 } else if (val instanceof ArrayList) {
                     List list = (List) val;
                     List reslist = new ArrayList();
                     for (Object temp : list) {
                         if (temp instanceof Map) {
-                            reslist.add(convertType((Map<String, Object>) temp));
+                            reslist.add(convertType((Map<String, Object>) temp, esFieldType));
                         } else {
                             reslist.add(temp);
                         }
@@ -597,7 +637,7 @@ public class ESSyncUtil {
             } else {
                 result.put(k, null);
             }
-        });
+        }
         return result;
     }
 }

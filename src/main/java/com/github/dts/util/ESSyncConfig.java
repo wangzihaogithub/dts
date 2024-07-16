@@ -1,9 +1,8 @@
 package com.github.dts.util;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import org.apache.commons.lang3.StringUtils;
+
+import java.util.*;
 
 /**
  * ES 映射配置
@@ -12,15 +11,15 @@ import java.util.Map;
  * @version 1.0.0
  */
 public class ESSyncConfig {
+    public static final String ES_ID_FIELD_NAME = "_id";
     private String dataSourceKey;   // 数据源key
-
-    private String outerAdapterKey; // adapter key
-
-    private String groupId;         // group id
-
     private String destination;     // canal destination
-
     private ESMapping esMapping;
+
+    @Override
+    public String toString() {
+        return dataSourceKey + "." + destination + "." + esMapping;
+    }
 
     public void init() {
         if (esMapping._index == null) {
@@ -34,18 +33,30 @@ public class ESSyncConfig {
         }
 
         esMapping.setConfig(this);
+
+        SchemaItem schemaItem = SqlParser.parse(esMapping.getSql());
+        esMapping.setSchemaItem(schemaItem);
+        schemaItem.init(null, esMapping);
+        if (schemaItem.getAliasTableItems().isEmpty() || schemaItem.getSelectFields().isEmpty()) {
+            throw new RuntimeException("Parse sql error" + esMapping.getSql());
+        }
+
         for (Map.Entry<String, ObjectField> entry : esMapping.getObjFields().entrySet()) {
             ObjectField objectField = entry.getValue();
             objectField.setEsMapping(esMapping);
             objectField.setFieldName(entry.getKey());
             if (objectField.getSql() != null && !objectField.getSql().isEmpty()) {
-                SchemaItem schemaItem = SqlParser.parse(objectField.getSql());
-                schemaItem.setObjectField(objectField);
-                objectField.setSchemaItem(schemaItem);
+                SchemaItem schemaItem1 = SqlParser.parse(objectField.getSql());
+                schemaItem1.init(objectField, esMapping);
+                if (schemaItem1.getAliasTableItems().isEmpty() || schemaItem1.getSelectFields().isEmpty()) {
+                    throw new RuntimeException("Parse sql error" + objectField.getSql());
+                }
+                objectField.setSchemaItem(schemaItem1);
+            }
+            if (StringUtils.isBlank(objectField.getParentDocumentId())) {
+                objectField.setParentDocumentId(objectField.parentDocumentId());
             }
         }
-        SchemaItem schemaItem = SqlParser.parse(esMapping.getSql());
-        esMapping.setSchemaItem(schemaItem);
     }
 
     public String getDataSourceKey() {
@@ -54,22 +65,6 @@ public class ESSyncConfig {
 
     public void setDataSourceKey(String dataSourceKey) {
         this.dataSourceKey = dataSourceKey;
-    }
-
-    public String getOuterAdapterKey() {
-        return outerAdapterKey;
-    }
-
-    public void setOuterAdapterKey(String outerAdapterKey) {
-        this.outerAdapterKey = outerAdapterKey;
-    }
-
-    public String getGroupId() {
-        return groupId;
-    }
-
-    public void setGroupId(String groupId) {
-        this.groupId = groupId;
     }
 
     public String getDestination() {
@@ -92,7 +87,7 @@ public class ESSyncConfig {
         private String env;
         private String _index;
         private String _id;
-        private long mappingMetadataTimeout = 12L* 60L * 60000L;
+        private long mappingMetadataTimeout = 12L * 60L * 60000L;
         private boolean upsert = false;
         /**
          * 遇到null，是否写入
@@ -113,9 +108,13 @@ public class ESSyncConfig {
         private boolean syncByTimestamp = false;                // 是否按时间戳定时同步
         private boolean detectNoop = true;                     // 文档无变化时是否刷新文档（同步词库的时候，有时文档无变化，那么索引可能不会重建）
         private Long syncInterval;                           // 同步时间间隔
-
         private SchemaItem schemaItem;                             // sql解析结果模型
         private ESSyncConfig config;
+
+        @Override
+        public String toString() {
+            return env + "[" + _index + "]";
+        }
 
         public long getMappingMetadataTimeout() {
             return mappingMetadataTimeout;
@@ -326,8 +325,12 @@ public class ESSyncConfig {
         private String parentDocumentId;
         private SchemaItem schemaItem;
         private ESMapping esMapping;
-
         private transient StaticMethodAccessor<ESStaticMethodParam> staticMethodAccessor;
+
+        @Override
+        public String toString() {
+            return fieldName + " [" + sql + "]";
+        }
 
         public StaticMethodAccessor<ESStaticMethodParam> staticMethodAccessor() {
             if (staticMethodAccessor == null) {
@@ -350,6 +353,23 @@ public class ESSyncConfig {
 
         public void setParentDocumentId(String parentDocumentId) {
             this.parentDocumentId = parentDocumentId;
+        }
+
+        String parentDocumentId() {
+            if (type != Type.ARRAY_SQL && type != Type.OBJECT_SQL) {
+                return null;
+            }
+            Map<String, List<String>> childColumnList = SqlParser.getVarColumnList(onChildChangeWhereSql);
+            SchemaItem.TableItem mainTable = schemaItem.getMainTable();
+            List<String> mainColumnList = childColumnList.get(mainTable.getAlias());
+            if (mainColumnList == null || mainColumnList.isEmpty()) {
+                return null;
+            }
+            LinkedHashSet<String> mainColumnSet = new LinkedHashSet<>(mainColumnList);
+            if (mainColumnSet.size() != 1) {
+                throw new IllegalArgumentException("parentDocumentId is only support single column. find " + mainColumnSet);
+            }
+            return mainColumnSet.iterator().next();
         }
 
         public String getOnChildChangeWhereSql() {

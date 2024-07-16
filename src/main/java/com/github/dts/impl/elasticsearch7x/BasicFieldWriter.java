@@ -1,5 +1,8 @@
 package com.github.dts.impl.elasticsearch7x;
 
+import com.github.dts.impl.elasticsearch7x.basic.*;
+import com.github.dts.impl.elasticsearch7x.nested.MergeJdbcTemplateSQL;
+import com.github.dts.impl.elasticsearch7x.nested.SQL;
 import com.github.dts.util.*;
 import com.github.dts.util.ESSyncConfig.ESMapping;
 import com.github.dts.util.SchemaItem.ColumnItem;
@@ -8,11 +11,7 @@ import com.github.dts.util.SchemaItem.TableItem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.sql.DataSource;
-import java.util.Collection;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * ES 同步 Service
@@ -29,7 +28,22 @@ public class BasicFieldWriter {
         this.esTemplate = esTemplate;
     }
 
+    private static void executeUpdate(List<ESSyncConfigSQL> sqlList) {
+        List<MergeJdbcTemplateSQL<ESSyncConfigSQL>> mergeList = MergeJdbcTemplateSQL.merge(sqlList, 500, true);
+        Map<ESSyncConfigSQL, List<Map<String, Object>>> executedMap = MergeJdbcTemplateSQL.executeQueryList(mergeList, null);
+        for (Map.Entry<ESSyncConfigSQL, List<Map<String, Object>>> entry : executedMap.entrySet()) {
+            ESSyncConfigSQL sql = entry.getKey();
+            sql.run(entry.getValue());
+        }
+    }
+
     public void write(Collection<ESSyncConfig> configList, List<Dml> dmlList, ESTemplate.BulkRequestList bulkRequestList) {
+        List<ESSyncConfigSQL> sqlList = writeEsReturnSql(configList, dmlList, bulkRequestList);
+        executeUpdate(sqlList);
+    }
+
+    private List<ESSyncConfigSQL> writeEsReturnSql(Collection<ESSyncConfig> configList, List<Dml> dmlList, ESTemplate.BulkRequestList bulkRequestList) {
+        List<ESSyncConfigSQL> sqlList = new ArrayList<>();
         for (ESSyncConfig config : configList) {
             for (Dml dml : dmlList) {
                 try {
@@ -41,14 +55,14 @@ public class BasicFieldWriter {
                     }
                     switch (type) {
                         case "UPDATE":
-                            update(config, dml, bulkRequestList);
+                            sqlList.addAll(update(config, dml, bulkRequestList));
                             break;
                         case "INSERT":
                         case "INIT":
-                            insert(config, dml, bulkRequestList);
+                            sqlList.addAll(insert(config, dml, bulkRequestList));
                             break;
                         case "DELETE":
-                            delete(config, dml, bulkRequestList);
+                            sqlList.addAll(delete(config, dml, bulkRequestList));
                             break;
                         default:
                             logger.info("sync unkonw type, es index: {}, DML : {}, 异常: {}", type, config.getEsMapping().get_index(), dml);
@@ -60,6 +74,7 @@ public class BasicFieldWriter {
                 }
             }
         }
+        return sqlList;
     }
 
     /**
@@ -68,11 +83,12 @@ public class BasicFieldWriter {
      * @param config es配置
      * @param dml    dml数据
      */
-    private void insert(ESSyncConfig config, Dml dml, ESTemplate.BulkRequestList bulkRequestList) {
+    private List<ESSyncConfigSQL> insert(ESSyncConfig config, Dml dml, ESTemplate.BulkRequestList bulkRequestList) {
         List<Map<String, Object>> dataList = dml.getData();
         if (dataList == null || dataList.isEmpty()) {
-            return;
+            return Collections.emptyList();
         }
+        List<ESSyncConfigSQL> list = new ArrayList<>();
         SchemaItem schemaItem = config.getEsMapping().getSchemaItem();
         for (Map<String, Object> data : dataList) {
             if (data == null || data.isEmpty()) {
@@ -82,12 +98,13 @@ public class BasicFieldWriter {
             if (schemaItem.getAliasTableItems().size() == 1 && schemaItem.isAllFieldsSimple()) {
                 // ------单表 & 所有字段都为简单字段------
                 if (schemaItem.getMainTable().getTableName().equalsIgnoreCase(dml.getTable())) {
-                    singleTableSimpleFiledInsert(config, dml, data, bulkRequestList);
+                    singleTableSimpleFiledInsert(config, data, bulkRequestList);
                 }
             } else {
                 // ------是主表 查询sql来插入------
                 if (schemaItem.getMainTable().getTableName().equalsIgnoreCase(dml.getTable())) {
-                    mainTableInsert(config, dml, data, bulkRequestList);
+                    InsertESSyncConfigSQL sql = mainTableInsert(config, dml, data, bulkRequestList);
+                    list.add(sql);
                 }
 
                 // 从表的操作
@@ -98,6 +115,11 @@ public class BasicFieldWriter {
                     if (!tableItem.getTableName().equalsIgnoreCase(dml.getTable())) {
                         continue;
                     }
+                    // insert的情况下，主键关联不可能存在关联影响 hao 2024-07-12
+                    if (tableItem.containsOwnerColumn(dml.getPkNames())) {
+                        continue;
+                    }
+
                     // 关联条件出现在主表查询条件是否为简单字段
                     boolean allFieldsSimple = true;
                     for (FieldItem fieldItem : tableItem.getRelationSelectFieldItems()) {
@@ -114,21 +136,37 @@ public class BasicFieldWriter {
                             Map<String, Object> esFieldData = new LinkedHashMap<>();
                             for (FieldItem fieldItem : tableItem.getRelationSelectFieldItems()) {
                                 Object value = esTemplate.getValFromData(config.getEsMapping(), data, fieldItem.getFieldName(), fieldItem.getColumnName());
-                                esFieldData.put(Util.cleanColumn(fieldItem.getFieldName()), value);
+                                esFieldData.put(fieldItem.getFieldName(), value);
                             }
 
                             joinTableSimpleFieldOperation(config, dml, data, tableItem, esFieldData, bulkRequestList);
                         } else {
                             // ------关联子表简单字段插入------
-                            subTableSimpleFieldOperation(config, dml, data, null, tableItem, bulkRequestList);
+                            SubTableSimpleFieldESSyncConfigSQL sql = subTableSimpleFieldOperation(config, dml, data, null, tableItem, bulkRequestList);
+                            list.add(sql);
                         }
                     } else {
                         // ------关联子表复杂字段插入 执行全sql更新es------
-                        wholeSqlOperation(config, dml, data, null, tableItem, bulkRequestList);
+                        WholeSqlOperationESSyncConfigSQL sql = wholeSqlOperation(config, dml, data, null, tableItem, bulkRequestList);
+                        list.add(sql);
                     }
                 }
             }
         }
+        return list;
+    }
+
+    private boolean isAllUpdateFieldSimple(Map<String, Object> old, Map<String, FieldItem> selectFields) {
+        for (FieldItem fieldItem : selectFields.values()) {
+            for (ColumnItem columnItem : fieldItem.getColumnItems()) {
+                if (old.containsKey(columnItem.getColumnName())) {
+                    if (fieldItem.isMethod() || fieldItem.isBinaryOp()) {
+                        return false;
+                    }
+                }
+            }
+        }
+        return true;
     }
 
     /**
@@ -137,14 +175,15 @@ public class BasicFieldWriter {
      * @param config es配置
      * @param dml    dml数据
      */
-    private void update(ESSyncConfig config, Dml dml, ESTemplate.BulkRequestList bulkRequestList) {
+    private List<ESSyncConfigSQL> update(ESSyncConfig config, Dml dml, ESTemplate.BulkRequestList bulkRequestList) {
         List<Map<String, Object>> dataList = dml.getData();
         List<Map<String, Object>> oldList = dml.getOld();
         if (dataList == null || dataList.isEmpty() || oldList == null || oldList.isEmpty()) {
-            return;
+            return Collections.emptyList();
         }
         SchemaItem schemaItem = config.getEsMapping().getSchemaItem();
         int i = 0;
+        List<ESSyncConfigSQL> list = new ArrayList<>();
         for (Map<String, Object> data : dataList) {
             Map<String, Object> old = oldList.get(i);
             if (data == null || data.isEmpty() || old == null || old.isEmpty()) {
@@ -159,25 +198,10 @@ public class BasicFieldWriter {
                 if (schemaItem.getMainTable().getTableName().equalsIgnoreCase(dml.getTable())) {
                     ESMapping mapping = config.getEsMapping();
                     String idFieldName = mapping.get_id() == null ? mapping.getPk() : mapping.get_id();
+
                     FieldItem idFieldItem = schemaItem.getSelectFields().get(idFieldName);
-
-                    boolean idFieldSimple = true;
-                    if (idFieldItem.isMethod() || idFieldItem.isBinaryOp()) {
-                        idFieldSimple = false;
-                    }
-
-                    boolean allUpdateFieldSimple = true;
-                    out:
-                    for (FieldItem fieldItem : schemaItem.getSelectFields().values()) {
-                        for (ColumnItem columnItem : fieldItem.getColumnItems()) {
-                            if (old.containsKey(columnItem.getColumnName())) {
-                                if (fieldItem.isMethod() || fieldItem.isBinaryOp()) {
-                                    allUpdateFieldSimple = false;
-                                    break out;
-                                }
-                            }
-                        }
-                    }
+                    boolean idFieldSimple = !idFieldItem.isMethod() && !idFieldItem.isBinaryOp();
+                    boolean allUpdateFieldSimple = isAllUpdateFieldSimple(old, schemaItem.getSelectFields());
 
                     // 不支持主键更新!!
 
@@ -200,8 +224,7 @@ public class BasicFieldWriter {
                         // 如果外键有修改,则更新所对应该表的所有查询条件数据
                         if (changed) {
                             for (FieldItem fieldItem : tableItem.getRelationSelectFieldItems()) {
-                                fieldItem.getColumnItems()
-                                        .forEach(columnItem -> old.put(columnItem.getColumnName(), null));
+                                fieldItem.getColumnItems().forEach(columnItem -> old.put(columnItem.getColumnName(), null));
                             }
                         }
                     }
@@ -210,7 +233,8 @@ public class BasicFieldWriter {
                     if (idFieldSimple && allUpdateFieldSimple && !fkChanged) {
                         singleTableSimpleFiledUpdate(config, dml, data, old, bulkRequestList);
                     } else {
-                        mainTableUpdate(config, dml, data, old, bulkRequestList);
+                        UpdateESSyncConfigSQL sql = mainTableUpdate(config, dml, data, old, bulkRequestList);
+                        list.add(sql);
                     }
                 }
 
@@ -247,17 +271,20 @@ public class BasicFieldWriter {
                             joinTableSimpleFieldOperation(config, dml, data, tableItem, esFieldData, bulkRequestList);
                         } else {
                             // ------关联子表简单字段更新------
-                            subTableSimpleFieldOperation(config, dml, data, old, tableItem, bulkRequestList);
+                            SubTableSimpleFieldESSyncConfigSQL sql = subTableSimpleFieldOperation(config, dml, data, old, tableItem, bulkRequestList);
+                            list.add(sql);
                         }
                     } else {
                         // ------关联子表复杂字段更新 执行全sql更新es------
-                        wholeSqlOperation(config, dml, data, old, tableItem, bulkRequestList);
+                        WholeSqlOperationESSyncConfigSQL sql = wholeSqlOperation(config, dml, data, old, tableItem, bulkRequestList);
+                        list.add(sql);
                     }
                 }
             }
 
             i++;
         }
+        return list;
     }
 
     /**
@@ -266,13 +293,14 @@ public class BasicFieldWriter {
      * @param config es配置
      * @param dml    dml数据
      */
-    private void delete(ESSyncConfig config, Dml dml, ESTemplate.BulkRequestList bulkRequestList) {
+    private List<ESSyncConfigSQL> delete(ESSyncConfig config, Dml dml, ESTemplate.BulkRequestList bulkRequestList) {
         List<Map<String, Object>> dataList = dml.getData();
         if (dataList == null || dataList.isEmpty()) {
-            return;
+            return Collections.emptyList();
         }
         SchemaItem schemaItem = config.getEsMapping().getSchemaItem();
 
+        List<ESSyncConfigSQL> list = new ArrayList<>();
         for (Map<String, Object> data : dataList) {
             if (data == null || data.isEmpty()) {
                 continue;
@@ -287,19 +315,12 @@ public class BasicFieldWriter {
                     // 主键为简单字段
                     if (!idFieldItem.isMethod() && !idFieldItem.isBinaryOp()) {
                         Object idVal = esTemplate.getValFromData(mapping, data, idFieldItem.getFieldName(), idFieldItem.getColumnName());
-
-                        if (logger.isTraceEnabled()) {
-                            logger.trace("Main table delete es index, destination:{}, table: {}, index: {}, id: {}",
-                                    config.getDestination(),
-                                    dml.getTable(),
-                                    mapping.get_index(),
-                                    idVal);
-                        }
                         esTemplate.delete(mapping, idVal, null, bulkRequestList);
                     } else {
                         // ------主键带函数, 查询sql获取主键删除------
                         // FIXME 删除时反查sql为空记录, 无法获获取 id field 值
-                        mainTableDelete(config, dml, data, bulkRequestList);
+                        DeleteESSyncConfigSQL sql = mainTableDelete(config, dml, data, bulkRequestList);
+                        list.add(sql);
                     }
                 } else {
                     FieldItem pkFieldItem = schemaItem.getIdFieldItem(mapping);
@@ -307,19 +328,13 @@ public class BasicFieldWriter {
                         Map<String, Object> esFieldData = new LinkedHashMap<>();
                         Object pkVal = esTemplate.getESDataFromDmlData(mapping, data, esFieldData);
 
-                        if (logger.isTraceEnabled()) {
-                            logger.trace("Main table delete es index, destination:{}, table: {}, index: {}, pk: {}",
-                                    config.getDestination(),
-                                    dml.getTable(),
-                                    mapping.get_index(),
-                                    pkVal);
-                        }
                         esFieldData.remove(pkFieldItem.getFieldName());
                         esFieldData.keySet().forEach(key -> esFieldData.put(key, null));
                         esTemplate.delete(mapping, pkVal, esFieldData, bulkRequestList);
                     } else {
                         // ------主键带函数, 查询sql获取主键删除------
-                        mainTableDelete(config, dml, data, bulkRequestList);
+                        DeleteESSyncConfigSQL sql = mainTableDelete(config, dml, data, bulkRequestList);
+                        list.add(sql);
                     }
                 }
 
@@ -355,125 +370,46 @@ public class BasicFieldWriter {
                         joinTableSimpleFieldOperation(config, dml, data, tableItem, esFieldData, bulkRequestList);
                     } else {
                         // ------关联子表简单字段更新------
-                        subTableSimpleFieldOperation(config, dml, data, null, tableItem, bulkRequestList);
+                        SubTableSimpleFieldESSyncConfigSQL sql = subTableSimpleFieldOperation(config, dml, data, null, tableItem, bulkRequestList);
+                        list.add(sql);
                     }
                 } else {
                     // ------关联子表复杂字段更新 执行全sql更新es------
-                    wholeSqlOperation(config, dml, data, null, tableItem, bulkRequestList);
+                    WholeSqlOperationESSyncConfigSQL sql = wholeSqlOperation(config, dml, data, null, tableItem, bulkRequestList);
+                    list.add(sql);
                 }
             }
         }
+        return list;
     }
 
     /**
      * 单表简单字段insert
      *
      * @param config es配置
-     * @param dml    dml信息
      * @param data   单行dml数据
      */
-    private void singleTableSimpleFiledInsert(ESSyncConfig config, Dml dml, Map<String, Object> data, ESTemplate.BulkRequestList bulkRequestList) {
+    private void singleTableSimpleFiledInsert(ESSyncConfig config, Map<String, Object> data, ESTemplate.BulkRequestList bulkRequestList) {
         ESMapping mapping = config.getEsMapping();
         Map<String, Object> esFieldData = new LinkedHashMap<>();
         Object idVal = esTemplate.getESDataFromDmlData(mapping, data, esFieldData);
-
-        if (logger.isTraceEnabled()) {
-            logger.trace("Single table insert ot es index, destination:{}, table: {}, index: {}, id: {}",
-                    config.getDestination(),
-                    dml.getTable(),
-                    mapping.get_index(),
-                    idVal);
-        }
         esTemplate.insert(mapping, idVal, esFieldData, bulkRequestList);
     }
 
     /**
-     * 主表(单表)复杂字段insert
+     * 单表简单字段update
      *
      * @param config es配置
      * @param dml    dml信息
-     * @param data   单行dml数据
+     * @param data   单行data数据
+     * @param old    单行old数据
      */
-    private void mainTableInsert(ESSyncConfig config, Dml dml, Map<String, Object> data, ESTemplate.BulkRequestList bulkRequestList) {
+    private void singleTableSimpleFiledUpdate(ESSyncConfig config, Dml dml, Map<String, Object> data,
+                                              Map<String, Object> old, ESTemplate.BulkRequestList bulkRequestList) {
         ESMapping mapping = config.getEsMapping();
-        String sql = mapping.getSql();
-        String condition = ESSyncUtil.pkConditionSql(mapping, data);
-        sql = ESSyncUtil.appendCondition(sql, condition);
-        DataSource ds = CanalConfig.DatasourceConfig.getDataSource(config.getDataSourceKey());
-        if (logger.isTraceEnabled()) {
-            logger.trace("Main table insert ot es index by query sql, destination:{}, table: {}, index: {}, sql: {}",
-                    config.getDestination(),
-                    dml.getTable(),
-                    mapping.get_index(),
-                    sql.replace("\n", " "));
-        }
-        Util.sqlRS(ds, sql, rs -> {
-            try {
-                while (rs.next()) {
-                    Map<String, Object> esFieldData = new LinkedHashMap<>();
-                    Object idVal = esTemplate.getESDataFromRS(mapping, rs, esFieldData, data);
-
-                    if (logger.isTraceEnabled()) {
-                        logger.trace(
-                                "Main table insert ot es index by query sql, destination:{}, table: {}, index: {}, id: {}",
-                                config.getDestination(),
-                                dml.getTable(),
-                                mapping.get_index(),
-                                idVal);
-                    }
-                    esTemplate.insert(mapping, idVal, esFieldData, bulkRequestList);
-                }
-            } catch (Exception e) {
-                logger.error("Util.sqlRS 异常：{}", Util.getStackTrace(e));
-                Util.sneakyThrows(e);
-            }
-            return 0;
-        });
-    }
-
-    private void mainTableDelete(ESSyncConfig config, Dml dml, Map<String, Object> data, ESTemplate.BulkRequestList bulkRequestList) {
-        ESMapping mapping = config.getEsMapping();
-        String sql = mapping.getSql();
-        String condition = ESSyncUtil.pkConditionSql(mapping, data);
-        sql = ESSyncUtil.appendCondition(sql, condition);
-        DataSource ds = CanalConfig.DatasourceConfig.getDataSource(config.getDataSourceKey());
-        if (logger.isTraceEnabled()) {
-            logger.trace("Main table delete es index by query sql, destination:{}, table: {}, index: {}, sql: {}",
-                    config.getDestination(),
-                    dml.getTable(),
-                    mapping.get_index(),
-                    sql.replace("\n", " "));
-        }
-        Util.sqlRS(ds, sql, rs -> {
-            try {
-                Map<String, Object> esFieldData = null;
-                if (mapping.getPk() != null) {
-                    esFieldData = new LinkedHashMap<>();
-                    esTemplate.getESDataFromDmlData(mapping, data, esFieldData);
-                    esFieldData.remove(mapping.getPk());
-                    for (String key : esFieldData.keySet()) {
-                        esFieldData.put(Util.cleanColumn(key), null);
-                    }
-                }
-                while (rs.next()) {
-                    Object idVal = esTemplate.getIdValFromRS(mapping, rs);
-
-                    if (logger.isTraceEnabled()) {
-                        logger.trace(
-                                "Main table delete ot es index by query sql, destination:{}, table: {}, index: {}, id: {}",
-                                config.getDestination(),
-                                dml.getTable(),
-                                mapping.get_index(),
-                                idVal);
-                    }
-                    esTemplate.delete(mapping, idVal, esFieldData, bulkRequestList);
-                }
-            } catch (Exception e) {
-                logger.error("Util.sqlRS 异常：{}", Util.getStackTrace(e));
-                Util.sneakyThrows(e);
-            }
-            return 0;
-        });
+        Map<String, Object> esFieldData = new LinkedHashMap<>();
+        Object idVal = esTemplate.getESDataFromDmlData(mapping, data, old, esFieldData, dml.getTable());
+        esTemplate.update(mapping, idVal, esFieldData, bulkRequestList);
     }
 
     /**
@@ -497,20 +433,32 @@ public class BasicFieldWriter {
                     String fieldName = fieldItem.getFieldName();
                     // 判断是否是主键
                     if (fieldName.equals(mapping.get_id())) {
-                        fieldName = "_id";
+                        fieldName = ESSyncConfig.ES_ID_FIELD_NAME;
                     }
                     paramsTmp.put(fieldName, value);
                 }
             }
         }
-
-        if (logger.isTraceEnabled()) {
-            logger.trace("Join table update es index by foreign key, destination:{}, table: {}, index: {}",
-                    config.getDestination(),
-                    dml.getTable(),
-                    mapping.get_index());
-        }
         esTemplate.updateByQuery(config, paramsTmp, esFieldData, bulkRequestList);
+    }
+
+    /**
+     * 主表(单表)复杂字段insert
+     *
+     * @param config es配置
+     * @param dml    dml信息
+     * @param data   单行dml数据
+     */
+    private InsertESSyncConfigSQL mainTableInsert(ESSyncConfig config, Dml dml, Map<String, Object> data, ESTemplate.BulkRequestList bulkRequestList) {
+        ESMapping mapping = config.getEsMapping();
+        SQL sql = ESSyncUtil.convertSqlByMapping(mapping, data);
+        return new InsertESSyncConfigSQL(sql, config, dml, data, bulkRequestList, esTemplate);
+    }
+
+    private DeleteESSyncConfigSQL mainTableDelete(ESSyncConfig config, Dml dml, Map<String, Object> data, ESTemplate.BulkRequestList bulkRequestList) {
+        ESMapping mapping = config.getEsMapping();
+        SQL sql = ESSyncUtil.convertSqlByMapping(mapping, data);
+        return new DeleteESSyncConfigSQL(sql, config, dml, data, bulkRequestList, esTemplate);
     }
 
     /**
@@ -522,95 +470,10 @@ public class BasicFieldWriter {
      * @param old       单行old数据
      * @param tableItem 当前表配置
      */
-    private void subTableSimpleFieldOperation(ESSyncConfig config, Dml dml, Map<String, Object> data,
-                                              Map<String, Object> old, TableItem tableItem, ESTemplate.BulkRequestList bulkRequestList) {
-        ESMapping mapping = config.getEsMapping();
-        StringBuilder sql = new StringBuilder(
-                "SELECT * FROM (" + tableItem.getSubQuerySql() + ") " + tableItem.getAlias() + " WHERE ");
-
-        for (FieldItem fkFieldItem : tableItem.getRelationTableFields().keySet()) {
-            String columnName = fkFieldItem.getColumn().getColumnName();
-            Object value = esTemplate.getValFromData(mapping, data, fkFieldItem.getFieldName(), columnName);
-            ESSyncUtil.appendCondition(sql, value, tableItem.getAlias(), columnName);
-        }
-        int len = sql.length();
-        sql.delete(len - 5, len);
-        DataSource ds = CanalConfig.DatasourceConfig.getDataSource(config.getDataSourceKey());
-        if (logger.isTraceEnabled()) {
-            logger.trace("Join table update es index by query sql, destination:{}, table: {}, index: {}, sql: {}",
-                    config.getDestination(),
-                    dml.getTable(),
-                    mapping.get_index(),
-                    sql.toString().replace("\n", " "));
-        }
-        Util.sqlRS(ds, sql.toString(), rs -> {
-            try {
-                boolean onceFlag = false;
-                while (rs.next()) {
-                    onceFlag = true;
-                    Map<String, Object> esFieldData = new LinkedHashMap<>();
-
-                    for (FieldItem fieldItem : tableItem.getRelationSelectFieldItems()) {
-                        if (old != null) {
-                            out:
-                            for (FieldItem fieldItem1 : tableItem.getSubQueryFields()) {
-                                for (ColumnItem columnItem0 : fieldItem.getColumnItems()) {
-                                    if (fieldItem1.equalsField(columnItem0.getColumnName())) {
-                                        for (ColumnItem columnItem : fieldItem1.getColumnItems()) {
-                                            if (old.containsKey(columnItem.getColumnName())) {
-                                                Object val = esTemplate.getValFromRS(mapping, rs, fieldItem.getFieldName(), fieldItem.getColumnName(),
-                                                        data);
-                                                esFieldData.put(Util.cleanColumn(fieldItem.getFieldName()), val);
-                                                break out;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        } else {
-                            Object val = esTemplate.getValFromRS(mapping, rs, fieldItem.getFieldName(), fieldItem.getColumnName(),
-                                    data);
-                            esFieldData.put(Util.cleanColumn(fieldItem.getFieldName()), val);
-                        }
-                    }
-
-                    Map<String, Object> paramsTmp = new LinkedHashMap<>();
-                    for (Map.Entry<FieldItem, List<FieldItem>> entry : tableItem.getRelationTableFields().entrySet()) {
-                        for (FieldItem fieldItem : entry.getValue()) {
-                            if (fieldItem.getColumnItems().size() == 1) {
-                                Object value = esTemplate.getValFromRS(mapping, rs, fieldItem.getFieldName(), entry.getKey().getColumnName(),
-                                        data);
-                                String fieldName = fieldItem.getFieldName();
-                                // 判断是否是主键
-                                if (fieldName.equals(mapping.get_id())) {
-                                    fieldName = "_id";
-                                }
-                                paramsTmp.put(fieldName, value);
-                            }
-                        }
-                    }
-
-                    if (logger.isTraceEnabled()) {
-                        logger.trace("Join table update es index by query sql, destination:{}, table: {}, index: {}",
-                                config.getDestination(),
-                                dml.getTable(),
-                                mapping.get_index());
-                    }
-                    esTemplate.updateByQuery(config, paramsTmp, esFieldData, bulkRequestList);
-                }
-                if (!onceFlag) {
-                    logger.error("有事件，无数据：destination:{}, table: {}, index: {}, sql: {}，data：{},old:{}",
-                            config.getDestination(),
-                            dml.getTable(),
-                            mapping.get_index(),
-                            sql.toString().replace("\n", " "), JsonUtil.toJson(data), JsonUtil.toJson(old));
-                }
-            } catch (Exception e) {
-                logger.error("Util.sqlRS 异常：{}", Util.getStackTrace(e));
-                Util.sneakyThrows(e);
-            }
-            return 0;
-        });
+    private SubTableSimpleFieldESSyncConfigSQL subTableSimpleFieldOperation(ESSyncConfig config, Dml dml, Map<String, Object> data,
+                                                                            Map<String, Object> old, TableItem tableItem, ESTemplate.BulkRequestList bulkRequestList) {
+        SQL sql = ESSyncUtil.convertSQLBySubQuery(data, old, tableItem);
+        return new SubTableSimpleFieldESSyncConfigSQL(sql, config, dml, data, old, bulkRequestList, esTemplate, tableItem);
     }
 
     /**
@@ -621,124 +484,10 @@ public class BasicFieldWriter {
      * @param data      单行dml数据
      * @param tableItem 当前表配置
      */
-    private void wholeSqlOperation(ESSyncConfig config, Dml dml, Map<String, Object> data, Map<String, Object> old,
-                                   TableItem tableItem, ESTemplate.BulkRequestList bulkRequestList) {
-        ESMapping mapping = config.getEsMapping();
-        StringBuilder sql = new StringBuilder(mapping.getSql() + " WHERE ");
-
-        for (FieldItem fkFieldItem : tableItem.getRelationTableFields().keySet()) {
-            String columnName = fkFieldItem.getColumn().getColumnName();
-            Object value = esTemplate.getValFromData(mapping, data, fkFieldItem.getFieldName(), columnName);
-            ESSyncUtil.appendCondition(sql, value, tableItem.getAlias(), columnName);
-        }
-        int len = sql.length();
-        sql.delete(len - 5, len);
-        DataSource ds = CanalConfig.DatasourceConfig.getDataSource(config.getDataSourceKey());
-        if (logger.isTraceEnabled()) {
-            logger.trace("Join table update es index by query whole sql, destination:{}, table: {}, index: {}, sql: {}",
-                    config.getDestination(),
-                    dml.getTable(),
-                    mapping.get_index(),
-                    sql.toString().replace("\n", " "));
-        }
-        Util.sqlRS(ds, sql.toString(), rs -> {
-            try {
-                while (rs.next()) {
-                    Map<String, Object> esFieldData = new LinkedHashMap<>();
-                    for (FieldItem fieldItem : tableItem.getRelationSelectFieldItems()) {
-                        if (old != null) {
-                            // 从表子查询
-                            out:
-                            for (FieldItem fieldItem1 : tableItem.getSubQueryFields()) {
-                                for (ColumnItem columnItem0 : fieldItem.getColumnItems()) {
-                                    if (fieldItem1.getFieldName().equals(columnItem0.getColumnName())) {
-                                        for (ColumnItem columnItem : fieldItem1.getColumnItems()) {
-                                            if (old.containsKey(columnItem.getColumnName())) {
-                                                Object val = esTemplate.getValFromRS(mapping, rs, fieldItem.getFieldName(), fieldItem.getColumnName(),
-                                                        data);
-                                                esFieldData.put(fieldItem.getFieldName(), val);
-                                                break out;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            // 从表非子查询
-                            for (FieldItem fieldItem1 : tableItem.getRelationSelectFieldItems()) {
-                                if (fieldItem1.equals(fieldItem)) {
-                                    for (ColumnItem columnItem : fieldItem1.getColumnItems()) {
-                                        if (old.containsKey(columnItem.getColumnName())) {
-                                            Object val = esTemplate.getValFromRS(mapping, rs, fieldItem.getFieldName(), fieldItem.getColumnName(),
-                                                    data);
-                                            esFieldData.put(Util.cleanColumn(fieldItem.getFieldName()), val);
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                        } else {
-                            Object val = esTemplate
-                                    .getValFromRS(mapping, rs, fieldItem.getFieldName(), fieldItem.getFieldName(),
-                                            data);
-                            esFieldData.put(Util.cleanColumn(fieldItem.getFieldName()), val);
-                        }
-                    }
-
-                    Map<String, Object> paramsTmp = new LinkedHashMap<>();
-                    for (Map.Entry<FieldItem, List<FieldItem>> entry : tableItem.getRelationTableFields().entrySet()) {
-                        for (FieldItem fieldItem : entry.getValue()) {
-                            Object value = esTemplate
-                                    .getValFromRS(mapping, rs, fieldItem.getFieldName(), fieldItem.getFieldName(),
-                                            data);
-                            String fieldName = fieldItem.getFieldName();
-                            // 判断是否是主键
-                            if (fieldName.equals(mapping.get_id())) {
-                                fieldName = "_id";
-                            }
-                            paramsTmp.put(fieldName, value);
-                        }
-                    }
-
-                    if (logger.isTraceEnabled()) {
-                        logger.trace(
-                                "Join table update es index by query whole sql, destination:{}, table: {}, index: {}",
-                                config.getDestination(),
-                                dml.getTable(),
-                                mapping.get_index());
-                    }
-                    esTemplate.updateByQuery(config, paramsTmp, esFieldData, bulkRequestList);
-                }
-            } catch (Exception e) {
-                logger.error("Util.sqlRS 异常：{}", Util.getStackTrace(e));
-                Util.sneakyThrows(e);
-            }
-            return 0;
-        });
-    }
-
-    /**
-     * 单表简单字段update
-     *
-     * @param config es配置
-     * @param dml    dml信息
-     * @param data   单行data数据
-     * @param old    单行old数据
-     */
-    private void singleTableSimpleFiledUpdate(ESSyncConfig config, Dml dml, Map<String, Object> data,
-                                              Map<String, Object> old, ESTemplate.BulkRequestList bulkRequestList) {
-        ESMapping mapping = config.getEsMapping();
-        Map<String, Object> esFieldData = new LinkedHashMap<>();
-
-        Object idVal = esTemplate.getESDataFromDmlData(mapping, data, old, esFieldData, dml.getTable());
-
-        if (logger.isTraceEnabled()) {
-            logger.trace("Main table update ot es index, destination:{}, table: {}, index: {}, id: {}",
-                    config.getDestination(),
-                    dml.getTable(),
-                    mapping.get_index(),
-                    idVal);
-        }
-        esTemplate.update(mapping, idVal, esFieldData, bulkRequestList);
+    private WholeSqlOperationESSyncConfigSQL wholeSqlOperation(ESSyncConfig config, Dml dml, Map<String, Object> data, Map<String, Object> old,
+                                                               TableItem tableItem, ESTemplate.BulkRequestList bulkRequestList) {
+        SQL sql = ESSyncUtil.convertSQLByMapping(config.getEsMapping(), data, old, tableItem);
+        return new WholeSqlOperationESSyncConfigSQL(sql, config, dml, data, old, bulkRequestList, esTemplate, tableItem);
     }
 
     /**
@@ -748,43 +497,11 @@ public class BasicFieldWriter {
      * @param dml    dml信息
      * @param data   单行dml数据
      */
-    private void mainTableUpdate(ESSyncConfig config, Dml dml, Map<String, Object> data, Map<String, Object> old, ESTemplate.BulkRequestList bulkRequestList) {
+    private UpdateESSyncConfigSQL mainTableUpdate(ESSyncConfig config, Dml dml, Map<String, Object> data, Map<String, Object> old, ESTemplate.BulkRequestList bulkRequestList) {
         ESMapping mapping = config.getEsMapping();
-        String sql = mapping.getSql();
-        String condition = ESSyncUtil.pkConditionSql(mapping, data);
-        sql = ESSyncUtil.appendCondition(sql, condition);
-        DataSource ds = CanalConfig.DatasourceConfig.getDataSource(config.getDataSourceKey());
-        if (logger.isTraceEnabled()) {
-            logger.trace("Main table update ot es index by query sql, destination:{}, table: {}, index: {}, sql: {}",
-                    config.getDestination(),
-                    dml.getTable(),
-                    mapping.get_index(),
-                    sql.replace("\n", " "));
-        }
-        Util.sqlRS(ds, sql, rs -> {
-            try {
-                while (rs.next()) {
-                    Map<String, Object> esFieldData = new LinkedHashMap<>();
-                    Object idVal = esTemplate.getESDataFromRS(mapping, rs, old, esFieldData, data);
-                    if (idVal == null) {
-                        logger.info("空 ==============》 {}", dml);
-                    }
-                    if (logger.isTraceEnabled()) {
-                        logger.trace(
-                                "Main table update ot es index by query sql, destination:{}, table: {}, index: {}, id: {}",
-                                config.getDestination(),
-                                dml.getTable(),
-                                mapping.get_index(),
-                                idVal);
-                    }
-                    esTemplate.update(mapping, idVal, esFieldData, bulkRequestList);
-                }
-            } catch (Exception e) {
-                logger.error("Util.sqlRS 异常：{}", Util.getStackTrace(e));
-                Util.sneakyThrows(e);
-            }
-            return 0;
-        });
+        SQL sql = ESSyncUtil.convertSqlByMapping(mapping, data);
+        return new UpdateESSyncConfigSQL(sql, config, dml, data, old, bulkRequestList, esTemplate);
     }
+
 
 }

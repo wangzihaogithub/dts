@@ -18,16 +18,20 @@ import com.alibaba.otter.canal.protocol.CanalEntry;
 import com.alibaba.otter.canal.protocol.ClientIdentity;
 import com.alibaba.otter.canal.protocol.Message;
 import com.alibaba.otter.canal.protocol.position.EntryPosition;
+import com.alibaba.otter.canal.protocol.position.Position;
 import com.alibaba.otter.canal.server.embedded.CanalServerWithEmbedded;
 import com.alibaba.otter.canal.sink.entry.EntryEventSink;
 import com.alibaba.otter.canal.store.memory.MemoryEventStoreWithBuffer;
 import com.alibaba.otter.canal.store.model.BatchMode;
 import com.github.dts.util.CanalConfig;
 import com.github.dts.util.Dml;
+import com.github.dts.util.MetaDataRepository;
 import com.github.dts.util.Util;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.mysql.cj.jdbc.MysqlDataSource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.sql.DataSource;
 import java.io.File;
@@ -37,11 +41,14 @@ import java.sql.*;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 public class MysqlBinlogCanalConnector implements CanalConnector {
+    private static final Logger log = LoggerFactory.getLogger(MysqlBinlogCanalConnector.class);
     private static final Map<String, CanalInstance> canalInstanceMap = new ConcurrentHashMap<>();
     private final CanalServerWithEmbedded server = CanalServerWithEmbedded.instance();
     private final ClientIdentity identity;
@@ -54,6 +61,10 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
     private final int maxDumpThread;
     private final DataSource dataSource;
     private final boolean enableGTID;
+    private final String[] destination;
+    private final StartupServer startupServer;
+    private final String metaPrefix;
+    private final boolean selectAck2;
     private CanalInstanceWithSpring subscribe;
     private Integer pullSize;
     private Message lastMessage;
@@ -61,12 +72,20 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
     private volatile boolean setDiscard = false;
     private Consumer<CanalConnector> rebuildConsumer;
     private boolean connect;
+    private MetaDataFileMixedMetaManager metaManager;
 
-    public MysqlBinlogCanalConnector(CanalConfig canalConfig, CanalConfig.CanalAdapter config) throws URISyntaxException {
+    public MysqlBinlogCanalConnector(CanalConfig canalConfig,
+                                     CanalConfig.CanalAdapter config,
+                                     StartupServer startupServer,
+                                     boolean rebuild) throws URISyntaxException {
         Properties properties = config.getProperties();
 
-        String destination = config.getDestination();
-        this.identity = new ClientIdentity(destination, (short) 1001);
+        this.selectAck2 = !rebuild;
+        this.metaPrefix = config.getMetaPrefix();
+        this.startupServer = startupServer;
+        String clientIdentityName = config.clientIdentity();
+        this.destination = config.getDestination();
+        this.identity = new ClientIdentity(clientIdentityName, (short) 1001);
         String dataSource = properties.getProperty("dataSource");
         this.maxDumpThread = Integer.parseInt(properties.getProperty("maxDumpThread", String.valueOf(Integer.MAX_VALUE)));
         if (dataSource != null) {
@@ -86,7 +105,7 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
         }
 
         this.enableGTID = "true".equalsIgnoreCase(properties.getProperty("enableGTID", "false"));
-        this.slaveId = Integer.parseInt(properties.getProperty("slaveId", String.valueOf(generateUniqueServerId(destination, Util.getIPAddress()))));
+        this.slaveId = Integer.parseInt(properties.getProperty("slaveId", String.valueOf(generateUniqueServerId(clientIdentityName, Util.getIPAddress()))));
         this.dataDir = new File(properties.getProperty("dataDir", System.getProperty("user.dir")));
         server.setCanalInstanceGenerator(canalInstanceMap::get);
     }
@@ -121,7 +140,7 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
         }
     }
 
-    public static List<Dml> convert(Message message, String destination) {
+    public static List<Dml> convert(Message message, String[] destination) {
         if (message.isRaw()) {
             for (ByteString byteString : message.getRawEntries()) {
                 try {
@@ -308,7 +327,16 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
         CanalAlarmHandler alarmHandler = new AlarmHandler();
 
         RdsBinlogEventParserProxy eventParser =
-                new RdsBinlogEventParserProxy();
+                new RdsBinlogEventParserProxy() {
+                    @Override
+                    protected void processDumpError(Throwable e) {
+                        super.processDumpError(e);
+                        String message = e.getMessage();
+                        if (message != null && message.contains("errno = 1236")) {
+                            rebuild(identity.getDestination(), message);
+                        }
+                    }
+                };
         eventParser.setDestination(identity.getDestination());
         eventParser.setSlaveId(slaveId);
         eventParser.setDetectingEnable(false);
@@ -321,10 +349,9 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
         AviaterRegexFilter eventBlackFilter = new AviaterRegexFilter("", false);
         eventParser.setEventBlackFilter(eventBlackFilter);
 
-        int period = 1000;
-        FileMixedMetaManager metaManager = new FileMixedMetaManager();
+        FileMixedMetaManager metaManager = this.metaManager = new MetaDataFileMixedMetaManager(identity, startupServer, metaPrefix, selectAck2);
         metaManager.setDataDirByFile(dataDir);
-        metaManager.setPeriod(period);
+        metaManager.setPeriod(1000L);
 
         FailbackLogPositionManager logPositionManager = new FailbackLogPositionManager(
                 new MemoryLogPositionManager(),
@@ -426,7 +453,13 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
 
             server.start(identity.getDestination());
             server.subscribe(identity);
+
+            metaManager.setCursor(getCurrentCursor(), false);
         }
+    }
+
+    private Position getCurrentCursor() {
+        return subscribe.getMetaManager().getCursor(identity);
     }
 
     @Override
@@ -444,6 +477,12 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
     }
 
     @Override
+    public Ack2 getAck2() {
+        Position currentCursor = getCurrentCursor();
+        return new PositionAck2(currentCursor, metaManager);
+    }
+
+    @Override
     public List<Dml> getListWithoutAck(Duration timeout) {
         if (setDiscard) {
             this.discardResult = discard();
@@ -454,7 +493,7 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
             return Collections.emptyList();
         }
         lastMessage = message;
-        List<Dml> list = convert(message, identity.getDestination());
+        List<Dml> list = convert(message, destination);
         if (list.isEmpty()) {
             ack();
             return Collections.emptyList();
@@ -506,18 +545,108 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
         return null;
     }
 
+    private synchronized void rebuild(String clientIdentityName, String message) {
+        log.warn("rebuild {}, error = {}", clientIdentityName, message);
+        if (rebuildConsumer != null) {
+            File file = new File(new File(dataDir, clientIdentityName), "meta.dat");
+            if (deleteDir(file)) {
+                lastMessage = null;
+            }
+            rebuildConsumer.accept(MysqlBinlogCanalConnector.this);
+        }
+    }
+
+    private static class PositionAck2 implements Ack2 {
+        private final Position currentCursor;
+        private final MetaDataFileMixedMetaManager metaManager;
+
+        private PositionAck2(Position currentCursor, MetaDataFileMixedMetaManager metaManager) {
+            this.currentCursor = currentCursor;
+            this.metaManager = metaManager;
+        }
+
+        @Override
+        public void ack() {
+            metaManager.setCursor(currentCursor, true);
+        }
+
+        @Override
+        public String toString() {
+            return currentCursor.toString();
+        }
+    }
+
+    public static class MetaDataFileMixedMetaManager extends FileMixedMetaManager {
+        private final ClientIdentity identity;
+        private final MetaDataRepository metaDataRepository;
+        private final AtomicBoolean cursorChange = new AtomicBoolean();
+        private final boolean selectAck2;
+        private ScheduledExecutorService scheduled;
+        private volatile Object cursor;
+        private long period = 1000L;
+
+        public MetaDataFileMixedMetaManager(ClientIdentity identity, StartupServer startupServer, String prefix, boolean selectAck2) {
+            this.identity = identity;
+            this.selectAck2 = selectAck2;
+            this.metaDataRepository = MetaDataRepository.newInstance(
+                    prefix + startupServer.getEnv() + ":" + identity.getDestination(), startupServer.getBeanFactory());
+        }
+
+        @Override
+        public void setPeriod(long period) {
+            super.setPeriod(period);
+            this.period = period;
+        }
+
+        public void setCursor(Object cursor, boolean change) {
+            this.cursor = cursor;
+            if (change) {
+                this.cursorChange.set(true);
+            }
+        }
+
+        @Override
+        public void start() {
+            super.start();
+            if (metaDataRepository != null) {
+                scheduled = Util.newScheduled(1, metaDataRepository.getClass().getSimpleName(), true);
+                scheduled.scheduleAtFixedRate(() -> {
+                    if (cursorChange.compareAndSet(true, false)) {
+                        Object cursor = this.cursor;
+                        if (cursor != null) {
+                            metaDataRepository.setCursor(cursor);
+                        }
+                    }
+                }, period, period, TimeUnit.MILLISECONDS);
+
+                if (selectAck2) {
+                    Position cursor = metaDataRepository.getCursor();
+                    if (cursor != null) {
+                        updateCursor(identity, cursor);
+                    }
+                }
+            }
+        }
+
+
+        @Override
+        public void stop() {
+            super.stop();
+            if (metaDataRepository != null) {
+                metaDataRepository.close();
+            }
+            if (scheduled != null) {
+                scheduled.shutdown();
+            }
+        }
+    }
+
     class AlarmHandler extends LogAlarmHandler {
         @Override
-        public void sendAlarm(String destination, String msg) {
-            super.sendAlarm(destination, msg);
+        public void sendAlarm(String clientIdentityName, String msg) {
+            super.sendAlarm(clientIdentityName, msg);
             if (msg != null && msg.contains("Could not find first log file name in binary log index file")) {
-                if (rebuildConsumer != null) {
-                    File file = new File(new File(dataDir, destination), "meta.dat");
-                    if (deleteDir(file)) {
-                        lastMessage = null;
-                    }
-                    rebuildConsumer.accept(MysqlBinlogCanalConnector.this);
-                }
+                rebuild(clientIdentityName, msg);
             }
         }
     }

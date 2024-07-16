@@ -1,5 +1,5 @@
 dataSourceKey: defaultDS
-destination: job_es
+destination: cnwybinlog
 esMapping:
   env: pre
   _id: id
@@ -34,16 +34,17 @@ esMapping:
         job.job_end_time as jobEndTime,
         job.target_id as targetId,
         job.`status` as status,
-        job.company_id as companyId,
         job.company_name as companyName,
-        substring_index(job.company_name,'-', 1) as shortCompanyName,
-        job.company_nature as companyNature,
-        job.company_target_nature as companyTargetNature,
         job.company_link as companyLink,
-        job.company_org as companyOrg,
         job.create_time as createTime,
-        job.update_time as updateTime
-      FROM job job"
+        job.update_time as updateTime,
+        job.delete_user as deleteUser,
+        job.delete_time as deleteTime,
+        job.delete_reason as deleteReason,
+        job.corp_id as corpId,
+        corp.name as corpName
+      FROM job job
+      left join corp corp on corp.id = job.corp_id"
   objFields:
     education:
       type: array
@@ -71,11 +72,10 @@ esMapping:
               region.address as address,
               region.region_id_colloquial as regionIdColloquial,
               region.region_name_colloquial as regionNameColloquial,
-              concat(region.lat, ',', region.lng) as geo
+              concat(if(region.lat< region.lng, region.lat,region.lng), ',', if(region.lat > region.lng, region.lat,region.lng)) as geo
           FROM job_region region "
-      onParentChangeWhereSql: 'WHERE region.id = #{id} '
+      onParentChangeWhereSql: 'WHERE region.job_id = #{id} '
       onChildChangeWhereSql: 'WHERE region.job_id = #{job_id} '
-      parentDocumentId: job_id
     specialtyList:
       type: array-sql
       sql: "SELECT
@@ -85,6 +85,5 @@ esMapping:
               specialty.specialty_id_colloquial as specialtyIdColloquial,
               specialty.specialty_name_colloquial as specialtyNameColloquial
           FROM job_specialty specialty "
-      onParentChangeWhereSql: 'WHERE specialty.id = #{id} '
+      onParentChangeWhereSql: 'WHERE specialty.job_id = #{id} '
       onChildChangeWhereSql: 'WHERE specialty.job_id = #{job_id} '
-      parentDocumentId: job_id
