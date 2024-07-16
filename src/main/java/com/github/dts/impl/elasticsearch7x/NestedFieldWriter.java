@@ -179,7 +179,7 @@ public class NestedFieldWriter {
                 case ARRAY_SQL: {
                     List<Map<String, Object>> rowList = entry.getValue();
                     for (Map<String, Object> row : rowList) {
-                        esTemplate.convertValueType(esMapping, objectField.getFieldName(), row);
+                        esTemplate.convertValueType(esMapping, objectField.getFieldName(),row);
                     }
                     //更新ES文档 (执行完会统一提交, 这里不用commit)
                     esTemplate.update(esMapping, pkValue, Collections.singletonMap(

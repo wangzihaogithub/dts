@@ -338,11 +338,6 @@ public class KafkaCanalConnector implements CanalConnector {
         commit();
     }
 
-    @Override
-    public void ack2() {
-
-    }
-
     public static class Offset {
         private final TopicPartition topicPartition;
         private final ConsumerRecord<String, Dml> min;

@@ -1,31 +1,24 @@
 package com.github.dts.util;
 
+import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.BeanFactory;
 
 public interface MetaDataRepository {
 
-    Acknowledge NULL_ACK = new Acknowledge() {
-        @Override
-        public void ack() {
-
-        }
-
-        @Override
-        public String toString() {
-            return "NULL_ACK";
-        }
-    };
-
     static MetaDataRepository newInstance(String key, BeanFactory beanFactory) {
         if (PlatformDependentUtil.REDIS_CONNECTION_FACTORY_CLASS != null) {
-            Object redisConnectionFactory = PlatformDependentUtil.getRedisConnectionFactory(beanFactory);
-            if (redisConnectionFactory != null) {
-                return new RedisMetaDataRepository(
-                        key,
-                        redisConnectionFactory);
+            Object redisConnectionFactory;
+            try {
+                redisConnectionFactory = beanFactory.getBean("redisConnectionFactory");
+            } catch (BeansException e) {
+                redisConnectionFactory = beanFactory.getBean(PlatformDependentUtil.REDIS_CONNECTION_FACTORY_CLASS);
             }
+            return new RedisMetaDataRepository(
+                    key,
+                    redisConnectionFactory);
+        } else {
+            return null;
         }
-        return null;
     }
 
     <T> T getCursor();
@@ -33,10 +26,6 @@ public interface MetaDataRepository {
     void setCursor(Object cursor);
 
     default void close() {
-    }
-
-    interface Acknowledge {
-        void ack();
     }
 
 }

@@ -8,6 +8,18 @@ import java.util.Map;
 import java.util.function.Consumer;
 
 public interface CanalConnector {
+    Ack2 NULL_ACK = new Ack2() {
+        @Override
+        public void ack() {
+
+        }
+
+        @Override
+        public String toString() {
+            return "NULL_ACK";
+        }
+    };
+
     void connect();
 
     void subscribe(String[] topic);
@@ -16,9 +28,11 @@ public interface CanalConnector {
 
     void ack();
 
-    void ack2();
-
     List<Dml> getListWithoutAck(Duration timeout);
+
+    default Ack2 getAck2() {
+        return NULL_ACK;
+    }
 
     void disconnect();
 
@@ -32,5 +46,9 @@ public interface CanalConnector {
 
     default void close() {
 
+    }
+
+    interface Ack2 {
+        void ack();
     }
 }

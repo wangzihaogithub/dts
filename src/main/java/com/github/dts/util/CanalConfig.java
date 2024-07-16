@@ -362,12 +362,12 @@ public class CanalConfig {
         }
 
         public static class Es7x {
+            private final SlaveNestedField slaveNestedField = new SlaveNestedField();
             private String resourcesDir = "es";
             private String[] address;// es 读地址
             private String username;// 账号，来源：租户账号
             private String password;// 密码，来源：租户密码
             private Map<String, String> properties; // 其余参数, 可填写适配器中的所需的配置信息
-            private int nestedFieldThreads = 10;
             private int maxRetryCount = 10;// 错误请求重试几次
             private int concurrentBulkRequest = 16;// 最大并发bulk请求
             private int bulkCommitSize = 200;//每次bulk请求的大约提交条数
@@ -375,14 +375,14 @@ public class CanalConfig {
             private int refreshThreshold = 10;
             private int listenerThreads = 50;
             private int maxQueryCacheSize = 10000;//查询缓存大小
-            private boolean writeSlaveTableBlock = true;// 写从表是否阻塞主表
+            private int nestedFieldThreads = 10;
 
-            public boolean isWriteSlaveTableBlock() {
-                return writeSlaveTableBlock;
+            public int getNestedFieldThreads() {
+                return nestedFieldThreads;
             }
 
-            public void setWriteSlaveTableBlock(boolean writeSlaveTableBlock) {
-                this.writeSlaveTableBlock = writeSlaveTableBlock;
+            public void setNestedFieldThreads(int nestedFieldThreads) {
+                this.nestedFieldThreads = nestedFieldThreads;
             }
 
             public int getMaxQueryCacheSize() {
@@ -441,14 +441,6 @@ public class CanalConfig {
                 this.concurrentBulkRequest = concurrentBulkRequest;
             }
 
-            public int getNestedFieldThreads() {
-                return nestedFieldThreads;
-            }
-
-            public void setNestedFieldThreads(int nestedFieldThreads) {
-                this.nestedFieldThreads = nestedFieldThreads;
-            }
-
             public String getResourcesDir() {
                 return resourcesDir;
             }
@@ -491,6 +483,40 @@ public class CanalConfig {
 
             public void setProperties(Map<String, String> properties) {
                 this.properties = properties;
+            }
+
+            public SlaveNestedField getSlaveNestedField() {
+                return slaveNestedField;
+            }
+
+            public static class SlaveNestedField {
+                private int threads = 5;
+                private int queues = 100;
+                private boolean block = false;// 写从表是否阻塞主表
+
+                public int getThreads() {
+                    return threads;
+                }
+
+                public void setThreads(int threads) {
+                    this.threads = threads;
+                }
+
+                public int getQueues() {
+                    return queues;
+                }
+
+                public void setQueues(int queues) {
+                    this.queues = queues;
+                }
+
+                public boolean isBlock() {
+                    return block;
+                }
+
+                public void setBlock(boolean block) {
+                    this.block = block;
+                }
             }
         }
 

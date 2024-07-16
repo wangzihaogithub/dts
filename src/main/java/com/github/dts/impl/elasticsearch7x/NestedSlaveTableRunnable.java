@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 
 import java.sql.Timestamp;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 
 public class NestedSlaveTableRunnable implements Runnable {
@@ -17,16 +18,16 @@ public class NestedSlaveTableRunnable implements Runnable {
     private final Supplier<ES7xTemplate> es7xTemplateSupplier;
     private final CacheMap cacheMap;
     private final Timestamp timestamp;
-    private final MetaDataRepository.Acknowledge acknowledge;
+    private final CompletableFuture<Void> future;
 
     NestedSlaveTableRunnable(List<Dependent> updateDmlList,
                              Supplier<ES7xTemplate> es7xTemplateSupplier,
                              int cacheMaxSize, Timestamp timestamp,
-                             MetaDataRepository.Acknowledge acknowledge) {
+                             CompletableFuture<Void> future) {
         this.timestamp = timestamp == null ? new Timestamp(System.currentTimeMillis()) : timestamp;
         this.updateDmlList = updateDmlList;
         this.es7xTemplateSupplier = es7xTemplateSupplier;
-        this.acknowledge = acknowledge;
+        this.future = future;
         this.cacheMap = new CacheMap(cacheMaxSize);
     }
 
@@ -88,11 +89,12 @@ public class NestedSlaveTableRunnable implements Runnable {
                         System.currentTimeMillis() - timestamp.getTime(),
                         timestamp, updateSqlList);
             }
-            acknowledge.ack();
+            future.complete(null);
         } catch (Exception e) {
             log.error("error sync(dml[{}]).nestedField WriteSlaveTable={}ms, {}: error={}",
                     updateDmlList.size(),
                     System.currentTimeMillis() - timestamp.getTime(), timestamp, e, e);
+            future.completeExceptionally(e);
             throw e;
         } finally {
             cacheMap.cacheClear();

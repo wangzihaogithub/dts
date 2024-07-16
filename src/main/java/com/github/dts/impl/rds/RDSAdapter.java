@@ -1,11 +1,15 @@
 package com.github.dts.impl.rds;
 
-import com.github.dts.util.*;
+import com.github.dts.util.Adapter;
+import com.github.dts.util.CanalConfig;
+import com.github.dts.util.Dml;
+import com.github.dts.util.SQL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Properties;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 /**
@@ -21,10 +25,10 @@ public class RDSAdapter implements Adapter {
     }
 
     @Override
-    public void sync(List<Dml> dmls, MetaDataRepository.Acknowledge acknowledge) {
-        acknowledge.ack();
+    public CompletableFuture<Void> sync(List<Dml> dmls) {
         List<SQL> sqlList = SQL.DEFAULT_BUILDER.convert(dmls.stream().limit(20).collect(Collectors.toList()));
         log.info("rds {}", sqlList);
+        return CompletableFuture.completedFuture(null);
     }
 
     @Override

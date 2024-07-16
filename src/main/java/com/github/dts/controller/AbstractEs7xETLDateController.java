@@ -195,7 +195,7 @@ public abstract class AbstractEs7xETLDateController {
                 }
             }
         }
-        esAdapter.sync(dmlList, false, true, MetaDataRepository.NULL_ACK);
+        esAdapter.sync(dmlList, false, true);
         return dmlList.size();
     }
 

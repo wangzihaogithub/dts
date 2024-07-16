@@ -205,7 +205,7 @@ public abstract class AbstractEs7xETLStringController {
                 }
             }
         }
-        esAdapter.sync(dmlList, false, true, MetaDataRepository.NULL_ACK);
+        esAdapter.sync(dmlList, false, true);
         return dmlList;
     }
 
@@ -220,7 +220,7 @@ public abstract class AbstractEs7xETLStringController {
             for (Dml dml : dmlList) {
                 dml.setDestination(esAdapter.getConfiguration().getCanalAdapter().getDestination());
             }
-            esAdapter.sync(dmlList, false, true, MetaDataRepository.NULL_ACK);
+            esAdapter.sync(dmlList, false, true);
             count += dmlList.size();
         }
         return count;

@@ -10,12 +10,15 @@ import org.joda.time.DateTime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.util.CollectionUtils;
 
 import javax.sql.DataSource;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.sql.Blob;
 import java.sql.SQLException;
 import java.util.*;
@@ -38,6 +41,87 @@ public class ESSyncUtil {
             return size() > 5000;
         }
     });
+
+    public static String getEsSyncConfigKey(String destination, String database, String table) {
+        return destination + "_" + database + "_" + table;
+    }
+
+    public static Map<String, ESSyncConfig> loadYamlToBean(Properties envProperties, File resourcesDir, String env) {
+        log.info("## Start loading es mapping config ... {}", resourcesDir);
+        Map<String, ESSyncConfig> esSyncConfig = new LinkedHashMap<>();
+        Map<String, byte[]> yamlMap = loadYamlToBytes(resourcesDir);
+        for (Map.Entry<String, byte[]> entry : yamlMap.entrySet()) {
+            String fileName = entry.getKey();
+            byte[] content = entry.getValue();
+            ESSyncConfig config = YmlConfigBinder.bindYmlToObj(null, content, ESSyncConfig.class, envProperties);
+            if (config == null) {
+                continue;
+            }
+            if (!Objects.equals(env, config.getEsMapping().getEnv())) {
+                continue;
+            }
+            try {
+                config.init();
+            } catch (Exception e) {
+                throw new RuntimeException("ERROR Config: " + fileName + " " + e, e);
+            }
+            esSyncConfig.put(fileName, config);
+        }
+        log.info("## ES mapping config loaded");
+        return esSyncConfig;
+    }
+
+    public static Map<String, byte[]> loadYamlToBytes(File configDir) {
+        Map<String, byte[]> map = new LinkedHashMap<>();
+        // 先取本地文件，再取类路径
+        File[] files = configDir.listFiles();
+        if (files != null) {
+            for (File file : files) {
+                String fileName = file.getName();
+                if (!fileName.endsWith(".yml") && !fileName.endsWith(".yaml")) {
+                    continue;
+                }
+                try {
+                    byte[] bytes = Files.readAllBytes(file.toPath());
+                    map.put(fileName, bytes);
+                } catch (IOException e) {
+                    throw new RuntimeException("Read " + configDir + "mapping config: " + fileName + " error. ", e);
+                }
+            }
+        }
+        return map;
+    }
+
+    public static void loadESSyncConfig(Map<String, Map<String, ESSyncConfig>> map,
+                                         Map<String, ESSyncConfig> configMap,
+                                         Properties envProperties, File resourcesDir, String env) {
+        Map<String, ESSyncConfig> load = loadYamlToBean(envProperties, resourcesDir, env);
+        for (Map.Entry<String, ESSyncConfig> entry : load.entrySet()) {
+            ESSyncConfig config = entry.getValue();
+            if (!config.getEsMapping().isEnable()) {
+                continue;
+            }
+            String configName = entry.getKey();
+            configMap.put(configName, config);
+            String schema = CanalConfig.DatasourceConfig.getCatalog(config.getDataSourceKey());
+
+            for (TableItem item : config.getEsMapping().getSchemaItem().getAliasTableItems().values()) {
+                map.computeIfAbsent(getEsSyncConfigKey(config.getDestination(), schema, item.getTableName()),
+                        k -> new ConcurrentHashMap<>()).put(configName, config);
+            }
+            for (Map.Entry<String, ESSyncConfig.ObjectField> e : config.getEsMapping().getObjFields().entrySet()) {
+                ESSyncConfig.ObjectField v = e.getValue();
+                if (v.getSchemaItem() == null || CollectionUtils.isEmpty(v.getSchemaItem().getAliasTableItems())) {
+                    continue;
+                }
+                for (TableItem tableItem : v.getSchemaItem().getAliasTableItems().values()) {
+                    map.computeIfAbsent(getEsSyncConfigKey(config.getDestination(), schema, tableItem.getTableName()),
+                                    k -> new ConcurrentHashMap<>())
+                            .put(configName, config);
+                }
+            }
+        }
+    }
 
     public static String join(Collection list) {
         StringJoiner joiner = new StringJoiner(",");

@@ -477,8 +477,9 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
     }
 
     @Override
-    public void ack2() {
-        metaManager.setCursor(getCurrentCursor(), true);
+    public Ack2 getAck2() {
+        Position currentCursor = getCurrentCursor();
+        return new PositionAck2(currentCursor, metaManager);
     }
 
     @Override
@@ -552,6 +553,26 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
                 lastMessage = null;
             }
             rebuildConsumer.accept(MysqlBinlogCanalConnector.this);
+        }
+    }
+
+    private static class PositionAck2 implements Ack2 {
+        private final Position currentCursor;
+        private final MetaDataFileMixedMetaManager metaManager;
+
+        private PositionAck2(Position currentCursor, MetaDataFileMixedMetaManager metaManager) {
+            this.currentCursor = currentCursor;
+            this.metaManager = metaManager;
+        }
+
+        @Override
+        public void ack() {
+            metaManager.setCursor(currentCursor, true);
+        }
+
+        @Override
+        public String toString() {
+            return currentCursor.toString();
         }
     }
 

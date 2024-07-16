@@ -2,6 +2,7 @@ package com.github.dts.util;
 
 import java.util.List;
 import java.util.Properties;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * 外部适配器接口
@@ -24,7 +25,7 @@ public interface Adapter {
      *
      * @param dmls 数据包
      */
-    void sync(List<Dml> dmls, MetaDataRepository.Acknowledge acknowledge);
+    CompletableFuture<Void> sync(List<Dml> dmls);
 
     /**
      * 外部适配器销毁接口

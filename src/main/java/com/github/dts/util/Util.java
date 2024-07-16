@@ -202,11 +202,19 @@ public class Util {
     }
 
     public static ThreadPoolExecutor newFixedThreadPool(int core, int nThreads, long keepAliveTime, String name, boolean wrapper, boolean allowCoreThreadTimeOut) {
+        return newFixedThreadPool(core, nThreads, keepAliveTime, name, wrapper, allowCoreThreadTimeOut, 0);
+    }
+
+    public static ThreadPoolExecutor newFixedThreadPool(int core, int nThreads, long keepAliveTime, String name, boolean wrapper, boolean allowCoreThreadTimeOut, int queues) {
+        BlockingQueue<Runnable> workQueue = queues == 0 ?
+                new SynchronousQueue<>() :
+                (queues < 0 ? new LinkedBlockingQueue<>(Integer.MAX_VALUE)
+                        : new LinkedBlockingQueue<>(queues));
         ThreadPoolExecutor executor = new ThreadPoolExecutor(core,
                 nThreads,
                 keepAliveTime,
                 TimeUnit.MILLISECONDS,
-                new SynchronousQueue<>(),
+                workQueue,
                 new CustomizableThreadFactory(name) {
                     @Override
                     public Thread newThread(Runnable runnable) {
@@ -226,16 +234,7 @@ public class Util {
                             }
                         });
                     }
-                },
-                (r, exe) -> {
-                    if (!exe.isShutdown()) {
-                        try {
-                            exe.getQueue().put(r);
-                        } catch (InterruptedException e) {
-                            // ignore
-                        }
-                    }
-                });
+                }, new ThreadPoolExecutor.CallerRunsPolicy());
         executor.allowCoreThreadTimeOut(allowCoreThreadTimeOut);
         return executor;
     }
