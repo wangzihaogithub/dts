@@ -1,5 +1,6 @@
 package com.github.dts.util;
 
+import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
 
@@ -14,6 +15,20 @@ public class RedisMetaDataRepository implements MetaDataRepository {
         this.key = key.getBytes(UTF_8);
         redisTemplate.setConnectionFactory((RedisConnectionFactory) redisConnectionFactory);
         redisTemplate.afterPropertiesSet();
+    }
+
+    public static boolean isActive(Object redisConnectionFactory) {
+        if (redisConnectionFactory instanceof RedisConnectionFactory) {
+            try {
+                RedisConnection connection = ((RedisConnectionFactory) redisConnectionFactory).getConnection();
+                connection.close();
+                return true;
+            } catch (Exception e) {
+                return false;
+            }
+        } else {
+            return false;
+        }
     }
 
     @Override

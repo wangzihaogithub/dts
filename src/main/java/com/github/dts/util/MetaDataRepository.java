@@ -11,14 +11,17 @@ public interface MetaDataRepository {
             try {
                 redisConnectionFactory = beanFactory.getBean("redisConnectionFactory");
             } catch (BeansException e) {
-                redisConnectionFactory = beanFactory.getBean(PlatformDependentUtil.REDIS_CONNECTION_FACTORY_CLASS);
+                try {
+                    redisConnectionFactory = beanFactory.getBean(PlatformDependentUtil.REDIS_CONNECTION_FACTORY_CLASS);
+                } catch (Exception e1) {
+                    redisConnectionFactory = null;
+                }
             }
-            return new RedisMetaDataRepository(
-                    key,
-                    redisConnectionFactory);
-        } else {
-            return null;
+            if (RedisMetaDataRepository.isActive(redisConnectionFactory)) {
+                return new RedisMetaDataRepository(key, redisConnectionFactory);
+            }
         }
+        return null;
     }
 
     <T> T getCursor();
