@@ -102,7 +102,7 @@ public class NestedSlaveTableRunnable implements Runnable {
                 es7xTemplate.commit();
                 try {
                     try {
-                        es7xTemplate.refresh(indices).get();
+                        es7xTemplate.refresh(indices);
                     } catch (Exception ignored) {
                     }
                 } finally {
