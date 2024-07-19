@@ -1,5 +1,7 @@
 package com.github.dts.util;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -7,6 +9,7 @@ import org.springframework.data.redis.core.RedisTemplate;
 import java.nio.charset.Charset;
 
 public class RedisMetaDataRepository implements MetaDataRepository {
+    private static final Logger log = LoggerFactory.getLogger(RedisMetaDataRepository.class);
     private static final Charset UTF_8 = Charset.forName("UTF-8");
     private final byte[] key;
     private final RedisTemplate<byte[], byte[]> redisTemplate = new RedisTemplate<>();
@@ -24,6 +27,7 @@ public class RedisMetaDataRepository implements MetaDataRepository {
                 connection.close();
                 return true;
             } catch (Exception e) {
+                log.warn("RedisConnection is not active {}", e, e);
                 return false;
             }
         } else {
