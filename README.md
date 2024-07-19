@@ -3,12 +3,17 @@
 #### 介绍
 数据同步 
 - 延迟低至5ms（修改数据库至elasticsearch可以搜索到）
-- 支持 同步elasticsearch-Nested字段，加自定义字段，解析url转换为文本
-- 支持 直连数据库binglog
+- 支持 同步elasticsearch-Nested字段，会收集sql的join相关表，自动反向更新，支持自定义处理字段，解析url转换为文本
+- 支持 直连数据库binglog，支持redis记忆offset，不丢binlog
 - 支持 连阿里云-kafka-binlog
 - 支持 自定义监听
 - 支持 将Row变更转化为SQL语句对象
 - 支持 报警消息
+
+
+### 代码例子 demo如下
+
+https://github.com/wangzihaogithub/dts-demo
 
 
 [![Maven Central](https://maven-badges.herokuapp.com/maven-central/com.github.wangzihaogithub/dts/badge.svg)](https://search.maven.org/search?q=g:com.github.wangzihaogithub%20AND%20a:dts)
@@ -37,19 +42,18 @@
 - 2.application-dev.yaml 配置
 
         `
-        cnwy.kafka-prefix: 'dev_'
-        cnwy.binlog-prefix: 'cnwy.'
         canal.conf:
             srcDataSources:
                 defaultDS:
                     url: 'jdbc:mysql://xx:3306/xx?useUnicode=true&characterEncoding=utf-8&allowMultiQueries=true&rewriteBatchedStatements=true&zeroDateTimeBehavior=CONVERT_TO_NULL'
                     username: 'xx'
                     password: 'xx'
-          - destination: 'job_es'
+          - destination: 'cnwybinlog'
             connector: com.github.dts.canal.MysqlBinlogCanalConnector
             topics:
-              - '${cnwy.binlog-prefix}job'
-              - '${cnwy.binlog-prefix}job_region'
+              - 'cnwy\\.job.*'
+              - 'cnwy\\.corp.*'
+              - 'cnwy.region'
             properties: {
                 dataSource: 'defaultDS'
             }
@@ -66,54 +70,67 @@
 
 -  3.数据关系配置
 
-       `
-           dataSourceKey: defaultDS
-           destination: job_es
-           esMapping:
-               env: prod
-               _id: id
-               pk: id
-               _index: cnwy_job_prod_index_alias
-               mappingMetadataTimeout: 600000
-               upsert: false
-               writeNull: false
-               indexUpdatedTime: 'indexUpdatedTime'
-               sql: "SELECT
-                   job.id as id,
-                   job.type as type,
-                   job.`name` as name,
-                   job.job_start_time as jobStartTime,
-                   job.job_end_time as jobEndTime,
-                   job.`status` as status,
-                   job.company_id as companyId,
-                   job.company_name as companyName,
-                   substring_index(job.company_name,'-', 1) as shortCompanyName,
-                   job.create_time as createTime,
-                   job.update_time as updateTime
-                   FROM job job"
-               objFields:
-                   education:
-                       type: array
-                       split: '[、]'
-                   regionList:
-                       type: array-sql
-                       sql: "SELECT
-                           region.id as id,
-                           region.region_id as regionId,
-                           region.province_id as provinceId,
-                           region.province_name as provinceName,
-                           region.city_id as cityId,
-                           region.city_name as cityName,
-                           region.district_id as districtId,
-                           region.district_name as districtName,
-                           region.address as address,
-                           region.region_id_colloquial as regionIdColloquial,
-                           region.region_name_colloquial as regionNameColloquial,
-                           concat(region.lat, ',', region.lng) as geo
-                           FROM job_region region "
-                       onParentChangeWhereSql: 'WHERE region.id = #{id} '
-                       onChildChangeWhereSql: 'WHERE region.job_id = #{job_id} '
+        `
+        dataSourceKey: defaultDS
+        destination: cnwybinlog
+        esMapping:
+          env: test
+          _id: id
+          pk: id
+          _index: cnwy_corp_test_index_alias
+          mappingMetadataTimeout: 600000
+          upsert: false
+          writeNull: false
+          sql: "SELECT
+            corp.id ,
+            corp.`name`,
+            GROUP_CONCAT(if(corpName.type = 2, corpName.`name`, null)) as aliasNames,
+            corp.create_time as createTime
+            FROM corp corp
+            LEFT JOIN corp_name corpName on corpName.corp_id = corp.id "
+          objFields:
+            aliasNames:
+              type: array
+              split: ','
+            regionList:
+              type: array-sql
+              sql: "SELECT
+                        corpRegion.province_id as provinceId,
+                        corpRegion.city_id as cityId,
+                        corpRegion.district_id as districtId,
+                        corpRegion.region_id as regionId,
+                        province.`name` as provinceName,
+                        city.`name` as cityName,
+                        district.`name` as districtName,
+                        concat(if(region.lat< region.lng, region.lat,region.lng), ',', if(region.lat > region.lng, region.lat,region.lng)) as geo
+                    FROM corp_region corpRegion
+                    LEFT JOIN region region on region.id = corpRegion.region_id
+                    LEFT JOIN region province on province.id = corpRegion.province_id
+                    LEFT JOIN region city on city.id = corpRegion.city_id
+                    LEFT JOIN region district on district.id = corpRegion.district_id
+         "
+              onParentChangeWhereSql: 'WHERE corpRegion.corp_id = #{id} '
+              onChildChangeWhereSql: 'WHERE corpRegion.corp_id = #{job_id} '
+            tagList:
+              type: array-sql
+              sql: "SELECT
+                      corpRelationTag.tag_id as tagId,
+                      corpTag.`name` as tagName,
+                      corpTag.category_id as categoryId,
+                      corpCategory.`name` as categoryName,
+                      corpCategory.sort as categorySort,
+                      corpCategory.`status` as categoryStatus,
+                      corpTag.source_enum as tagSource,
+                      corpTag.`status` as tagStatus,
+                      corpTag.change_flag as tagChangeFlag
+                  FROM corp_relation_tag corpRelationTag
+                  INNER JOIN corp_tag corpTag on corpTag.id = corpRelationTag.tag_id
+                  LEFT JOIN corp_category corpCategory on corpCategory.id = corpTag.category_id
+        "
+              onParentChangeWhereSql: 'WHERE corpRelationTag.corp_id = #{id} '
+              onChildChangeWhereSql: 'WHERE corpRelationTag.corp_id = #{corp_id} '
 
+           
        `
 
 
