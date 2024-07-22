@@ -24,16 +24,10 @@ public abstract class PropertySource<T> {
         this(name, (T) new Object());
     }
 
-    /**
-     * Return the name of this {@code PropertySource}
-     */
     public String getName() {
         return this.name;
     }
 
-    /**
-     * Return the underlying source object for this {@code PropertySource}.
-     */
     public T getSource() {
         return this.source;
     }

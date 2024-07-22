@@ -19,10 +19,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 根据自增ID的全量灌数据，可以继承这个Controller
- * <p>
- * curl "http://localhost:8080/es7x/job/syncById?id=1,2"
- * curl "http://localhost:8080/es7x/job/syncAll"
- * curl "http://localhost:8080/es7x/job/stop"
+ * <pre>
+ * curl "<a href="http://localhost:8080/es7x/job/syncById?id=1,2">http://localhost:8080/es7x/job/syncById?id=1,2</a>"
+ * curl "<a href="http://localhost:8080/es7x/job/syncAll">http://localhost:8080/es7x/job/syncAll</a>"
+ * curl "<a href="http://localhost:8080/es7x/job/stop">http://localhost:8080/es7x/job/stop</a>"
+ * </pre>
  */
 public abstract class AbstractEs7xETLIntController {
     private static final Logger log = LoggerFactory.getLogger(AbstractEs7xETLIntController.class);

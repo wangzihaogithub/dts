@@ -89,11 +89,6 @@ public class CompositePropertySource extends EnumerablePropertySource<Object> {
         this.propertySources.addAll(existing);
     }
 
-    /**
-     * Return all property sources that this composite source holds.
-     *
-     * @since 4.1.1
-     */
     public Collection<PropertySource<?>> getPropertySources() {
         return this.propertySources;
     }

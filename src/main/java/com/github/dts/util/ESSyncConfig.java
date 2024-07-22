@@ -366,6 +366,7 @@ public class ESSyncConfig {
          * @param val       val
          * @param mapping   mapping
          * @param fieldName fieldName
+         * @param parentFieldName parentFieldName
          * @return ES对象
          * @see ESSyncServiceListener#onSyncAfter(List, ES7xAdapter, ESTemplate.BulkRequestList)
          */

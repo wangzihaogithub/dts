@@ -19,9 +19,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 根据日期全量灌数据，可以继承这个Controller
- * <p>
- * curl "http://localhost:8080/es7x/job/syncAll?fieldName=create_time&offsetStart=2022-03-01&offsetEnd=2024-10-01"
- * curl "http://localhost:8080/es7x/job/stop"
+ * <pre>
+ * curl "<a href="http://localhost:8080/es7x/job/syncAll?fieldName=create_time&offsetStart=2022-03-01&offsetEnd=2024-10-01">http://localhost:8080/es7x/job/syncAll</a>"
+ * curl "<a href="http://localhost:8080/es7x/job/stop">http://localhost:8080/es7x/job/stop</a>"
+ * </pre>
  */
 public abstract class AbstractEs7xETLDateController {
     private static final Logger log = LoggerFactory.getLogger(AbstractEs7xETLDateController.class);

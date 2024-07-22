@@ -92,9 +92,10 @@ public interface ESTemplate extends AutoCloseable {
      * 转换类型
      *
      * @param esMapping     es映射关系
+     * @param parentFieldName 父字段
      * @param theConvertMap 需要转换的数据
      */
-    void convertValueType(ESMapping esMapping,String pfieldName,
+    void convertValueType(ESMapping esMapping,String parentFieldName,
                           Map<String, Object> theConvertMap);
 
 

@@ -52,63 +52,36 @@ public class ByteArrayResource extends AbstractResource {
         this.description = (description != null ? description : "");
     }
 
-    /**
-     * Return the underlying byte array.
-     */
     public final byte[] getByteArray() {
         return this.byteArray;
     }
 
-    /**
-     * This implementation always returns {@code true}.
-     */
     @Override
     public boolean exists() {
         return true;
     }
 
-    /**
-     * This implementation returns the length of the underlying byte array.
-     */
     @Override
     public long contentLength() {
         return this.byteArray.length;
     }
 
-    /**
-     * This implementation returns a ByteArrayInputStream for the underlying byte
-     * array.
-     *
-     * @see ByteArrayInputStream
-     */
     @Override
     public InputStream getInputStream() throws IOException {
         return new ByteArrayInputStream(this.byteArray);
     }
 
-    /**
-     * This implementation returns a description that includes the passed-in
-     * {@code description}, if any.
-     */
     @Override
     public String getDescription() {
         return "Byte array resource [" + this.description + "]";
     }
 
-    /**
-     * This implementation compares the underlying byte array.
-     *
-     * @see Arrays#equals(byte[], byte[])
-     */
     @Override
     public boolean equals(Object obj) {
         return (obj == this || (obj instanceof org.springframework.core.io.ByteArrayResource
                 && Arrays.equals(((ByteArrayResource) obj).byteArray, this.byteArray)));
     }
 
-    /**
-     * This implementation returns the hash code based on the underlying byte array.
-     */
     @Override
     public int hashCode() {
         return (byte[].class.hashCode() * 29 * this.byteArray.length);

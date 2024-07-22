@@ -24,6 +24,7 @@ public interface Adapter {
      * 往适配器中同步数据
      *
      * @param dmls 数据包
+     * @return 同步结束后则完毕
      */
     CompletableFuture<Void> sync(List<Dml> dmls);
 

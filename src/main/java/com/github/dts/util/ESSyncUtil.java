@@ -214,6 +214,8 @@ public class ESSyncUtil {
      * 类型转换为Mapping中对应的类型
      *
      * @param val     val
+     * @param fileName fileName
+     * @param parentFieldName parentFieldName
      * @param esTypes esTypes
      * @return Mapping中对应的类型
      */

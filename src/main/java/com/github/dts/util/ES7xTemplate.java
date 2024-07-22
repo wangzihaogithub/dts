@@ -527,14 +527,14 @@ public class ES7xTemplate implements ESTemplate {
     }
 
     @Override
-    public void convertValueType(ESMapping esMapping, String pfieldName,
+    public void convertValueType(ESMapping esMapping, String parentFieldName,
                                  Map<String, Object> theConvertMap) {
         for (Map.Entry<String, Object> entry : theConvertMap.entrySet()) {
             String fieldName = entry.getKey();
             Object fieldValue = entry.getValue();
             Object newValue = getValFromValue(
                     esMapping, fieldValue,
-                    fieldName, pfieldName);
+                    fieldName, parentFieldName);
             entry.setValue(newValue);
         }
     }
