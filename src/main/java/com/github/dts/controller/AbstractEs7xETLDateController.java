@@ -29,22 +29,10 @@ public abstract class AbstractEs7xETLDateController {
     private boolean stop = false;
 
     protected abstract Date selectMaxDate(JdbcTemplate jdbcTemplate);
-//    {
-//        return selectMaxDate(jdbcTemplate, "create_time", "biz_job");
-//    }
 
     protected abstract ES7xAdapter getES7xAdapter();
-//    {
-//         return startupServer.getAdapter(name, ES7xAdapter.class);
-//    }
 
     protected abstract List<Dml> convertDmlList(JdbcTemplate jdbcTemplate, String catalog, Timestamp minId, Timestamp maxId);
-//    {
-//        jdbcTemplate.queryForList(
-//                "select * from " + J_TABLE_NAME + " where create_time between ? and ?", Map.class,
-//                minId, maxId)
-//        Dml.convertInsert()
-//    }
 
     protected ES7xAdapter getES7xAdapter(String name) {
         return startupServer.getAdapter(name, ES7xAdapter.class);
@@ -125,12 +113,6 @@ public abstract class AbstractEs7xETLDateController {
             executorService.execute(runnable);
         }
         return runnableList;
-    }
-
-    @RequestMapping("/suspend")
-    public boolean suspend(boolean suspend) {
-        setSuspendEs7x(suspend, getES7xAdapter().getClientIdentity());
-        return suspend;
     }
 
     @RequestMapping("/discard")

@@ -44,12 +44,6 @@ public abstract class AbstractEs7xETLStringController {
     }
 
     protected abstract ES7xAdapter getES7xAdapter();
-//    {
-//        jdbcTemplate.queryForList(
-//                "select id from " + J_TABLE_NAME + " where id between ? and ?", Integer.class,
-//                offset, endOffset)
-//        Dml.convertInsert()
-//    }
 
     protected abstract List<Dml> convertDmlList(JdbcTemplate jdbcTemplate, String catalog, String minId, int limit);
 
@@ -97,6 +91,9 @@ public abstract class AbstractEs7xETLStringController {
                     }
                     dmlSize.addAndGet(list.size());
                     minId = getDmlListMaxId(list);
+                    if (stop) {
+                        break;
+                    }
                 } while (minId != null);
                 sendDone(timestamp, dmlSize.intValue());
             } catch (Exception e) {
@@ -137,12 +134,6 @@ public abstract class AbstractEs7xETLStringController {
             log.info("all sync end.  total = {} ", count);
         }
         return 1;
-    }
-
-    @RequestMapping("/suspend")
-    public boolean suspend(boolean suspend) {
-        setSuspendEs7x(suspend, getES7xAdapter().getClientIdentity());
-        return suspend;
     }
 
     @RequestMapping("/discard")

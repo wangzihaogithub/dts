@@ -54,22 +54,10 @@ public abstract class AbstractEs7xETLIntController {
         }
         return maxId == Integer.MIN_VALUE ? null : maxId;
     }
-//    {
-//        return selectMaxId(jdbcTemplate, "id", "biz_job");
-//    }
 
     protected abstract Integer selectMaxId(JdbcTemplate jdbcTemplate);
-//    {
-//         return startupServer.getAdapter(name, ES7xAdapter.class);
-//    }
 
     protected abstract ES7xAdapter getES7xAdapter();
-//    {
-//        jdbcTemplate.queryForList(
-//                "select id from " + J_TABLE_NAME + " where id between ? and ?", Integer.class,
-//                offset, endOffset)
-//        Dml.convertInsert()
-//    }
 
     protected abstract List<Dml> convertDmlList(JdbcTemplate jdbcTemplate, String catalog, Integer minId, int limit);
 
@@ -177,12 +165,6 @@ public abstract class AbstractEs7xETLIntController {
             log.info("all sync end.  total = {} ", count);
         }
         return 1;
-    }
-
-    @RequestMapping("/suspend")
-    public boolean suspend(boolean suspend) {
-        setSuspendEs7x(suspend, getES7xAdapter().getClientIdentity());
-        return suspend;
     }
 
     @RequestMapping("/discard")

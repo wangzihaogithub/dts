@@ -36,7 +36,7 @@
         <canal.version>[1.1.7]</canal.version>
         <mysql.version>[8.0.21]</mysql.version>
         <kafka.version>[2.7.2]</kafka.version>
-        <lettuce.version>[6.1.8.RELEASE]</lettuce.version>
+        <lettuce.version>[6.1.10.RELEASE]</lettuce.version>
     </properties>
 
     <licenses>
@@ -74,13 +74,15 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
             <version>${springboot.version}</version>
-            <scope>compile</scope>
+            <scope>provided</scope>
+            <optional>true</optional>
         </dependency>
         <dependency>
             <groupId>io.lettuce</groupId>
             <artifactId>lettuce-core</artifactId>
             <version>${lettuce.version}</version>
-            <scope>compile</scope>
+            <scope>provided</scope>
+            <optional>true</optional>
         </dependency>
 
         <!-- 客户端要使用请单独引入kafka-clients依赖 -->
