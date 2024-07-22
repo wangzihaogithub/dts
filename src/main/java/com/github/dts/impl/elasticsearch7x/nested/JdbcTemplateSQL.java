@@ -11,10 +11,16 @@ import java.util.function.Supplier;
 
 public class JdbcTemplateSQL extends SQL {
     private final String dataSourceKey;
+    private final boolean needGroupBy;
 
-    public JdbcTemplateSQL(String exprSql, Object[] args, Map<String, Object> argsMap, String dataSourceKey) {
+    public JdbcTemplateSQL(String exprSql, Object[] args, Map<String, Object> argsMap, String dataSourceKey, boolean needGroupBy) {
         super(exprSql, args, argsMap);
         this.dataSourceKey = dataSourceKey;
+        this.needGroupBy = needGroupBy;
+    }
+
+    public boolean isNeedGroupBy() {
+        return needGroupBy;
     }
 
     public List<Map<String, Object>> executeQueryList(CacheMap cacheMap) {

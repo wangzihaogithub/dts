@@ -93,8 +93,8 @@ public class ESSyncUtil {
     }
 
     public static void loadESSyncConfig(Map<String, Map<String, ESSyncConfig>> map,
-                                         Map<String, ESSyncConfig> configMap,
-                                         Properties envProperties, File resourcesDir, String env) {
+                                        Map<String, ESSyncConfig> configMap,
+                                        Properties envProperties, File resourcesDir, String env) {
         Map<String, ESSyncConfig> load = loadYamlToBean(envProperties, resourcesDir, env);
         for (Map.Entry<String, ESSyncConfig> entry : load.entrySet()) {
             ESSyncConfig config = entry.getValue();
@@ -173,53 +173,6 @@ public class ESSyncUtil {
             JDBC_TEMPLATE_MAP.put(srcDataSourcesKey, jdbcTemplate);
         }
         return jdbcTemplate;
-    }
-
-    /**
-     * 转换为ES对象
-     * <p>
-     * |ARRAY   |OBJECT     |ARRAY_SQL      |OBJECT_SQL      |
-     * |数组     | 对象      |数组sql查询多条  |对象sql查询单条   |
-     * <p>
-     * 该方法只实现 ARRAY与OBJECT
-     * ARRAY_SQL与OBJECT_SQL的实现 - {@link NestedFieldWriter}
-     *
-     * @param val       val
-     * @param mapping   mapping
-     * @param fieldName fieldName
-     * @return ES对象
-     * @see ESSyncServiceListener#onSyncAfter(List, ES7xAdapter, ESTemplate.BulkRequestList)
-     */
-    public static Object convertToEsObj(Object val, ESMapping mapping, String fieldName) {
-        if (val == null) {
-            return null;
-        }
-
-        ESSyncConfig.ObjectField objectField = mapping.getObjFields().get(fieldName);
-        switch (objectField.getType()) {
-            case ARRAY: {
-                String varStr = val.toString();
-                if (Util.isEmpty(varStr)) {
-                    return null;
-                }
-                String[] values = varStr.split(objectField.getSplit());
-                return Arrays.asList(values);
-            }
-            case OBJECT: {
-                return JsonUtil.toMap(val.toString(), true);
-            }
-            case BOOLEAN: {
-                return castToBoolean(val);
-            }
-            case STATIC_METHOD: {
-                return objectField.staticMethodAccessor().apply(new ESStaticMethodParam(val, mapping, fieldName));
-            }
-            case ARRAY_SQL:
-            case OBJECT_SQL:
-            default: {
-                return val;
-            }
-        }
     }
 
     public static Boolean castToBoolean(Object value) {

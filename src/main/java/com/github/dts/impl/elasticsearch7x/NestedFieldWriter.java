@@ -125,7 +125,7 @@ public class NestedFieldWriter {
             }
             String fullSql = objectField.getFullSql(dependent.isIndexMainTable());
             SQL sql = SQL.convertToSql(fullSql, mergeDataMap);
-            sqlList.add(new DependentSQL(sql, dependent, autoUpdateChildren));
+            sqlList.add(new DependentSQL(sql, dependent, autoUpdateChildren, objectField.isNeedGroupBy() || objectField.getType() == ESSyncConfig.ObjectField.Type.OBJECT_SQL));
         }
         return sqlList;
     }
@@ -179,7 +179,7 @@ public class NestedFieldWriter {
                 case ARRAY_SQL: {
                     List<Map<String, Object>> rowList = entry.getValue();
                     for (Map<String, Object> row : rowList) {
-                        esTemplate.convertValueType(esMapping, objectField.getFieldName(),row);
+                        esTemplate.convertValueType(esMapping, objectField.getFieldName(), row);
                     }
                     //更新ES文档 (执行完会统一提交, 这里不用commit)
                     esTemplate.update(esMapping, pkValue, Collections.singletonMap(
@@ -221,7 +221,7 @@ public class NestedFieldWriter {
                                ESTemplate.BulkRequestList bulkRequestList,
                                boolean autoUpdateChildren) {
         Set<DependentSQL> sqlList = convertToSql(mainTableDependentList, autoUpdateChildren);
-        List<MergeJdbcTemplateSQL<DependentSQL>> mergeSqlList = MergeJdbcTemplateSQL.merge(sqlList, 1000, false);
+        List<MergeJdbcTemplateSQL<DependentSQL>> mergeSqlList = MergeJdbcTemplateSQL.merge(sqlList, 1000);
         executeMergeUpdateES(mergeSqlList, bulkRequestList, cacheMap, esTemplate, mainTableListenerExecutor, threads);
     }
 
@@ -229,9 +229,9 @@ public class NestedFieldWriter {
         private final Dependent dependent;
         private final boolean autoUpdateChildren;
 
-        DependentSQL(SQL sql, Dependent dependent, boolean autoUpdateChildren) {
+        DependentSQL(SQL sql, Dependent dependent, boolean autoUpdateChildren, boolean needGroupBy) {
             super(sql.getExprSql(), sql.getArgs(), sql.getArgsMap(),
-                    dependent.getSchemaItem().getEsMapping().getConfig().getDataSourceKey());
+                    dependent.getSchemaItem().getEsMapping().getConfig().getDataSourceKey(), needGroupBy);
             this.dependent = dependent;
             this.autoUpdateChildren = autoUpdateChildren;
         }

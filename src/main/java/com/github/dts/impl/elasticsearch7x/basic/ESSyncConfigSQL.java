@@ -20,7 +20,7 @@ public abstract class ESSyncConfigSQL extends JdbcTemplateSQL {
     ESSyncConfigSQL(SQL sql, ESSyncConfig config, Dml dml,
                     Map<String, Object> data, Map<String, Object> old,
                     ESTemplate.BulkRequestList bulkRequestList, ESTemplate esTemplate) {
-        super(sql.getExprSql(), sql.getArgs(), sql.getArgsMap(), config.getDataSourceKey());
+        super(sql.getExprSql(), sql.getArgs(), sql.getArgsMap(), config.getDataSourceKey(), true);
         this.config = config;
         this.dml = dml;
         this.data = data;

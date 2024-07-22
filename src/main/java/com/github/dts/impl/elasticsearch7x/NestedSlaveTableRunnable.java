@@ -78,7 +78,7 @@ public class NestedSlaveTableRunnable implements Runnable {
                 }
                 indices.add(dependent.getSchemaItem().getEsMapping().get_index());
 
-                List<MergeJdbcTemplateSQL<DependentSQL>> updateSqlList = MergeJdbcTemplateSQL.merge(nestedMainSqlList, 1000, false);
+                List<MergeJdbcTemplateSQL<DependentSQL>> updateSqlList = MergeJdbcTemplateSQL.merge(nestedMainSqlList, 1000);
                 NestedFieldWriter.executeMergeUpdateES(updateSqlList, bulkRequestList, cacheMap, es7xTemplate, null, 3);
 
                 es7xTemplate.bulk(bulkRequestList);
@@ -116,15 +116,15 @@ public class NestedSlaveTableRunnable implements Runnable {
         Set<DependentSQL> byChildrenSqlSet = new LinkedHashSet<>();
         for (SchemaItem.TableItem tableItem : nestedSlaveTableList) {
             SQL nestedChildrenSql = convertNestedSlaveTableSQL(tableItem, dependent);
-            byChildrenSqlSet.add(new DependentSQL(nestedChildrenSql, dependent, false));
+            byChildrenSqlSet.add(new DependentSQL(nestedChildrenSql, dependent, false, false));
         }
-        Map<DependentSQL, List<Map<String, Object>>> batchRowMap = executeQueryList(MergeJdbcTemplateSQL.merge(byChildrenSqlSet, 1000, false), cacheMap);
+        Map<DependentSQL, List<Map<String, Object>>> batchRowMap = executeQueryList(MergeJdbcTemplateSQL.merge(byChildrenSqlSet, 1000), cacheMap);
 
         Set<DependentSQL> byMainSqlList = new LinkedHashSet<>();
         String fullSql = dependent.getSchemaItem().getObjectField().getFullSql(false);
         for (List<Map<String, Object>> changeRowList : batchRowMap.values()) {
             for (Map<String, Object> changeRow : changeRowList) {
-                byMainSqlList.add(new DependentSQL(SQL.convertToSql(fullSql, changeRow), dependent, false));
+                byMainSqlList.add(new DependentSQL(SQL.convertToSql(fullSql, changeRow), dependent, false, false));
             }
         }
         return byMainSqlList;

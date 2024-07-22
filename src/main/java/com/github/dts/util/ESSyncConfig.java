@@ -1,5 +1,7 @@
 package com.github.dts.util;
 
+import com.github.dts.impl.elasticsearch7x.ES7xAdapter;
+import com.github.dts.impl.elasticsearch7x.NestedFieldWriter;
 import org.apache.commons.lang3.StringUtils;
 
 import java.util.*;
@@ -221,6 +223,14 @@ public class ESSyncConfig {
             this.objFields = objFields;
         }
 
+        public ObjectField getObjectField(String parentFieldName, String name) {
+            if (parentFieldName != null && !parentFieldName.isEmpty()) {
+                return objFields.get(parentFieldName + "$" + name);
+            } else {
+                return objFields.get(name);
+            }
+        }
+
         public List<String> getSkips() {
             return skips;
         }
@@ -316,6 +326,10 @@ public class ESSyncConfig {
          * array-sql
          */
         private Type type;
+        /**
+         * 是否需要group by id
+         */
+        private boolean needGroupBy;
         private String fieldName;
         private String sql;
         private String method;
@@ -332,11 +346,61 @@ public class ESSyncConfig {
             return fieldName + " [" + sql + "]";
         }
 
-        public StaticMethodAccessor<ESStaticMethodParam> staticMethodAccessor() {
-            if (staticMethodAccessor == null) {
-                staticMethodAccessor = new StaticMethodAccessor<>(method, ESStaticMethodParam.class);
+        public boolean isNeedGroupBy() {
+            return needGroupBy;
+        }
+
+        public void setNeedGroupBy(boolean needGroupBy) {
+            this.needGroupBy = needGroupBy;
+        }
+
+        /**
+         * 转换为ES对象
+         * <p>
+         * |ARRAY   |OBJECT     |ARRAY_SQL      |OBJECT_SQL      |
+         * |数组     | 对象      |数组sql查询多条  |对象sql查询单条   |
+         * <p>
+         * 该方法只实现 ARRAY与OBJECT
+         * ARRAY_SQL与OBJECT_SQL的实现 - {@link NestedFieldWriter}
+         *
+         * @param val       val
+         * @param mapping   mapping
+         * @param fieldName fieldName
+         * @return ES对象
+         * @see ESSyncServiceListener#onSyncAfter(List, ES7xAdapter, ESTemplate.BulkRequestList)
+         */
+        public Object parse(Object val, ESMapping mapping, String parentFieldName, String fieldName) {
+            if (val == null) {
+                return null;
             }
-            return staticMethodAccessor;
+
+            switch (type) {
+                case ARRAY: {
+                    String varStr = val.toString();
+                    if (Util.isEmpty(varStr)) {
+                        return null;
+                    }
+                    String[] values = varStr.split(split);
+                    return Arrays.asList(values);
+                }
+                case OBJECT: {
+                    return JsonUtil.toMap(val.toString(), true);
+                }
+                case BOOLEAN: {
+                    return ESSyncUtil.castToBoolean(val);
+                }
+                case STATIC_METHOD: {
+                    if (staticMethodAccessor == null) {
+                        staticMethodAccessor = new StaticMethodAccessor<>(method, ESStaticMethodParam.class);
+                    }
+                    return staticMethodAccessor.apply(new ESStaticMethodParam(val, mapping, fieldName, parentFieldName));
+                }
+                case ARRAY_SQL:
+                case OBJECT_SQL:
+                default: {
+                    return val;
+                }
+            }
         }
 
         public String getMethod() {

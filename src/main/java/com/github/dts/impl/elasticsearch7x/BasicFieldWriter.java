@@ -29,7 +29,7 @@ public class BasicFieldWriter {
     }
 
     private static void executeUpdate(List<ESSyncConfigSQL> sqlList) {
-        List<MergeJdbcTemplateSQL<ESSyncConfigSQL>> mergeList = MergeJdbcTemplateSQL.merge(sqlList, 500, true);
+        List<MergeJdbcTemplateSQL<ESSyncConfigSQL>> mergeList = MergeJdbcTemplateSQL.merge(sqlList, 500);
         Map<ESSyncConfigSQL, List<Map<String, Object>>> executedMap = MergeJdbcTemplateSQL.executeQueryList(mergeList, null);
         for (Map.Entry<ESSyncConfigSQL, List<Map<String, Object>>> entry : executedMap.entrySet()) {
             ESSyncConfigSQL sql = entry.getKey();

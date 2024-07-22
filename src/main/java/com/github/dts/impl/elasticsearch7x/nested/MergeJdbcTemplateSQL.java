@@ -16,8 +16,9 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
                                  String dataSourceKey,
                                  String[] uniqueColumnNames,
                                  List<String> addColumnNameList,
-                                 List<T> mergeList) {
-        super(exprSql, args, new LinkedHashMap<>(), dataSourceKey);
+                                 List<T> mergeList,
+                                 boolean needGroupBy) {
+        super(exprSql, args, new LinkedHashMap<>(), dataSourceKey, needGroupBy);
         this.uniqueColumnNames = uniqueColumnNames;
         this.addColumnNameList = addColumnNameList;
         this.mergeList = mergeList;
@@ -34,7 +35,7 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
         return result;
     }
 
-    public static <T extends JdbcTemplateSQL> List<MergeJdbcTemplateSQL<T>> merge(Collection<T> sqlList, int maxIdInCount, boolean needGroupBy) {
+    public static <T extends JdbcTemplateSQL> List<MergeJdbcTemplateSQL<T>> merge(Collection<T> sqlList, int maxIdInCount) {
         switch (sqlList.size()) {
             case 0: {
                 return Collections.emptyList();
@@ -46,13 +47,13 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
                                 first.getExprSql(), first.getArgs(),
                                 first.getDataSourceKey(),
                                 null, null,
-                                new ArrayList<>(sqlList))
+                                new ArrayList<>(sqlList), first.isNeedGroupBy())
                 );
             }
             default: {
                 Set<T> sqlSet = sqlList instanceof Set ? (Set<T>) sqlList : new LinkedHashSet<>(sqlList);
                 Map<String, List<T>> groupByExprSqlMap = sqlSet.stream()
-                        .collect(Collectors.groupingBy(e -> e.getExprSql() + "_" + e.getDataSourceKey(), LinkedHashMap::new, Collectors.toList()));
+                        .collect(Collectors.groupingBy(e -> e.getExprSql() + "_" + e.getDataSourceKey() + "_" + e.isNeedGroupBy(), LinkedHashMap::new, Collectors.toList()));
 
                 List<MergeJdbcTemplateSQL<T>> result = new ArrayList<>();
                 for (List<T> valueList : groupByExprSqlMap.values()) {
@@ -60,22 +61,24 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
                     List<List<T>> partition = Lists.partition(valueList, maxIdInCount);
                     for (List<T> list : partition) {
                         List<Object[]> argsList = list.stream().map(SQL::getArgs).collect(Collectors.toList());
-                        List<SqlParser.ChangeSQL> changeSQLList = SqlParser.changeMergeSelect(first.getExprSql(), argsList, needGroupBy);
+                        List<SqlParser.ChangeSQL> changeSQLList = SqlParser.changeMergeSelect(first.getExprSql(), argsList, first.isNeedGroupBy());
                         if (changeSQLList != null) {
                             for (SqlParser.ChangeSQL changeSQL : changeSQLList) {
                                 result.add(new MergeJdbcTemplateSQL<>(
                                         changeSQL.getSql(), changeSQL.getArgs(),
                                         first.getDataSourceKey(),
                                         changeSQL.getUniqueColumnNames(), changeSQL.getAddColumnNameList(),
-                                        list));
+                                        list,
+                                        first.isNeedGroupBy()));
                             }
                         } else {
                             for (T value : list) {
                                 result.add(new MergeJdbcTemplateSQL<>(
                                         value.getExprSql(), value.getArgs(),
-                                        first.getDataSourceKey(),
+                                        value.getDataSourceKey(),
                                         null, null,
-                                        list));
+                                        list,
+                                        value.isNeedGroupBy()));
                             }
                         }
                     }

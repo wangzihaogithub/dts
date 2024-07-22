@@ -524,16 +524,9 @@ public class ES7xTemplate implements ESTemplate {
     }
 
     @Override
-    public Object getValFromData(ESMapping mapping, Map<String, Object> dmlData, String fieldName, String
-            columnName) {
-        ESFieldTypesCache esType = getEsType(mapping);
-        Object value = dmlData.get(columnName);
-        if (value instanceof Byte) {
-            if ("boolean".equals(esType.get(fieldName))) {
-                value = ((Byte) value).intValue() != 0;
-            }
-        }
-        return getValFromValue(mapping, value, fieldName);
+    public Object getValFromData(ESMapping mapping, Map<String, Object> dmlData,
+                                 String fieldName, String columnName) {
+        return getValFromValue(mapping, dmlData.get(columnName), fieldName);
     }
 
     @Override
@@ -554,20 +547,12 @@ public class ES7xTemplate implements ESTemplate {
     }
 
     private Object getValFromValue(ESMapping mapping, Object value, String fieldName, String parentFieldName) {
-        ESFieldTypesCache esType = null;
-        if (value instanceof Boolean) {
-            esType = getEsType(mapping);
-            if (!"boolean".equals(esType.get(fieldName))) {
-                value = (Boolean) value ? 1 : 0;
-            }
-        }
         // 如果是对象类型
-        if (mapping.getObjFields().containsKey(fieldName)) {
-            return ESSyncUtil.convertToEsObj(value, mapping, fieldName);
+        ESSyncConfig.ObjectField objectField = mapping.getObjectField(parentFieldName, fieldName);
+        if (objectField != null) {
+            return objectField.parse(value, mapping, parentFieldName, fieldName);
         } else {
-            if (esType == null) {
-                esType = getEsType(mapping);
-            }
+            ESFieldTypesCache esType = getEsType(mapping);
             return ESSyncUtil.typeConvert(value, fieldName, esType, parentFieldName);
         }
     }
