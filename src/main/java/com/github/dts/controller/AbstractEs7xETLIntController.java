@@ -17,6 +17,13 @@ import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
 
+/**
+ * 根据自增ID的全量灌数据，可以继承这个Controller
+ * <p>
+ * curl "http://localhost:8080/es7x/job/syncById?id=1,2"
+ * curl "http://localhost:8080/es7x/job/syncAll"
+ * curl "http://localhost:8080/es7x/job/stop"
+ */
 public abstract class AbstractEs7xETLIntController {
     private static final Logger log = LoggerFactory.getLogger(AbstractEs7xETLIntController.class);
 
@@ -165,11 +172,6 @@ public abstract class AbstractEs7xETLIntController {
             log.info("all sync end.  total = {} ", count);
         }
         return 1;
-    }
-
-    @RequestMapping("/discard")
-    public List<Map> discard() throws InterruptedException {
-        return discard(getES7xAdapter().getClientIdentity());
     }
 
     @RequestMapping("/stop")

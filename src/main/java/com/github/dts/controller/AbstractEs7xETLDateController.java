@@ -17,6 +17,12 @@ import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
 
+/**
+ * 根据日期全量灌数据，可以继承这个Controller
+ * <p>
+ * curl "http://localhost:8080/es7x/job/syncAll?fieldName=create_time&offsetStart=2022-03-01&offsetEnd=2024-10-01"
+ * curl "http://localhost:8080/es7x/job/stop"
+ */
 public abstract class AbstractEs7xETLDateController {
     private static final Logger log = LoggerFactory.getLogger(AbstractEs7xETLDateController.class);
 
@@ -113,11 +119,6 @@ public abstract class AbstractEs7xETLDateController {
             executorService.execute(runnable);
         }
         return runnableList;
-    }
-
-    @RequestMapping("/discard")
-    public List<Map> discard() throws InterruptedException {
-        return discard(getES7xAdapter().getClientIdentity());
     }
 
     @RequestMapping("/stop")
