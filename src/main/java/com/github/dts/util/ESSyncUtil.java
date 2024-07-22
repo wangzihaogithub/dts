@@ -1,7 +1,5 @@
 package com.github.dts.util;
 
-import com.github.dts.impl.elasticsearch7x.ES7xAdapter;
-import com.github.dts.impl.elasticsearch7x.NestedFieldWriter;
 import com.github.dts.impl.elasticsearch7x.nested.SQL;
 import com.github.dts.util.ESSyncConfig.ESMapping;
 import com.github.dts.util.SchemaItem.ColumnItem;
@@ -227,6 +225,9 @@ public class ESSyncUtil {
         Object esType;
         if (parentFieldName != null) {
             Map<String, Object> properties = esTypes.getPropertiesAttr(parentFieldName, "properties");
+            if (properties == null) {
+                return val;
+            }
             Object typeMap = properties.get(fileName);
             if (typeMap instanceof Map) {
                 esType = ((Map<?, ?>) typeMap).get("type");
