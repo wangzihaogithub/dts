@@ -51,6 +51,7 @@ public class ESSyncUtil {
         for (Map.Entry<String, byte[]> entry : yamlMap.entrySet()) {
             String fileName = entry.getKey();
             byte[] content = entry.getValue();
+
             ESSyncConfig config = YmlConfigBinder.bindYmlToObj(null, content, ESSyncConfig.class, envProperties);
             if (config == null) {
                 continue;
@@ -65,6 +66,7 @@ public class ESSyncUtil {
             }
             esSyncConfig.put(fileName, config);
         }
+
         log.info("## ES mapping config loaded");
         return esSyncConfig;
     }
@@ -345,12 +347,12 @@ public class ESSyncUtil {
             }
         } else if ("geo_point".equals(esType)) {
             if (!(val instanceof String)) {
-                log.error("es type is geo_point, but source type is not String");
+//                log.error("es type is geo_point, but source type is not String");
                 return val;
             }
 
             if (!((String) val).contains(",")) {
-                log.error("es type is geo_point, source value not contains ',' separator");
+                log.error("es type is geo_point, source value not contains ',' separator {} {} = {}", parentFieldName, fileName, val);
                 return val;
             }
 
