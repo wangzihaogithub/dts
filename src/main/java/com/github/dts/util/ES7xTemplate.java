@@ -115,8 +115,7 @@ public class ES7xTemplate implements ESTemplate {
         if (esFieldData.isEmpty()) {
             return;
         }
-        Map<String, Object> esFieldDataTmp = new LinkedHashMap<>(esFieldData.size());
-        esFieldData.forEach((k, v) -> esFieldDataTmp.put(Util.cleanColumn(k), v));
+        Map<String, Object> esFieldDataTmp = new LinkedHashMap<>(esFieldData);
 
         setterIndexUpdatedTime(mapping, esFieldDataTmp);
 
@@ -152,9 +151,7 @@ public class ES7xTemplate implements ESTemplate {
         esFieldData = ESSyncUtil.convertType(esFieldData, getEsType(mapping));
         BoolQueryBuilder queryBuilder = QueryBuilders.boolQuery();
         esFieldDataWhere.forEach((fieldName, value) -> queryBuilder.must(QueryBuilders.termsQuery(fieldName, value)));
-        Map<String, Object> esFieldDataTmp = new LinkedHashMap<>(esFieldData.size());
-        esFieldData.forEach((k, v) -> esFieldDataTmp.put(Util.cleanColumn(k), v));
-
+        Map<String, Object> esFieldDataTmp = new LinkedHashMap<>(esFieldData);
 
         ES7xConnection.ESSearchRequest esSearchRequest = new ES7xConnection.ESSearchRequest(mapping.get_index())
                 .setQuery(queryBuilder)

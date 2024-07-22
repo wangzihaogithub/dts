@@ -61,7 +61,7 @@ public class WholeSqlOperationESSyncConfigSQL extends ESSyncConfigSQL {
                                 if (old.containsKey(columnItem.getColumnName())) {
                                     Object val = esTemplate.getValFromRS(mapping, row, fieldItem.getFieldName(), fieldItem.getColumnName(),
                                             data);
-                                    esFieldData.put(Util.cleanColumn(fieldItem.getFieldName()), val);
+                                    esFieldData.put(fieldItem.getFieldName(), val);
                                     break;
                                 }
                             }

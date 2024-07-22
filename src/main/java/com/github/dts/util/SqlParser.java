@@ -234,7 +234,7 @@ public class SqlParser {
     private static List<FieldItem> collectSelectQueryFields(MySqlSelectQueryBlock sqlSelectQueryBlock) {
         return sqlSelectQueryBlock.getSelectList().stream().map(selectItem -> {
             FieldItem fieldItem = new FieldItem();
-            fieldItem.setFieldName(Util.cleanColumn(selectItem.getAlias()));
+            fieldItem.setFieldName(cleanColumn(selectItem.getAlias()));
             fieldItem.setExpr(selectItem.toString());
             visitColumn(selectItem.getExpr(), fieldItem);
             return fieldItem;
@@ -251,7 +251,7 @@ public class SqlParser {
         if (expr instanceof SQLIdentifierExpr) {
             // 无owner
             SQLIdentifierExpr identifierExpr = (SQLIdentifierExpr) expr;
-            String name = Util.cleanColumn(identifierExpr.getName());
+            String name = cleanColumn(identifierExpr.getName());
             if (fieldItem.getFieldName() == null) {
                 fieldItem.setFieldName(name);
                 fieldItem.setExpr(identifierExpr.toString());
@@ -262,12 +262,12 @@ public class SqlParser {
         } else if (expr instanceof SQLPropertyExpr) {
             // 有owner
             SQLPropertyExpr sqlPropertyExpr = (SQLPropertyExpr) expr;
-            String name = Util.cleanColumn(sqlPropertyExpr.getName());
+            String name = cleanColumn(sqlPropertyExpr.getName());
             if (fieldItem.getFieldName() == null) {
                 fieldItem.setFieldName(name);
                 fieldItem.setExpr(sqlPropertyExpr.toString());
             }
-            String ownernName = Util.cleanColumn(sqlPropertyExpr.getOwnernName());
+            String ownernName = cleanColumn(sqlPropertyExpr.getOwnernName());
             ColumnItem columnItem = new ColumnItem();
             columnItem.setColumnName(name);
             columnItem.setOwner(ownernName);
@@ -311,7 +311,7 @@ public class SqlParser {
                 tableItem = new TableItem(schemaItem);
             }
             tableItem.setSchema(sqlExprTableSource.getSchema());
-            tableItem.setTableName(Util.cleanColumn(sqlExprTableSource.getName().getSimpleName()));
+            tableItem.setTableName(cleanColumn(sqlExprTableSource.getName().getSimpleName()));
             if (tableItem.getAlias() == null) {
                 tableItem.setAlias(sqlExprTableSource.getAlias());
             }
@@ -510,4 +510,22 @@ public class SqlParser {
         }
     }
 
+    public static String cleanColumn(String column) {
+        if (column == null) {
+            return null;
+        }
+        if (column.contains("`")) {
+            column = column.replaceAll("`", "");
+        }
+
+        if (column.contains("'")) {
+            column = column.replaceAll("'", "");
+        }
+
+        if (column.contains("\"")) {
+            column = column.replaceAll("\"", "");
+        }
+
+        return ESSyncUtil.stringCache(column);
+    }
 }

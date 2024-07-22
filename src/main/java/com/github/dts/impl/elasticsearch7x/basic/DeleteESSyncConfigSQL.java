@@ -31,7 +31,7 @@ public class DeleteESSyncConfigSQL extends ESSyncConfigSQL {
             esTemplate.getESDataFromDmlData(mapping, data, esFieldData);
             esFieldData.remove(mapping.getPk());
             for (String key : esFieldData.keySet()) {
-                esFieldData.put(Util.cleanColumn(key), null);
+                esFieldData.put(key, null);
             }
         }
 

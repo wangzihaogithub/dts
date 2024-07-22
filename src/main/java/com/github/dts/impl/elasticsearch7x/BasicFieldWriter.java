@@ -265,7 +265,7 @@ public class BasicFieldWriter {
                             for (FieldItem fieldItem : tableItem.getRelationSelectFieldItems()) {
                                 if (old.containsKey(fieldItem.getColumnName())) {
                                     Object value = esTemplate.getValFromData(config.getEsMapping(), data, fieldItem.getFieldName(), fieldItem.getColumnName());
-                                    esFieldData.put(Util.cleanColumn(fieldItem.getFieldName()), value);
+                                    esFieldData.put(fieldItem.getFieldName(), value);
                                 }
                             }
                             joinTableSimpleFieldOperation(config, dml, data, tableItem, esFieldData, bulkRequestList);
@@ -365,7 +365,7 @@ public class BasicFieldWriter {
                         // ------关联表简单字段更新为null------
                         Map<String, Object> esFieldData = new LinkedHashMap<>();
                         for (FieldItem fieldItem : tableItem.getRelationSelectFieldItems()) {
-                            esFieldData.put(Util.cleanColumn(fieldItem.getFieldName()), null);
+                            esFieldData.put(fieldItem.getFieldName(), null);
                         }
                         joinTableSimpleFieldOperation(config, dml, data, tableItem, esFieldData, bulkRequestList);
                     } else {
