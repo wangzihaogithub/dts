@@ -25,6 +25,7 @@ public class SchemaItem {
     private TableItem mainTable;
     private List<TableItem> slaveTableList;
     private FieldItem idField;
+    private Set<ColumnItem> idColumns;
 
     public SchemaItem() {
     }
@@ -36,6 +37,55 @@ public class SchemaItem {
     public static void main(String[] args) {
         Map<String, List<String>> columnList = SqlParser.getColumnList("WHERE corpRelationTag.corp_id = #{corp_id} ");
 
+    }
+
+    public Set<ColumnItem> getIdColumns() {
+        if (idColumns == null) {
+            if (objectField != null) {
+                if (objectField.isSqlType()) {
+                    this.idColumns = parseByObjectFieldIdColumns();
+                } else {
+                    this.idColumns = Collections.emptySet();
+                }
+            } else {
+                this.idColumns = parseByMainIdColumns();
+            }
+        }
+        return idColumns;
+    }
+
+    private Set<ColumnItem> parseByObjectFieldIdColumns() {
+        Set<ColumnItem> idColumns = new LinkedHashSet<>();
+        TableItem mainTable = getMainTable();
+        Map<String, List<String>> childColumnList = SqlParser.getVarColumnList(objectField.getOnChildChangeWhereSql());
+        List<String> mainColumnList = childColumnList.get(mainTable.getAlias());
+        if (mainColumnList == null || mainColumnList.isEmpty()) {
+            childColumnList = SqlParser.getVarColumnList(objectField.getOnParentChangeWhereSql());
+            mainColumnList = childColumnList.get(mainTable.getAlias());
+        }
+        LinkedHashSet<String> mainColumnSet = new LinkedHashSet<>(mainColumnList);
+        for (String column : mainColumnSet) {
+            ColumnItem columnItem = new ColumnItem();
+            columnItem.setColumnName(column);
+            columnItem.setOwner(mainTable.getAlias());
+            idColumns.add(columnItem);
+        }
+        return idColumns;
+    }
+
+    private Set<ColumnItem> parseByMainIdColumns() {
+        Set<ColumnItem> idColumns = new LinkedHashSet<>();
+        TableItem mainTable = getMainTable();
+        for (ColumnItem idColumnItem : getIdFieldItem(esMapping).getColumnItems()) {
+            if ((mainTable.getAlias() == null && idColumnItem.getOwner() == null)
+                    || (mainTable.getAlias() != null && mainTable.getAlias().equals(idColumnItem.getOwner()))) {
+                idColumns.add(idColumnItem);
+            }
+        }
+        if (idColumns.isEmpty()) {
+            throw new RuntimeException("Not found primary key field in main table");
+        }
+        return idColumns;
     }
 
     @Override
@@ -58,6 +108,8 @@ public class SchemaItem {
             mainTable.main = true;
         }
         getSlaveTableList();
+        getIdColumns();
+        getIdField();
     }
 
     public FieldItem getIdField() {

@@ -524,7 +524,7 @@ public class ES7xConnection {
             for (ConcurrentBulkRequest bulkRequest : bulkRequests) {
                 if (bulkRequest.numberOfActions() > 0 && bulkRequest.tryLock()) {
                     try {
-                        BulkRequestResponse requestResponse = commit(bulkRequest, true);
+                        BulkRequestResponse requestResponse = commit(bulkRequest, maxRetryCount > 0);
                         bulkResponse.add(requestResponse);
                     } catch (Exception e) {
                         Util.sneakyThrows(e);
@@ -570,7 +570,7 @@ public class ES7xConnection {
                     if (rowList.size() == 1) {
                         DocWriteRequest<?> retry = readonlyRequests.get(0);
                         int count = retryCounter.computeIfAbsent(retry, e -> 1);
-                        if (count < maxRetryCount * 2) {
+                        if (count < maxRetryCount) {
                             retryCounter.put(retry, count + 1);
                             errorRequests.add(retry);
                         } else {

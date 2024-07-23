@@ -326,10 +326,7 @@ public class ESSyncConfig {
          * array-sql
          */
         private Type type;
-        /**
-         * 是否需要group by id
-         */
-        private boolean needGroupBy;
+
         private String fieldName;
         private String sql;
         private String method;
@@ -346,14 +343,6 @@ public class ESSyncConfig {
             return fieldName + " [" + sql + "]";
         }
 
-        public boolean isNeedGroupBy() {
-            return needGroupBy;
-        }
-
-        public void setNeedGroupBy(boolean needGroupBy) {
-            this.needGroupBy = needGroupBy;
-        }
-
         /**
          * 转换为ES对象
          * <p>
@@ -363,9 +352,9 @@ public class ESSyncConfig {
          * 该方法只实现 ARRAY与OBJECT
          * ARRAY_SQL与OBJECT_SQL的实现 - {@link NestedFieldWriter}
          *
-         * @param val       val
-         * @param mapping   mapping
-         * @param fieldName fieldName
+         * @param val             val
+         * @param mapping         mapping
+         * @param fieldName       fieldName
          * @param parentFieldName parentFieldName
          * @return ES对象
          * @see ESSyncServiceListener#onSyncAfter(List, ES7xAdapter, ESTemplate.BulkRequestList)
@@ -507,6 +496,10 @@ public class ESSyncConfig {
 
         public void setSchemaItem(SchemaItem schemaItem) {
             this.schemaItem = schemaItem;
+        }
+
+        public boolean isSqlType() {
+            return type == Type.OBJECT_SQL || type == Type.ARRAY_SQL;
         }
 
         public enum Type {

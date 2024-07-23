@@ -1,6 +1,7 @@
 package com.github.dts.impl.elasticsearch7x.nested;
 
 import com.github.dts.util.CacheMap;
+import com.github.dts.util.SchemaItem;
 import com.github.dts.util.SqlParser;
 import com.google.common.collect.Lists;
 
@@ -17,7 +18,7 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
                                  String[] uniqueColumnNames,
                                  List<String> addColumnNameList,
                                  List<T> mergeList,
-                                 boolean needGroupBy) {
+                                 Collection<SchemaItem.ColumnItem> needGroupBy) {
         super(exprSql, args, new LinkedHashMap<>(), dataSourceKey, needGroupBy);
         this.uniqueColumnNames = uniqueColumnNames;
         this.addColumnNameList = addColumnNameList;
@@ -43,17 +44,17 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
             case 1: {
                 T first = sqlList.iterator().next();
                 return Collections.singletonList(
-                        new MergeJdbcTemplateSQL<T>(
+                        new MergeJdbcTemplateSQL<>(
                                 first.getExprSql(), first.getArgs(),
                                 first.getDataSourceKey(),
                                 null, null,
-                                new ArrayList<>(sqlList), first.isNeedGroupBy())
+                                new ArrayList<>(sqlList), first.getNeedGroupBy())
                 );
             }
             default: {
                 Set<T> sqlSet = sqlList instanceof Set ? (Set<T>) sqlList : new LinkedHashSet<>(sqlList);
                 Map<String, List<T>> groupByExprSqlMap = sqlSet.stream()
-                        .collect(Collectors.groupingBy(e -> e.getExprSql() + "_" + e.getDataSourceKey() + "_" + e.isNeedGroupBy(), LinkedHashMap::new, Collectors.toList()));
+                        .collect(Collectors.groupingBy(e -> e.getExprSql() + "_" + e.getDataSourceKey() + "_" + e.getNeedGroupBy(), LinkedHashMap::new, Collectors.toList()));
 
                 List<MergeJdbcTemplateSQL<T>> result = new ArrayList<>();
                 for (List<T> valueList : groupByExprSqlMap.values()) {
@@ -61,7 +62,7 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
                     List<List<T>> partition = Lists.partition(valueList, maxIdInCount);
                     for (List<T> list : partition) {
                         List<Object[]> argsList = list.stream().map(SQL::getArgs).collect(Collectors.toList());
-                        List<SqlParser.ChangeSQL> changeSQLList = SqlParser.changeMergeSelect(first.getExprSql(), argsList, first.isNeedGroupBy());
+                        List<SqlParser.ChangeSQL> changeSQLList = SqlParser.changeMergeSelect(first.getExprSql(), argsList, first.getNeedGroupBy());
                         if (changeSQLList != null) {
                             for (SqlParser.ChangeSQL changeSQL : changeSQLList) {
                                 result.add(new MergeJdbcTemplateSQL<>(
@@ -69,7 +70,7 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
                                         first.getDataSourceKey(),
                                         changeSQL.getUniqueColumnNames(), changeSQL.getAddColumnNameList(),
                                         list,
-                                        first.isNeedGroupBy()));
+                                        first.getNeedGroupBy()));
                             }
                         } else {
                             for (T value : list) {
@@ -78,7 +79,7 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
                                         value.getDataSourceKey(),
                                         null, null,
                                         list,
-                                        value.isNeedGroupBy()));
+                                        value.getNeedGroupBy()));
                             }
                         }
                     }

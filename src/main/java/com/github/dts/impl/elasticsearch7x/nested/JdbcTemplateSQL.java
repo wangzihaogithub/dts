@@ -2,24 +2,26 @@ package com.github.dts.impl.elasticsearch7x.nested;
 
 import com.github.dts.util.CacheMap;
 import com.github.dts.util.ESSyncUtil;
+import com.github.dts.util.SchemaItem;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
 
 public class JdbcTemplateSQL extends SQL {
     private final String dataSourceKey;
-    private final boolean needGroupBy;
+    private final Collection<SchemaItem.ColumnItem> needGroupBy;
 
-    public JdbcTemplateSQL(String exprSql, Object[] args, Map<String, Object> argsMap, String dataSourceKey, boolean needGroupBy) {
+    public JdbcTemplateSQL(String exprSql, Object[] args, Map<String, Object> argsMap, String dataSourceKey, Collection<SchemaItem.ColumnItem> needGroupBy) {
         super(exprSql, args, argsMap);
         this.dataSourceKey = dataSourceKey;
         this.needGroupBy = needGroupBy;
     }
 
-    public boolean isNeedGroupBy() {
+    public Collection<SchemaItem.ColumnItem> getNeedGroupBy() {
         return needGroupBy;
     }
 

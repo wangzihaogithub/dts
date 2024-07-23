@@ -463,21 +463,8 @@ public class ESSyncUtil {
     }
 
     public static SQL convertSqlByMapping(ESMapping mapping, Map<String, Object> data) {
-        Set<ColumnItem> idColumns = new LinkedHashSet<>();
-        SchemaItem schemaItem = mapping.getSchemaItem();
-
-        TableItem mainTable = schemaItem.getMainTable();
-
-        for (ColumnItem idColumnItem : schemaItem.getIdFieldItem(mapping).getColumnItems()) {
-            if ((mainTable.getAlias() == null && idColumnItem.getOwner() == null)
-                    || (mainTable.getAlias() != null && mainTable.getAlias().equals(idColumnItem.getOwner()))) {
-                idColumns.add(idColumnItem);
-            }
-        }
-
-        if (idColumns.isEmpty()) {
-            throw new RuntimeException("Not found primary key field in main table");
-        }
+        Set<ColumnItem> idColumns = mapping.getSchemaItem().getIdColumns();
+        TableItem mainTable = mapping.getSchemaItem().getMainTable();
 
         List<Object> args = new ArrayList<>();
         // 拼接condition

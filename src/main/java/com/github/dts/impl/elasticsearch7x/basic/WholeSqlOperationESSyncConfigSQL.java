@@ -8,7 +8,6 @@ import com.github.dts.util.ESTemplate;
 import com.github.dts.util.SchemaItem.ColumnItem;
 import com.github.dts.util.SchemaItem.FieldItem;
 import com.github.dts.util.SchemaItem.TableItem;
-import com.github.dts.util.Util;
 
 import java.util.LinkedHashMap;
 import java.util.List;

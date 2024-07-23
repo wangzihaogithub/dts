@@ -5,7 +5,6 @@ import com.github.dts.util.Dml;
 import com.github.dts.util.ESSyncConfig;
 import com.github.dts.util.ESSyncConfig.ESMapping;
 import com.github.dts.util.ESTemplate;
-import com.github.dts.util.Util;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -30,9 +29,7 @@ public class DeleteESSyncConfigSQL extends ESSyncConfigSQL {
             esFieldData = new LinkedHashMap<>();
             esTemplate.getESDataFromDmlData(mapping, data, esFieldData);
             esFieldData.remove(mapping.getPk());
-            for (String key : esFieldData.keySet()) {
-                esFieldData.put(key, null);
-            }
+            esFieldData.replaceAll((k, v) -> null);
         }
 
         for (Map<String, Object> row : rowList) {

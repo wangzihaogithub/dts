@@ -42,12 +42,12 @@ public class NestedSlaveTableRunnable implements Runnable {
         return result;
     }
 
-    public static void appendConditionByExpr(StringBuilder sql, Object value, String owner, String columnName) {
+    public static void appendConditionByExpr(StringBuilder sql, Object value, String owner, String columnName, String and) {
         if (owner != null) {
             sql.append(owner).append(".");
         }
         sql.append(columnName).append("=").append(value).append(' ');
-        sql.append(" AND ");
+        sql.append(and);
     }
 
     @Override
@@ -116,7 +116,7 @@ public class NestedSlaveTableRunnable implements Runnable {
         Set<DependentSQL> byChildrenSqlSet = new LinkedHashSet<>();
         for (SchemaItem.TableItem tableItem : nestedSlaveTableList) {
             SQL nestedChildrenSql = convertNestedSlaveTableSQL(tableItem, dependent);
-            byChildrenSqlSet.add(new DependentSQL(nestedChildrenSql, dependent, false, false));
+            byChildrenSqlSet.add(new DependentSQL(nestedChildrenSql, dependent, false, null));
         }
         Map<DependentSQL, List<Map<String, Object>>> batchRowMap = executeQueryList(MergeJdbcTemplateSQL.merge(byChildrenSqlSet, 1000), cacheMap);
 
@@ -124,7 +124,7 @@ public class NestedSlaveTableRunnable implements Runnable {
         String fullSql = dependent.getSchemaItem().getObjectField().getFullSql(false);
         for (List<Map<String, Object>> changeRowList : batchRowMap.values()) {
             for (Map<String, Object> changeRow : changeRowList) {
-                byMainSqlList.add(new DependentSQL(SQL.convertToSql(fullSql, changeRow), dependent, false, false));
+                byMainSqlList.add(new DependentSQL(SQL.convertToSql(fullSql, changeRow), dependent, false, dependent.getSchemaItem().getIdColumns()));
             }
         }
         return byMainSqlList;
@@ -133,16 +133,17 @@ public class NestedSlaveTableRunnable implements Runnable {
     private SQL convertNestedSlaveTableSQL(SchemaItem.TableItem tableItem, Dependent dependent) {
         Dml dml = dependent.getDml();
         StringBuilder condition = new StringBuilder();
+        String and = " AND ";
         for (String pkName : dml.getPkNames()) {
-            appendConditionByExpr(condition, "#{" + pkName + "}", tableItem.getAlias(), pkName);
+            appendConditionByExpr(condition, "#{" + pkName + "}", tableItem.getAlias(), pkName, and);
         }
         int len = condition.length();
-        condition.delete(len - " AND ".length(), len);
+        condition.delete(len - and.length(), len);
 
         String sql1 = dependent.getSchemaItem().getSql() + " WHERE " + condition + " ";
 
         Map<String, List<String>> columnList = SqlParser.getColumnList(dependent.getSchemaItem().getObjectField().getOnChildChangeWhereSql());
-        String sql2 = SqlParser.changeSelect(sql1, columnList);
+        String sql2 = SqlParser.changeSelect(sql1, columnList, true);
         return SQL.convertToSql(sql2, dml.getData().get(dependent.getIndex()));
     }
 

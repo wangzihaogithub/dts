@@ -125,7 +125,7 @@ public class NestedFieldWriter {
             }
             String fullSql = objectField.getFullSql(dependent.isIndexMainTable());
             SQL sql = SQL.convertToSql(fullSql, mergeDataMap);
-            sqlList.add(new DependentSQL(sql, dependent, autoUpdateChildren, objectField.isNeedGroupBy() || objectField.getType() == ESSyncConfig.ObjectField.Type.OBJECT_SQL));
+            sqlList.add(new DependentSQL(sql, dependent, autoUpdateChildren, objectField.getSchemaItem().getIdColumns()));
         }
         return sqlList;
     }
@@ -229,7 +229,7 @@ public class NestedFieldWriter {
         private final Dependent dependent;
         private final boolean autoUpdateChildren;
 
-        DependentSQL(SQL sql, Dependent dependent, boolean autoUpdateChildren, boolean needGroupBy) {
+        DependentSQL(SQL sql, Dependent dependent, boolean autoUpdateChildren, Collection<SchemaItem.ColumnItem> needGroupBy) {
             super(sql.getExprSql(), sql.getArgs(), sql.getArgsMap(),
                     dependent.getSchemaItem().getEsMapping().getConfig().getDataSourceKey(), needGroupBy);
             this.dependent = dependent;

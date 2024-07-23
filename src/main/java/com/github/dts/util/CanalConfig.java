@@ -368,7 +368,7 @@ public class CanalConfig {
             private String username;// 账号，来源：租户账号
             private String password;// 密码，来源：租户密码
             private Map<String, String> properties; // 其余参数, 可填写适配器中的所需的配置信息
-            private int maxRetryCount = 10;// 错误请求重试几次
+            private int maxRetryCount = -1;// 错误请求重试几次
             private int concurrentBulkRequest = 16;// 最大并发bulk请求
             private int bulkCommitSize = 200;//每次bulk请求的大约提交条数
             private boolean refresh = true;
