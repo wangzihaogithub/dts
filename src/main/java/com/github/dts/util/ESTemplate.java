@@ -27,6 +27,7 @@ public interface ESTemplate extends AutoCloseable {
      * @param bulkRequestList bulkRequestList
      */
     void update(ESMapping mapping, Object pkVal, Map<String, Object> esFieldData, BulkRequestList bulkRequestList);
+    void update(ESMapping mapping, String parentFieldName, Object pkVal, Map<String, Object> esFieldData, BulkRequestList bulkRequestList);
 
     /**
      * update by query
@@ -111,7 +112,7 @@ public interface ESTemplate extends AutoCloseable {
 
     void updateByQuery(ESMapping mapping, Map<String, Object> esFieldDataWhere, Map<String, Object> esFieldData, BulkRequestList bulkRequestList);
 
-    BulkRequestList newBulkRequestList();
+    BulkRequestList newBulkRequestList(BulkPriorityEnum priorityEnum);
 
     interface BulkRequestList {
         void add(ESBulkRequest.ESRequest request);
@@ -119,5 +120,8 @@ public interface ESTemplate extends AutoCloseable {
         boolean isEmpty();
 
         int size();
+
+        void commit(ESTemplate esTemplate);
+
     }
 }

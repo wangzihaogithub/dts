@@ -20,7 +20,7 @@ public class RDSAdapter implements Adapter {
     private CanalConfig.OuterAdapterConfig configuration;
 
     @Override
-    public void init(CanalConfig.OuterAdapterConfig configuration, Properties envProperties) {
+    public void init(CanalConfig.CanalAdapter canalAdapter, CanalConfig.OuterAdapterConfig configuration, Properties envProperties) {
         this.configuration = configuration;
     }
 

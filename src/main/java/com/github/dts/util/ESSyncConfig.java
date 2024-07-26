@@ -5,6 +5,7 @@ import com.github.dts.impl.elasticsearch7x.NestedFieldWriter;
 import org.apache.commons.lang3.StringUtils;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * ES 映射配置
@@ -336,11 +337,12 @@ public class ESSyncConfig {
         private String parentDocumentId;
         private SchemaItem schemaItem;
         private ESMapping esMapping;
+        private String[] groupByIdColumns;
         private transient StaticMethodAccessor<ESStaticMethodParam> staticMethodAccessor;
 
         @Override
         public String toString() {
-            return fieldName + " [" + sql + "]";
+            return type + "(" + fieldName + ")";
         }
 
         /**
@@ -409,14 +411,24 @@ public class ESSyncConfig {
             this.parentDocumentId = parentDocumentId;
         }
 
+        public String[] getGroupByIdColumns() {
+            return groupByIdColumns;
+        }
+
+        public void setGroupByIdColumns(String[] groupByIdColumns) {
+            this.groupByIdColumns = groupByIdColumns;
+        }
+
         String parentDocumentId() {
-            if (type != Type.ARRAY_SQL && type != Type.OBJECT_SQL) {
+            if (type != null && !type.isSqlType()) {
                 return null;
             }
-            Map<String, List<String>> childColumnList = SqlParser.getVarColumnList(onChildChangeWhereSql);
             SchemaItem.TableItem mainTable = schemaItem.getMainTable();
-            List<String> mainColumnList = childColumnList.get(mainTable.getAlias());
-            if (mainColumnList == null || mainColumnList.isEmpty()) {
+            List<String> mainColumnList = SqlParser.getVarColumnList(onChildChangeWhereSql).stream()
+                    .filter(e -> e.isOwner(mainTable.getAlias()))
+                    .map(SqlParser.BinaryOpExpr::getName)
+                    .collect(Collectors.toList());
+            if (mainColumnList.isEmpty()) {
                 return null;
             }
             LinkedHashSet<String> mainColumnSet = new LinkedHashSet<>(mainColumnList);
@@ -499,14 +511,18 @@ public class ESSyncConfig {
         }
 
         public boolean isSqlType() {
-            return type == Type.OBJECT_SQL || type == Type.ARRAY_SQL;
+            return type != null && type.isSqlType();
         }
 
         public enum Type {
             /**
              * 数组(逗号分割), 对象(JSON.parse), 数组(sql多条查询), 对象(sql单条查询) ,boolean
              */
-            ARRAY, OBJECT, ARRAY_SQL, OBJECT_SQL, BOOLEAN, STATIC_METHOD, URL
+            ARRAY, OBJECT, ARRAY_SQL, OBJECT_SQL, BOOLEAN, STATIC_METHOD, URL;
+
+            public boolean isSqlType() {
+                return this == Type.OBJECT_SQL || this == Type.ARRAY_SQL;
+            }
         }
     }
 }

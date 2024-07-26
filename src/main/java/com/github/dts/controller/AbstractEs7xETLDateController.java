@@ -3,6 +3,7 @@ package com.github.dts.controller;
 import com.github.dts.canal.StartupServer;
 import com.github.dts.impl.elasticsearch7x.ES7xAdapter;
 import com.github.dts.util.*;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,6 +17,7 @@ import java.sql.Timestamp;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 /**
  * 根据日期全量灌数据，可以继承这个Controller
@@ -54,7 +56,10 @@ public abstract class AbstractEs7xETLDateController {
             @RequestParam(required = false, defaultValue = "600000") long offsetAdd,
             @RequestParam(required = false, defaultValue = "defaultDS") String ds,
             @RequestParam(required = false, defaultValue = "true") boolean append,
-            @RequestParam(required = false, defaultValue = "false") boolean discard) {
+            @RequestParam(required = false, defaultValue = "false") boolean discard,
+            @RequestParam(required = false, defaultValue = "false") boolean onlyCurrentIndex,
+            @RequestParam(required = false, defaultValue = "100") int joinUpdateSize,
+            String[] onlyFieldName) {
         JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(ds);
         String catalog = CanalConfig.DatasourceConfig.getCatalog(ds);
 
@@ -64,6 +69,7 @@ public abstract class AbstractEs7xETLDateController {
         long offsetStartDate = offsetStartParse.getTime();
         Long offsetEndDate = offsetEndParse == null ? null : offsetEndParse.getTime();
 
+        Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(StringUtils::isNotBlank).collect(Collectors.toSet());
         String clientIdentity = getES7xAdapter().getClientIdentity();
         if (discard) {
             new Thread(() -> {
@@ -96,11 +102,11 @@ public abstract class AbstractEs7xETLDateController {
                     if (offsetEndDate != null) {
                         endOffset = Math.min(offsetEndDate, endOffset);
                     }
-                    int sync = syncAll(jdbcTemplate, catalog, fieldName, offset, endOffset, append);
-                    if (log.isInfoEnabled()) {
-                        log.info("syncAll minOffset {}", SyncRunnable.minOffset(runnableList));
-                    }
+                    int sync = syncAll(jdbcTemplate, catalog, fieldName, offset, endOffset, append, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet);
                     dmlSize.addAndGet(sync);
+                    if (log.isInfoEnabled()) {
+                        log.info("syncAll dmlSize = {}, minOffset = {} ", dmlSize.intValue(), SyncRunnable.minOffset(runnableList));
+                    }
                     return endOffset;
                 }
 
@@ -151,7 +157,8 @@ public abstract class AbstractEs7xETLDateController {
         return jdbcTemplate.queryForObject("select max(" + idFiled + ") from " + tableName, Date.class);
     }
 
-    protected int syncAll(JdbcTemplate jdbcTemplate, String catalog, String fieldName, long minId, long maxId, boolean append) {
+    protected int syncAll(JdbcTemplate jdbcTemplate, String catalog, String fieldName,
+                          long minId, long maxId, boolean append, boolean onlyCurrentIndex, int joinUpdateSize, Collection<String> onlyFieldName) {
         Timestamp minIdDate = new Timestamp(minId);
         Timestamp maxIdDate = new Timestamp(maxId);
 
@@ -179,7 +186,7 @@ public abstract class AbstractEs7xETLDateController {
                 }
             }
         }
-        esAdapter.sync(dmlList, false, true);
+        esAdapter.sync(dmlList, false, true, onlyCurrentIndex, joinUpdateSize, onlyFieldName);
         return dmlList.size();
     }
 

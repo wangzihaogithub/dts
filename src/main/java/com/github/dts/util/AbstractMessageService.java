@@ -1,5 +1,7 @@
 package com.github.dts.util;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -10,10 +12,12 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.net.URLEncoder;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
 public abstract class AbstractMessageService {
+    private static final Logger log = LoggerFactory.getLogger(AbstractMessageService.class);
     private final SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
     private final RestTemplate restTemplate = new RestTemplate(requestFactory);
     @Value("${spring.profiles.active:}")
@@ -62,7 +66,12 @@ public abstract class AbstractMessageService {
                 timeMillis,
                 sign(secret, timeMillis)
         );
-        Map map = restTemplate.postForObject(url, new HttpEntity<>(body, headers), Map.class);
-        return map;
+        try {
+            Map map = restTemplate.postForObject(url, new HttpEntity<>(body, headers), Map.class);
+            return map;
+        } catch (Exception e) {
+            log.warn("sendDingtalk {} error {}", title, e, e);
+            return Collections.emptyMap();
+        }
     }
 }

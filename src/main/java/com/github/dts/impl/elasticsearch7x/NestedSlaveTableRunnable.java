@@ -8,52 +8,31 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.sql.Timestamp;
-import java.util.*;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Supplier;
 
-public class NestedSlaveTableRunnable implements Runnable {
+class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnable {
     private static final Logger log = LoggerFactory.getLogger(NestedSlaveTableRunnable.class);
     private final List<Dependent> updateDmlList;
-    private final Supplier<ES7xTemplate> es7xTemplateSupplier;
+    private final ES7xTemplate es7xTemplate;
     private final CacheMap cacheMap;
     private final Timestamp timestamp;
-    private final CompletableFuture<Void> future;
 
     NestedSlaveTableRunnable(List<Dependent> updateDmlList,
-                             Supplier<ES7xTemplate> es7xTemplateSupplier,
-                             int cacheMaxSize, Timestamp timestamp,
-                             CompletableFuture<Void> future) {
+                             ES7xTemplate es7xTemplate,
+                             int cacheMaxSize, Timestamp timestamp) {
         this.timestamp = timestamp == null ? new Timestamp(System.currentTimeMillis()) : timestamp;
         this.updateDmlList = updateDmlList;
-        this.es7xTemplateSupplier = es7xTemplateSupplier;
-        this.future = future;
+        this.es7xTemplate = es7xTemplate;
         this.cacheMap = new CacheMap(cacheMaxSize);
-    }
-
-    public static Map<DependentSQL, List<Map<String, Object>>> executeQueryList(
-            List<MergeJdbcTemplateSQL<DependentSQL>> sqlList,
-            CacheMap cacheMap) {
-        Map<DependentSQL, List<Map<String, Object>>> result = new LinkedHashMap<>();
-        for (MergeJdbcTemplateSQL<DependentSQL> sql : sqlList) {
-            List<Map<String, Object>> rowList = sql.executeQueryList(sql.isMerge() ? null : cacheMap);
-            result.putAll(sql.dispatch(rowList));
-        }
-        return result;
-    }
-
-    public static void appendConditionByExpr(StringBuilder sql, Object value, String owner, String columnName, String and) {
-        if (owner != null) {
-            sql.append(owner).append(".");
-        }
-        sql.append(columnName).append("=").append(value).append(' ');
-        sql.append(and);
     }
 
     @Override
     public void run() {
-        ESTemplate.BulkRequestList bulkRequestList = null;
-        ES7xTemplate es7xTemplate = null;
+        ESTemplate.BulkRequestList bulkRequestList = es7xTemplate.newBulkRequestList(BulkPriorityEnum.LOW);
         Set<String> indices = new LinkedHashSet<>();
         try {
             for (Dependent dependent : updateDmlList) {
@@ -61,54 +40,40 @@ public class NestedSlaveTableRunnable implements Runnable {
                 if (ESSyncUtil.isEmpty(dml.getPkNames())) {
                     continue;
                 }
-                Map<String, Object> old = dml.getOld().get(dependent.getIndex());
-                SchemaItem.ColumnItem columnItem = dependent.getSchemaItem().getAnyColumnItem(dml.getTable(), old.keySet());
-                if (columnItem == null) {
-                    continue;
+                if (dml.getOld() != null) {
+                    Map<String, Object> old = dml.getOld().get(dependent.getIndex());
+                    SchemaItem.ColumnItem columnItem = dependent.getSchemaItem().getAnyColumnItem(dml.getTable(), old.keySet());
+                    if (columnItem == null) {
+                        continue;
+                    }
                 }
                 Set<DependentSQL> nestedMainSqlList = convertDependentSQL(dependent.getNestedSlaveTableList(dml.getTable()), dependent, cacheMap);
                 if (nestedMainSqlList.isEmpty()) {
                     continue;
-                }
-                if (es7xTemplate == null) {
-                    es7xTemplate = es7xTemplateSupplier.get();
-                }
-                if (bulkRequestList == null) {
-                    bulkRequestList = es7xTemplate.newBulkRequestList();
                 }
                 indices.add(dependent.getSchemaItem().getEsMapping().get_index());
 
                 List<MergeJdbcTemplateSQL<DependentSQL>> updateSqlList = MergeJdbcTemplateSQL.merge(nestedMainSqlList, 1000);
                 NestedFieldWriter.executeMergeUpdateES(updateSqlList, bulkRequestList, cacheMap, es7xTemplate, null, 3);
 
-                es7xTemplate.bulk(bulkRequestList);
-                es7xTemplate.commit();
+                bulkRequestList.commit(es7xTemplate);
 
-                log.info("sync(dml[{}]).nestedField WriteSlaveTable={}ms, {}, changeSql={}",
-                        updateDmlList.size(),
+                log.info("NestedMainJoinTable={}ms, rowCount={}, ts={}, changeSql={}",
                         System.currentTimeMillis() - timestamp.getTime(),
+                        updateDmlList.size(),
                         timestamp, updateSqlList);
             }
-            future.complete(null);
+            bulkRequestList.commit(es7xTemplate);
+            complete(null);
         } catch (Exception e) {
-            log.error("error sync(dml[{}]).nestedField WriteSlaveTable={}ms, {}: error={}",
+            log.info("NestedMainJoinTable={}ms, rowCount={}, ts={}, error={}",
+                    System.currentTimeMillis() - timestamp.getTime(),
                     updateDmlList.size(),
-                    System.currentTimeMillis() - timestamp.getTime(), timestamp, e, e);
-            future.completeExceptionally(e);
+                    timestamp, e, e);
+            completeExceptionally(e);
             throw e;
         } finally {
             cacheMap.cacheClear();
-            if (es7xTemplate != null) {
-                es7xTemplate.commit();
-                try {
-                    try {
-                        es7xTemplate.refresh(indices);
-                    } catch (Exception ignored) {
-                    }
-                } finally {
-                    es7xTemplate.close();
-                }
-            }
         }
     }
 
@@ -118,15 +83,14 @@ public class NestedSlaveTableRunnable implements Runnable {
             SQL nestedChildrenSql = convertNestedSlaveTableSQL(tableItem, dependent);
             byChildrenSqlSet.add(new DependentSQL(nestedChildrenSql, dependent, false, null));
         }
-        Map<DependentSQL, List<Map<String, Object>>> batchRowMap = executeQueryList(MergeJdbcTemplateSQL.merge(byChildrenSqlSet, 1000), cacheMap);
 
-        Set<DependentSQL> byMainSqlList = new LinkedHashSet<>();
         String fullSql = dependent.getSchemaItem().getObjectField().getFullSql(false);
-        for (List<Map<String, Object>> changeRowList : batchRowMap.values()) {
+        Set<DependentSQL> byMainSqlList = new LinkedHashSet<>();
+        MergeJdbcTemplateSQL.executeQueryList(MergeJdbcTemplateSQL.merge(byChildrenSqlSet, 1000), cacheMap, (sql, changeRowList) -> {
             for (Map<String, Object> changeRow : changeRowList) {
-                byMainSqlList.add(new DependentSQL(SQL.convertToSql(fullSql, changeRow), dependent, false, dependent.getSchemaItem().getIdColumns()));
+                byMainSqlList.add(new DependentSQL(SQL.convertToSql(fullSql, changeRow), dependent, false, dependent.getSchemaItem().getGroupByIdColumns()));
             }
-        }
+        });
         return byMainSqlList;
     }
 
@@ -135,7 +99,7 @@ public class NestedSlaveTableRunnable implements Runnable {
         StringBuilder condition = new StringBuilder();
         String and = " AND ";
         for (String pkName : dml.getPkNames()) {
-            appendConditionByExpr(condition, "#{" + pkName + "}", tableItem.getAlias(), pkName, and);
+            ESSyncUtil.appendConditionByExpr(condition, "#{" + pkName + "}", tableItem.getAlias(), pkName, and);
         }
         int len = condition.length();
         condition.delete(len - and.length(), len);

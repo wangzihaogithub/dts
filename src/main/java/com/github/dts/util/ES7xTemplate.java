@@ -107,19 +107,33 @@ public class ES7xTemplate implements ESTemplate {
      * @param pkVal       主键值
      * @param esFieldData 数据Map
      */
+
     @Override
     public void update(ESMapping mapping, Object pkVal, Map<String, Object> esFieldData, BulkRequestList bulkRequestList) {
+        update(mapping, null, pkVal, esFieldData, bulkRequestList);
+    }
+
+    @Override
+    public void update(ESMapping mapping, String parentFieldName, Object pkVal, Map<String, Object> esFieldData, BulkRequestList bulkRequestList) {
         if (pkVal == null || "".equals(pkVal)) {
             return;
         }
         if (esFieldData.isEmpty()) {
             return;
         }
-        Map<String, Object> esFieldDataTmp = new LinkedHashMap<>(esFieldData);
-
+        Map<String, Object> esFieldDataTmp = new LinkedHashMap<>();
         setterIndexUpdatedTime(mapping, esFieldDataTmp);
-
-        Map<String, Object> esFieldDataConvert = ESSyncUtil.convertType(esFieldDataTmp, getEsType(mapping));
+        Map<String, Object> esFieldDataConvert;
+        if (parentFieldName == null) {
+            esFieldDataTmp.putAll(esFieldData);
+            esFieldDataConvert = ESSyncUtil.convertType(esFieldDataTmp, getEsType(mapping));
+        } else {
+            esFieldDataConvert = ESSyncUtil.convertType(esFieldDataTmp, getEsType(mapping));
+            if (esFieldDataConvert != null) {
+                esFieldDataConvert = new LinkedHashMap<>(esFieldDataConvert);
+                esFieldDataConvert.putAll(esFieldData);
+            }
+        }
         append4Update(mapping, pkVal, esFieldDataConvert, bulkRequestList);
     }
 
@@ -163,8 +177,8 @@ public class ES7xTemplate implements ESTemplate {
     }
 
     @Override
-    public BulkRequestList newBulkRequestList() {
-        return new BulkRequestListImpl();
+    public BulkRequestList newBulkRequestList(BulkPriorityEnum priorityEnum) {
+        return new BulkRequestListImpl(priorityEnum);
     }
 
     /**
@@ -381,7 +395,11 @@ public class ES7xTemplate implements ESTemplate {
         ESBulkRequest.ESBulkResponse response = esBulkRequest.bulk();
         if (!response.isEmpty()) {
             if (logger.isInfoEnabled()) {
-                logger.info("commit size={}, {}/ms ", response.size(), System.currentTimeMillis() - timestamp);
+                logger.info("commit size={}, {}/ms, bytes={}kb, history={}mb, {}", response.size(), System.currentTimeMillis() - timestamp,
+                        Math.round((double) response.requestEstimatedSizeInBytes() / 1024),
+                        Math.round((double) response.requestTotalEstimatedSizeInBytes() / 1024 / 1024),
+                        Arrays.toString(response.requestBytesToString())
+                );
             }
             response.processFailBulkResponse("ES7 sync commit error. ");
         }
@@ -399,7 +417,7 @@ public class ES7xTemplate implements ESTemplate {
         if (drainTo.isEmpty()) {
             return 0;
         } else {
-            esBulkRequest.add(drainTo);
+            esBulkRequest.add(drainTo, bulkRequests.priorityEnum);
             return drainTo.size();
         }
     }
@@ -781,16 +799,21 @@ public class ES7xTemplate implements ESTemplate {
 
     public class BulkRequestListImpl implements BulkRequestList {
         private final List<ESBulkRequest.ESRequest> requests = new ArrayList<>();
+        private final BulkPriorityEnum priorityEnum;
+
+        public BulkRequestListImpl(BulkPriorityEnum priorityEnum) {
+            this.priorityEnum = priorityEnum;
+        }
 
         @Override
         public void add(ESBulkRequest.ESRequest request) {
             synchronized (requests) {
                 requests.add(request);
             }
-            if (isMaxBatchSize(requests.size() / 2)) {
+            if (isMaxBatchSize(requests.size())) {
                 int bulk = bulk(this);
                 if (bulk > 0) {
-                    commit();
+                    ES7xTemplate.this.commit();
                 }
             }
         }
@@ -811,6 +834,15 @@ public class ES7xTemplate implements ESTemplate {
         @Override
         public int size() {
             return requests.size();
+        }
+
+        @Override
+        public void commit(ESTemplate esTemplate) {
+            esTemplate.commit();
+            if (!requests.isEmpty()) {
+                esTemplate.bulk(this);
+                esTemplate.commit();
+            }
         }
 
         @Override

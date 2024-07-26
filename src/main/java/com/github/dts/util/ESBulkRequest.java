@@ -7,7 +7,7 @@ import java.util.Map;
 
 public interface ESBulkRequest {
 
-    ESBulkRequest add(Collection<ESRequest> requests);
+    ESBulkRequest add(Collection<ESRequest> requests, BulkPriorityEnum bulkPriority);
 
     ESBulkRequest add(ESIndexRequest esIndexRequest);
 
@@ -53,9 +53,14 @@ public interface ESBulkRequest {
 
         boolean isEmpty();
 
-        void processFailBulkResponse(String errorMsg);
+        void processFailBulkResponse(String errorMsg) throws RuntimeException;
 
         int size();
 
+        long requestTotalEstimatedSizeInBytes();
+
+        long requestEstimatedSizeInBytes();
+
+        String[] requestBytesToString();
     }
 }

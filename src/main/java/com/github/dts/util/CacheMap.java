@@ -6,20 +6,20 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
 public class CacheMap {
-    private final int maxSize;
+    private final int maxValueSize;
     private final Map<String, Object> cache = new ConcurrentHashMap<>();
-    private int size;
+    private int valueSize;
 
-    public CacheMap(int maxSize) {
-        this.maxSize = maxSize;
+    public CacheMap(int maxValueSize) {
+        this.maxValueSize = maxValueSize;
     }
 
-    public int getMaxSize() {
-        return maxSize;
+    public int getMaxValueSize() {
+        return maxValueSize;
     }
 
-    public int getSize() {
-        return size;
+    public int getValueSize() {
+        return valueSize;
     }
 
     public boolean containsKey(String key) {
@@ -31,13 +31,13 @@ public class CacheMap {
         Object r = cache.computeIfAbsent(key, s -> {
             V v = mappingFunction.get();
             if (v instanceof Collection) {
-                this.size += ((Collection<?>) v).size();
+                this.valueSize += ((Collection<?>) v).size();
             } else {
-                this.size++;
+                this.valueSize++;
             }
             return v;
         });
-        if (size > maxSize) {
+        if (valueSize > maxValueSize) {
             cache.clear();
         }
         return (V) r;
@@ -50,7 +50,9 @@ public class CacheMap {
     @Override
     public String toString() {
         return "CacheMap{" +
-                "size=" + cache.size() +
+                "valueSize=" + valueSize +
+                ",size=" + cache.size() +
+                ",maxValueSize=" + maxValueSize +
                 '}';
     }
 }

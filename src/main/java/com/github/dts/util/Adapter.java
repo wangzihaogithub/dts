@@ -18,7 +18,7 @@ public interface Adapter {
      * @param configuration 外部适配器配置信息
      * @param envProperties 环境变量的配置属性
      */
-    void init(CanalConfig.OuterAdapterConfig configuration, Properties envProperties);
+    void init(CanalConfig.CanalAdapter canalAdapter, CanalConfig.OuterAdapterConfig configuration, Properties envProperties);
 
     /**
      * 往适配器中同步数据

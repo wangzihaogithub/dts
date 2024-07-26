@@ -50,6 +50,8 @@ public class ES7xConnection {
     private final int concurrentBulkRequest;
     private final int bulkCommitSize;
     private final int maxRetryCount;
+    private final int bulkRetryCount;
+    private final int minAvailableSpaceHighBulkRequests;
     private final Map<String, CompletableFuture<ESBulkRequest.EsRefreshResponse>> refreshAsyncCache = new ConcurrentHashMap<>();
 
     public ES7xConnection(CanalConfig.OuterAdapterConfig.Es7x es7x) {
@@ -64,8 +66,8 @@ public class ES7xConnection {
                 .builder(httpHosts)
                 .setRequestConfigCallback(requestConfigBuilder -> requestConfigBuilder
                         .setConnectTimeout(10 * 60 * 60)
-                        .setConnectionRequestTimeout(10 * 60 * 60)
-                        .setSocketTimeout(10 * 60 * 60))
+                        .setConnectionRequestTimeout(100 * 60 * 60)
+                        .setSocketTimeout(100 * 60 * 60))
                 .setHttpClientConfigCallback(httpClientBuilder -> {
                     CredentialsProvider credentialsProvider = new BasicCredentialsProvider();
                     credentialsProvider.setCredentials(AuthScope.ANY, new UsernamePasswordCredentials(name, pwd));
@@ -74,13 +76,17 @@ public class ES7xConnection {
                             .setMaxConnTotal(concurrentBulkRequest)
                             .setMaxConnPerRoute(concurrentBulkRequest);
                     return httpClientBuilder
-                            .setDefaultIOReactorConfig(IOReactorConfig.custom().setSoKeepAlive(true).build())
+                            .setDefaultIOReactorConfig(IOReactorConfig.custom()
+                                    .setIoThreadCount(Math.max(concurrentBulkRequest, Runtime.getRuntime().availableProcessors()))
+                                    .setSelectInterval(100).setSoKeepAlive(true).build())
                             .setKeepAliveStrategy((response, context) -> TimeUnit.MINUTES.toMillis(3000));
                 });
         if (clusterName != null && !clusterName.isEmpty()) {
             clientBuilder.setPathPrefix(clusterName);
         }
+        this.minAvailableSpaceHighBulkRequests = es7x.getMinAvailableSpaceHighBulkRequests();
         this.maxRetryCount = es7x.getMaxRetryCount();
+        this.bulkRetryCount = es7x.getBulkRetryCount();
         this.bulkCommitSize = es7x.getBulkCommitSize();
         this.concurrentBulkRequest = concurrentBulkRequest;
         this.restHighLevelClient = new RestHighLevelClient(clientBuilder);
@@ -187,6 +193,33 @@ public class ES7xConnection {
         }
 
         @Override
+        public long requestTotalEstimatedSizeInBytes() {
+            long totalEstimatedSizeInBytes = 0L;
+            for (BulkRequestResponse response : bulkResponse) {
+                totalEstimatedSizeInBytes += response.totalEstimatedSizeInBytes;
+            }
+            return totalEstimatedSizeInBytes;
+        }
+
+        @Override
+        public long requestEstimatedSizeInBytes() {
+            long estimatedSizeInBytes = 0L;
+            for (BulkRequestResponse response : bulkResponse) {
+                estimatedSizeInBytes += response.estimatedSizeInBytes;
+            }
+            return estimatedSizeInBytes;
+        }
+
+        @Override
+        public String[] requestBytesToString() {
+            String[] requestBytes = new String[bulkResponse.size()];
+            for (int i = 0, size = bulkResponse.size(); i < size; i++) {
+                requestBytes[i] = bulkResponse.get(i).requestBytesToString();
+            }
+            return requestBytes;
+        }
+
+        @Override
         public boolean hasFailures() {
             for (BulkRequestResponse bulkItemResponses : bulkResponse) {
                 if (bulkItemResponses.response.hasFailures()) {
@@ -207,8 +240,8 @@ public class ES7xConnection {
         }
 
         @Override
-        public void processFailBulkResponse(String errorMsg) {
-            Set<String> errorList = null;
+        public void processFailBulkResponse(String errorMsg) throws RuntimeException {
+            List<BulkItemResponse> errorRespList = null;
             int notfound = 0;
             for (BulkRequestResponse bulkItemResponses : bulkResponse) {
                 for (BulkItemResponse itemResponse : bulkItemResponses.response.getItems()) {
@@ -223,16 +256,16 @@ public class ES7xConnection {
                     } else if (status == RestStatus.CONFLICT) {
                         logger.warn("conflict {}", itemResponse.getFailureMessage());
                     } else {
-                        if (errorList == null) {
-                            errorList = new LinkedHashSet<>();
+                        if (errorRespList == null) {
+                            errorRespList = new ArrayList<>();
                         }
-                        Exception cause = itemResponse.getFailure().getCause();
-                        errorList.add("[" + itemResponse.getOpType() + "]. " + cause.getClass() + ": " + itemResponse.getFailure());
+                        errorRespList.add(itemResponse);
                     }
                 }
             }
-            if (errorList != null && !errorList.isEmpty()) {
-                throw new RuntimeException(errorMsg + "[" + String.join(",\n", errorList) + "]");
+            if (errorRespList != null && !errorRespList.isEmpty()) {
+                String msg = errorRespList.stream().map(e -> "[" + e.getOpType() + "]. " + e.getFailure().getCause().getClass() + ": " + e.getFailure()).distinct().collect(Collectors.joining(",\n"));
+                throw new RuntimeException(errorMsg + "[" + msg + "]");
             }
         }
     }
@@ -320,6 +353,16 @@ public class ES7xConnection {
 
     public static class ConcurrentBulkRequest extends BulkRequest {
         private final ReentrantLock lock = new ReentrantLock();
+        private final int id;
+        private long beforeEstimatedSizeInBytes;
+
+        public ConcurrentBulkRequest(int id) {
+            this.id = id;
+        }
+
+        public int getId() {
+            return id;
+        }
 
         public boolean isHeldByCurrentThread() {
             return lock.isHeldByCurrentThread();
@@ -335,23 +378,44 @@ public class ES7xConnection {
 
         public void clear() {
             requests().clear();
+            this.beforeEstimatedSizeInBytes = super.estimatedSizeInBytes();
         }
 
         @Override
         public String toString() {
             return "ConcurrentBulkRequest{" +
-                    "size=" + numberOfActions() +
+                    "id=" + id +
+                    ", size=" + numberOfActions() +
                     ", lock=" + lock +
                     '}';
+        }
+
+        public long totalEstimatedSizeInBytes() {
+            return super.estimatedSizeInBytes();
+        }
+
+        @Override
+        public long estimatedSizeInBytes() {
+            return super.estimatedSizeInBytes() - beforeEstimatedSizeInBytes;
         }
     }
 
     public static class BulkRequestResponse {
         private final ConcurrentBulkRequest request;
+        private final long estimatedSizeInBytes;
+        private final long totalEstimatedSizeInBytes;
         private BulkResponse response;
 
         public BulkRequestResponse(ConcurrentBulkRequest request) {
             this.request = request;
+            this.estimatedSizeInBytes = request.estimatedSizeInBytes();
+            this.totalEstimatedSizeInBytes = request.totalEstimatedSizeInBytes();
+        }
+
+        public String requestBytesToString() {
+            long kb = Math.round((double) estimatedSizeInBytes / 1024);
+            long mb = Math.round((double) totalEstimatedSizeInBytes / 1024 / 1024);
+            return request.getId() + ":" + kb + "kb/" + mb + "mb";
         }
     }
 
@@ -389,6 +453,10 @@ public class ES7xConnection {
 
     public static class ES7xBulkRequest implements ESBulkRequest {
         private final ConcurrentBulkRequest[] bulkRequests;
+        // high list = [0,1,2,3,4,5,6,7]
+        private final List<ConcurrentBulkRequest> highBulkRequests;
+        // low list = [7,6,5,4,3,2]
+        private final List<ConcurrentBulkRequest> lowBulkRequests;
         private final ES7xConnection connection;
         private final int bulkCommitSize;
         private final int maxRetryCount;
@@ -400,8 +468,17 @@ public class ES7xConnection {
             this.bulkCommitSize = Math.max(1, connection.bulkCommitSize);
             bulkRequests = new ConcurrentBulkRequest[Math.max(1, connection.concurrentBulkRequest)];
             for (int i = 0; i < bulkRequests.length; i++) {
-                bulkRequests[i] = new ConcurrentBulkRequest();
+                bulkRequests[i] = new ConcurrentBulkRequest(i);
             }
+            this.highBulkRequests = Arrays.asList(bulkRequests);
+            ArrayList<ConcurrentBulkRequest> lowBulkRequests = new ArrayList<>(Arrays.asList(bulkRequests));
+            if (lowBulkRequests.size() >= connection.minAvailableSpaceHighBulkRequests + 1) {
+                if (connection.minAvailableSpaceHighBulkRequests > 0) {
+                    lowBulkRequests.subList(0, connection.minAvailableSpaceHighBulkRequests).clear();
+                }
+            }
+            Collections.reverse(lowBulkRequests);
+            this.lowBulkRequests = lowBulkRequests;
         }
 
         private static void yieldThread() {
@@ -412,15 +489,31 @@ public class ES7xConnection {
             }
         }
 
+        private Collection<ConcurrentBulkRequest> prioritySort(BulkPriorityEnum priorityEnum) {
+            switch (priorityEnum) {
+                case RANDOM: {
+                    ArrayList<ConcurrentBulkRequest> shuffle = new ArrayList<>(Arrays.asList(bulkRequests));
+                    Collections.shuffle(shuffle);
+                    return shuffle;
+                }
+                case HIGH: {
+                    return highBulkRequests;
+                }
+                default:
+                case LOW: {
+                    return lowBulkRequests;
+                }
+            }
+        }
+
         @Override
-        public ESBulkRequest add(Collection<ESRequest> requests) {
+        public ESBulkRequest add(Collection<ESRequest> requests, BulkPriorityEnum priorityEnum) {
             if (requests.isEmpty()) {
                 return this;
             }
-            ArrayList<ConcurrentBulkRequest> shuffle = new ArrayList<>(Arrays.asList(bulkRequests));
-            Collections.shuffle(shuffle);
+            Collection<ConcurrentBulkRequest> concurrentBulkRequests = prioritySort(priorityEnum);
             while (true) {
-                for (ConcurrentBulkRequest bulkRequest : shuffle) {
+                for (ConcurrentBulkRequest bulkRequest : concurrentBulkRequests) {
                     if (bulkRequest.numberOfActions() < bulkCommitSize && bulkRequest.tryLock()) {
                         try {
                             for (Object request : requests) {
@@ -537,9 +630,23 @@ public class ES7xConnection {
             return es7xBulkResponse;
         }
 
+        private BulkResponse bulk(BulkRequest bulkRequest) throws IOException {
+            IOException ioException = null;
+            int bulkRetryCount = Math.max(1, connection.bulkRetryCount);
+            for (int i = 0; i < bulkRetryCount; i++) {
+                try {
+                    return connection.restHighLevelClient.bulk(bulkRequest, RequestOptions.DEFAULT);
+                } catch (IOException e) {
+                    ioException = e;
+                    yieldThread();
+                }
+            }
+            throw ioException;
+        }
+
         private BulkRequestResponse commit(ConcurrentBulkRequest bulkRequest, boolean retry) throws IOException {
             BulkRequestResponse requestResponse = new BulkRequestResponse(bulkRequest);
-            requestResponse.response = connection.restHighLevelClient.bulk(bulkRequest, RequestOptions.DEFAULT);
+            requestResponse.response = bulk(bulkRequest);
             if (retry && requestResponse.response.hasFailures()) {
                 if (bulkRequest.numberOfActions() > 1) {
                     ArrayList<DocWriteRequest<?>> errorRequests1 = new ArrayList<>();
@@ -565,7 +672,7 @@ public class ES7xConnection {
             for (List<DocWriteRequest<?>> rowList : partition) {
                 BulkRequest bulkRequest = new BulkRequest();
                 rowList.forEach(bulkRequest::add);
-                BulkResponse bulkItemResponses = connection.restHighLevelClient.bulk(bulkRequest, RequestOptions.DEFAULT);
+                BulkResponse bulkItemResponses = bulk(bulkRequest);
                 if (bulkItemResponses.hasFailures()) {
                     if (rowList.size() == 1) {
                         DocWriteRequest<?> retry = readonlyRequests.get(0);

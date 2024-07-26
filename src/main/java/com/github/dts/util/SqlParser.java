@@ -2,6 +2,7 @@ package com.github.dts.util;
 
 import com.alibaba.druid.sql.SQLUtils;
 import com.alibaba.druid.sql.ast.SQLExpr;
+import com.alibaba.druid.sql.ast.SQLLimit;
 import com.alibaba.druid.sql.ast.SQLStatement;
 import com.alibaba.druid.sql.ast.expr.*;
 import com.alibaba.druid.sql.ast.statement.*;
@@ -16,6 +17,7 @@ import com.github.dts.util.SchemaItem.RelationFieldsPair;
 import com.github.dts.util.SchemaItem.TableItem;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
@@ -25,6 +27,9 @@ import java.util.stream.Collectors;
  * @version 1.0.0
  */
 public class SqlParser {
+
+    public static final Map<String, String> CHANGE_SELECT_CACHE = new ConcurrentHashMap<>();
+    private static final Map<String, Map<String, List<String>>> GET_COLUMN_LIST_CACHE = new ConcurrentHashMap<>();
 
     public static void main(String[] args) {
         SQLStatement sqlStatement = SQLUtils.parseSingleMysqlStatement(
@@ -93,22 +98,32 @@ public class SqlParser {
         }
     }
 
-    public static Map<String, List<String>> getVarColumnList(String injectCondition) {
-        if (injectCondition == null || injectCondition.isEmpty()) {
-            return Collections.emptyMap();
+    public static String changePage(String sql, Integer pageNo, Integer pageSize) {
+        if (pageSize == null) {
+            throw new IllegalArgumentException("pageSize must not be null:" + sql);
         }
-        injectCondition = injectCondition.trim();
-        String injectConditionLower = injectCondition.toLowerCase();
-        if (injectConditionLower.startsWith("where ")) {
-            injectCondition = injectCondition.substring("where ".length());
-        } else if (injectConditionLower.startsWith("and ")) {
-            injectCondition = injectCondition.substring("and ".length());
-        } else if (injectConditionLower.startsWith("or ")) {
-            injectCondition = injectCondition.substring("or ".length());
+        SQLStatement statement = SQLUtils.parseSingleMysqlStatement(sql);
+        if (statement instanceof SQLSelectStatement) {
+            SQLSelectStatement select = (SQLSelectStatement) statement;
+            SQLLimit limit = new SQLLimit();
+            if (pageNo != null) {
+                limit.setOffset(Math.max(0, (pageNo - 1) * pageNo));
+            }
+            limit.setRowCount(pageSize);
+            select.getSelect().getQueryBlock().setLimit(limit);
+            return statement.toString();
+        } else {
+            return sql;
+        }
+    }
+
+    public static List<BinaryOpExpr> getVarColumnList(String injectCondition) {
+        if (injectCondition == null || injectCondition.isEmpty()) {
+            return Collections.emptyList();
         }
 
-        SQLExpr injectConditionExpr = SQLUtils.toSQLExpr(injectCondition);
-        Map<String, List<String>> map = new LinkedHashMap<>(2);
+        SQLExpr injectConditionExpr = SQLUtils.toSQLExpr(trimInjectCondition(injectCondition));
+        List<BinaryOpExpr> list = new ArrayList<>();
         injectConditionExpr.accept(new SQLASTVisitorAdapter() {
 
             @Override
@@ -120,28 +135,89 @@ public class SqlParser {
                 SQLExpr left = x.getLeft();
                 SQLExpr right = x.getRight();
                 SQLExpr col = null;
+                SQLVariantRefExpr val = null;
                 if (left instanceof SQLVariantRefExpr) {
                     col = right;
+                    val = (SQLVariantRefExpr) left;
                 } else if (right instanceof SQLVariantRefExpr) {
                     col = left;
+                    val = (SQLVariantRefExpr) right;
                 }
                 if (col instanceof SQLPropertyExpr) {
-                    map.computeIfAbsent(normalize(((SQLPropertyExpr) col).getOwnerName()), k -> new ArrayList<>())
-                            .add(normalize(((SQLPropertyExpr) col).getName()));
+                    list.add(new BinaryOpExpr(normalize(((SQLPropertyExpr) col).getOwnerName()),
+                            normalize(((SQLPropertyExpr) col).getName()),
+                            normalize(val.getName())
+                    ));
                 } else if (col instanceof SQLIdentifierExpr) {
-                    map.computeIfAbsent("", k -> new ArrayList<>())
-                            .add(normalize(((SQLIdentifierExpr) col).getName()));
+                    list.add(new BinaryOpExpr("",
+                            normalize(((SQLIdentifierExpr) col).getName()),
+                            normalize(val.getName())
+                    ));
                 }
                 return super.visit(x);
             }
         });
-        return map;
+        return list;
     }
 
-    public static Map<String, List<String>> getColumnList(String injectCondition) {
-        if (injectCondition == null || injectCondition.isEmpty()) {
+    public static Map<String, List<String>> getColumnList(String injectConditionReq) {
+        if (injectConditionReq == null || injectConditionReq.isEmpty()) {
             return Collections.emptyMap();
         }
+        return GET_COLUMN_LIST_CACHE.computeIfAbsent(injectConditionReq, injectCondition -> {
+            SQLExpr injectConditionExpr = SQLUtils.toSQLExpr(trimInjectCondition(injectCondition));
+            Map<String, List<String>> map = new LinkedHashMap<>();
+            injectConditionExpr.accept(new SQLASTVisitorAdapter() {
+
+                @Override
+                public boolean visit(SQLInSubQueryExpr statement) {
+                    SQLExpr expr = statement.getExpr();
+                    String owner;
+                    String name;
+                    if (expr instanceof SQLPropertyExpr) {
+                        name = ((SQLPropertyExpr) expr).getName();
+                        owner = Objects.toString(((SQLPropertyExpr) expr).getOwnerName(), "");
+                    } else if (expr instanceof SQLIdentifierExpr) {
+                        name = ((SQLIdentifierExpr) expr).getName();
+                        owner = "";
+                    } else {
+                        return false;
+                    }
+                    String col = normalize(name);
+                    map.computeIfAbsent(owner, e -> new ArrayList<>()).add(col);
+                    return false;
+                }
+
+                @Override
+                public boolean visit(SQLSelectQueryBlock statement) {
+                    return false;
+                }
+
+                @Override
+                public boolean visit(SQLPropertyExpr x) {
+                    String col = normalize(x.getName());
+                    String owner = Objects.toString(x.getOwnerName(), "");
+                    map.computeIfAbsent(owner, e -> new ArrayList<>()).add(col);
+                    return true;
+                }
+
+                @Override
+                public boolean visit(SQLIdentifierExpr x) {
+//                String col = normalize(x.getName());
+//
+//                map.computeIfAbsent("",e-> new ArrayList<>()).add(col);
+                    return true;
+                }
+            });
+            return map;
+        });
+    }
+
+    private static String normalize(String name) {
+        return ESSyncUtil.stringCache(SQLUtils.normalize(name, null));
+    }
+
+    private static String trimInjectCondition(String injectCondition) {
         injectCondition = injectCondition.trim();
         String injectConditionLower = injectCondition.toLowerCase();
         if (injectConditionLower.startsWith("where ")) {
@@ -151,58 +227,7 @@ public class SqlParser {
         } else if (injectConditionLower.startsWith("or ")) {
             injectCondition = injectCondition.substring("or ".length());
         }
-        if (injectCondition.isEmpty()) {
-            return Collections.emptyMap();
-        }
-        SQLExpr injectConditionExpr = SQLUtils.toSQLExpr(injectCondition);
-        Map<String, List<String>> map = new LinkedHashMap<>();
-        injectConditionExpr.accept(new SQLASTVisitorAdapter() {
-
-            @Override
-            public boolean visit(SQLInSubQueryExpr statement) {
-                SQLExpr expr = statement.getExpr();
-                String owner;
-                String name;
-                if (expr instanceof SQLPropertyExpr) {
-                    name = ((SQLPropertyExpr) expr).getName();
-                    owner = Objects.toString(((SQLPropertyExpr) expr).getOwnerName(), "");
-                } else if (expr instanceof SQLIdentifierExpr) {
-                    name = ((SQLIdentifierExpr) expr).getName();
-                    owner = "";
-                } else {
-                    return false;
-                }
-                String col = normalize(name);
-                map.computeIfAbsent(owner, e -> new ArrayList<>()).add(col);
-                return false;
-            }
-
-            @Override
-            public boolean visit(SQLSelectQueryBlock statement) {
-                return false;
-            }
-
-            @Override
-            public boolean visit(SQLPropertyExpr x) {
-                String col = normalize(x.getName());
-                String owner = Objects.toString(x.getOwnerName(), "");
-                map.computeIfAbsent(owner, e -> new ArrayList<>()).add(col);
-                return true;
-            }
-
-            @Override
-            public boolean visit(SQLIdentifierExpr x) {
-//                String col = normalize(x.getName());
-//
-//                map.computeIfAbsent("",e-> new ArrayList<>()).add(col);
-                return true;
-            }
-        });
-        return map;
-    }
-
-    private static String normalize(String name) {
-        return ESSyncUtil.stringCache(SQLUtils.normalize(name, null));
+        return injectCondition;
     }
 
     /**
@@ -393,22 +418,24 @@ public class SqlParser {
     }
 
     public static String changeSelect(String sql, Map<String, List<String>> columnList, boolean distinct) {
-        SQLStatement sqlStatement = SQLUtils.parseSingleMysqlStatement(sql);
+        return CHANGE_SELECT_CACHE.computeIfAbsent(sql + columnList + distinct, unused -> {
+            SQLStatement sqlStatement = SQLUtils.parseSingleMysqlStatement(sql);
 
-        SQLSelectQueryBlock queryBlock = ((SQLSelectStatement) sqlStatement).getSelect().getQueryBlock();
-        if (distinct) {
-            queryBlock.setDistinct();
-        }
-        List<SQLSelectItem> selectList = queryBlock.getSelectList();
-        selectList.clear();
-        for (Map.Entry<String, List<String>> entry : columnList.entrySet()) {
-            String owner = entry.getKey();
-            LinkedHashSet<String> names = new LinkedHashSet<>(entry.getValue());
-            for (String name : names) {
-                selectList.add(new SQLSelectItem(new SQLPropertyExpr(owner, name)));
+            SQLSelectQueryBlock queryBlock = ((SQLSelectStatement) sqlStatement).getSelect().getQueryBlock();
+            if (distinct) {
+                queryBlock.setDistinct();
             }
-        }
-        return sqlStatement.toString();
+            List<SQLSelectItem> selectList = queryBlock.getSelectList();
+            selectList.clear();
+            for (Map.Entry<String, List<String>> entry : columnList.entrySet()) {
+                String owner = entry.getKey();
+                LinkedHashSet<String> names = new LinkedHashSet<>(entry.getValue());
+                for (String name : names) {
+                    selectList.add(new SQLSelectItem(new SQLPropertyExpr(owner, name)));
+                }
+            }
+            return sqlStatement.toString();
+        });
     }
 
     public static List<ChangeSQL> changeMergeSelect(String sql, List<Object[]> args, Collection<ColumnItem> needGroupBy) {
@@ -515,6 +542,39 @@ public class SqlParser {
         }
 
         return ESSyncUtil.stringCache(column);
+    }
+
+    public static class BinaryOpExpr {
+        private final String owner;
+        private final String name;
+        private final String value;
+
+        public BinaryOpExpr(String owner, String name, String value) {
+            this.owner = owner;
+            this.name = name;
+            this.value = value;
+        }
+
+        @Override
+        public String toString() {
+            return Objects.toString(owner, "") + "." + name + "=" + value;
+        }
+
+        public boolean isOwner(String owner) {
+            return Objects.equals(owner, this.owner);
+        }
+
+        public String getOwner() {
+            return owner;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public String getValue() {
+            return value;
+        }
     }
 
     public static class ChangeSQL {

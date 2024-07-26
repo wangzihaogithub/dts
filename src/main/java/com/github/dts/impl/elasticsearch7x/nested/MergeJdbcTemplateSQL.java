@@ -4,11 +4,17 @@ import com.github.dts.util.CacheMap;
 import com.github.dts.util.SchemaItem;
 import com.github.dts.util.SqlParser;
 import com.google.common.collect.Lists;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.RecoverableDataAccessException;
 
 import java.util.*;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplateSQL {
+    private static final Logger log = LoggerFactory.getLogger(MergeJdbcTemplateSQL.class);
     private final List<T> mergeList;
     private final String[] uniqueColumnNames;
     private final List<String> addColumnNameList;
@@ -25,15 +31,23 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
         this.mergeList = mergeList;
     }
 
-    public static <T extends JdbcTemplateSQL> Map<T, List<Map<String, Object>>> executeQueryList(
+    public static <T extends JdbcTemplateSQL> void executeQueryList(
             List<MergeJdbcTemplateSQL<T>> sqlList,
-            CacheMap cacheMap) {
-        Map<T, List<Map<String, Object>>> result = new LinkedHashMap<>();
+            CacheMap cacheMap,
+            BiConsumer<T, List<Map<String, Object>>> each) {
         for (MergeJdbcTemplateSQL<T> sql : sqlList) {
-            List<Map<String, Object>> rowList = sql.executeQueryList(sql.isMerge() ? null : cacheMap);
-            result.putAll(sql.dispatch(rowList));
+            try {
+                List<Map<String, Object>> rowList = sql.executeQueryList(sql.isMerge() ? null : cacheMap);
+                sql.dispatch(rowList, each);
+            } catch (RecoverableDataAccessException e) {
+                log.info("retry executeMergeUpdateES. size = {}, cause {}", sqlList.size(), e.toString());
+                // 数据过大自动重试
+                // fix：The last packet successfully received from the server was 10,233 milliseconds ago. The last packet sent successfully to the server was 11,726 milliseconds ago.
+                for (T dependentSQL : sql.mergeList) {
+                    each.accept(dependentSQL, dependentSQL.executeQueryListRetry(cacheMap, 1000));
+                }
+            }
         }
-        return result;
     }
 
     public static <T extends JdbcTemplateSQL> List<MergeJdbcTemplateSQL<T>> merge(Collection<T> sqlList, int maxIdInCount) {
@@ -98,12 +112,86 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
         return joiner.toString();
     }
 
+    public static <T extends JdbcTemplateSQL> Map<T, List<Map<String, Object>>> toMap(List<MergeJdbcTemplateSQL<T>> mergeList) {
+        Map<T, List<Map<String, Object>>> result = new HashMap<>();
+        for (MergeJdbcTemplateSQL<T> templateSQL : mergeList) {
+            Map<T, List<Map<String, Object>>> map = templateSQL.toMap();
+            for (Map.Entry<T, List<Map<String, Object>>> entry : map.entrySet()) {
+                T key = entry.getKey();
+                result.computeIfAbsent(key, k -> new ArrayList<>())
+                        .addAll(entry.getValue());
+            }
+        }
+        return result;
+    }
+
     public boolean isMerge() {
         return uniqueColumnNames != null;
     }
 
+    public Map<T, List<Map<String, Object>>> toMap() {
+        return dispatch(executeQueryList(null));
+    }
+
+    public void executeQueryStream(int chunkSize, Consumer<Chunk<T>> each) {
+        Chunk<T> chunk = new Chunk<>();
+        boolean merge = isMerge();
+
+        Set<T> visited;
+        IdentityHashMap<Object[], String> argsToStringCache;
+        if (merge) {
+            visited = Collections.newSetFromMap(new IdentityHashMap<>());
+            argsToStringCache = new IdentityHashMap<>();
+        } else {
+            visited = null;
+            argsToStringCache = null;
+        }
+
+        List<Map<String, Object>> list;
+        int pageNo = 1;
+        do {
+            list = executeQueryList(null, pageNo, chunkSize);
+            if (merge) {
+                Map<String, List<Map<String, Object>>> getterMap = list.stream()
+                        .collect(Collectors.groupingBy(e -> argsToString(getUniqueColumnValues(e))));
+                for (T dependentSQL : mergeList) {
+                    String uniqueColumnKey = argsToStringCache.computeIfAbsent(dependentSQL.getArgs(), MergeJdbcTemplateSQL::argsToString);
+                    List<Map<String, Object>> rowList = getterMap.get(uniqueColumnKey);
+                    if (rowList == null) {
+                        continue;
+                    }
+                    removeAddColumnValueList(rowList);
+
+                    visited.add(dependentSQL);
+                    chunk.reset(dependentSQL, pageNo, chunkSize, rowList);
+                    each.accept(chunk);
+                }
+            } else {
+                for (T dependentSQL : mergeList) {
+                    chunk.reset(dependentSQL, pageNo, chunkSize, list);
+                    each.accept(chunk);
+                }
+            }
+            pageNo++;
+        } while (list.size() == chunkSize);
+
+        if (visited != null) {
+            for (T dependentSQL : mergeList) {
+                if (!visited.contains(dependentSQL)) {
+                    chunk.reset(dependentSQL, 1, chunkSize, Collections.emptyList());
+                    each.accept(chunk);
+                }
+            }
+        }
+    }
+
     public Map<T, List<Map<String, Object>>> dispatch(List<Map<String, Object>> list) {
         Map<T, List<Map<String, Object>>> result = new LinkedHashMap<>();
+        dispatch(list, result::put);
+        return result;
+    }
+
+    public void dispatch(List<Map<String, Object>> list, BiConsumer<T, List<Map<String, Object>>> each) {
         if (isMerge()) {
             Map<String, List<Map<String, Object>>> getterMap = list.stream()
                     .collect(Collectors.groupingBy(e -> argsToString(getUniqueColumnValues(e))));
@@ -111,14 +199,13 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
                 String uniqueColumnKey = argsToString(dependentSQL.getArgs());
                 List<Map<String, Object>> rowList = getterMap.getOrDefault(uniqueColumnKey, Collections.emptyList());
                 removeAddColumnValueList(rowList);
-                result.put(dependentSQL, rowList);
+                each.accept(dependentSQL, rowList);
             }
         } else {
             for (T dependentSQL : mergeList) {
-                result.put(dependentSQL, list);
+                each.accept(dependentSQL, list);
             }
         }
-        return result;
     }
 
     private Object[] getUniqueColumnValues(Map<String, Object> row) {
@@ -134,6 +221,33 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
             for (String addColumnName : addColumnNameList) {
                 row.remove(addColumnName);
             }
+        }
+    }
+
+    public static class Chunk<T> {
+        public T sql;
+        public int pageNo;
+        public int pageSize;
+        public List<Map<String, Object>> rowList;
+
+        public void reset(T sql, int pageNo, int pageSize, List<Map<String, Object>> rowList) {
+            this.sql = sql;
+            this.pageNo = pageNo;
+            this.pageSize = pageSize;
+            this.rowList = rowList;
+        }
+
+        public boolean hasNext() {
+            return rowList.size() == pageSize;
+        }
+
+        @Override
+        public String toString() {
+            return "Chunk{" +
+                    "pageNo=" + pageNo +
+                    ", pageSize=" + pageSize +
+                    ", hasNext=" + hasNext() +
+                    '}';
         }
     }
 }

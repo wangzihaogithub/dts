@@ -3,6 +3,7 @@ package com.github.dts.controller;
 import com.github.dts.canal.StartupServer;
 import com.github.dts.impl.elasticsearch7x.ES7xAdapter;
 import com.github.dts.util.*;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,6 +17,7 @@ import java.sql.Timestamp;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 /**
  * 根据自增ID的全量灌数据，可以继承这个Controller
@@ -100,10 +102,14 @@ public abstract class AbstractEs7xETLIntController {
             @RequestParam(required = false, defaultValue = "1000") int offsetAdd,
             @RequestParam(required = false, defaultValue = "defaultDS") String ds,
             @RequestParam(required = false, defaultValue = "true") boolean append,
-            @RequestParam(required = false, defaultValue = "false") boolean discard) {
+            @RequestParam(required = false, defaultValue = "false") boolean discard,
+            @RequestParam(required = false, defaultValue = "false") boolean onlyCurrentIndex,
+            @RequestParam(required = false, defaultValue = "100") int joinUpdateSize,
+            String[] onlyFieldName) {
         JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(ds);
         String catalog = CanalConfig.DatasourceConfig.getCatalog(ds);
 
+        Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(StringUtils::isNotBlank).collect(Collectors.toSet());
         String clientIdentity = getES7xAdapter().getClientIdentity();
         if (discard) {
             new Thread(() -> {
@@ -132,11 +138,11 @@ public abstract class AbstractEs7xETLIntController {
                     if (stop) {
                         return Integer.MAX_VALUE;
                     }
-                    List<Dml> list = syncAll(jdbcTemplate, catalog, offset, offsetAdd, append);
-                    if (log.isInfoEnabled()) {
-                        log.info("syncAll minOffset {}", SyncRunnable.minOffset(runnableList));
-                    }
+                    List<Dml> list = syncAll(jdbcTemplate, catalog, offset, offsetAdd, append, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet);
                     dmlSize.addAndGet(list.size());
+                    if (log.isInfoEnabled()) {
+                        log.info("syncAll dmlSize = {}, minOffset = {} ", dmlSize.intValue(), SyncRunnable.minOffset(runnableList));
+                    }
                     Integer dmlListMaxId = getDmlListMaxId(list);
                     return dmlListMaxId == null ? Integer.MAX_VALUE : dmlListMaxId;
                 }
@@ -161,14 +167,17 @@ public abstract class AbstractEs7xETLIntController {
 
     @RequestMapping("/syncById")
     public Object syncById(@RequestParam Integer[] id,
-                           @RequestParam(required = false, defaultValue = "defaultDS") String ds) {
+                           @RequestParam(required = false, defaultValue = "defaultDS") String ds,
+                           @RequestParam(required = false, defaultValue = "false") boolean onlyCurrentIndex,
+                           String[] onlyFieldName) {
         JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(ds);
         String catalog = CanalConfig.DatasourceConfig.getCatalog(ds);
+        Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(StringUtils::isNotBlank).collect(Collectors.toSet());
         stop = false;
         int count = 0;
         try {
             count = id.length;
-            syncById(jdbcTemplate, catalog, Arrays.asList(id));
+            syncById(jdbcTemplate, catalog, Arrays.asList(id), onlyCurrentIndex, onlyFieldNameSet);
         } finally {
             log.info("all sync end.  total = {} ", count);
         }
@@ -204,7 +213,8 @@ public abstract class AbstractEs7xETLIntController {
         return jdbcTemplate.queryForObject("select max(" + idFiled + ") from " + tableName, Integer.class);
     }
 
-    protected List<Dml> syncAll(JdbcTemplate jdbcTemplate, String catalog, Integer minId, int offsetAdd, boolean append) {
+    protected List<Dml> syncAll(JdbcTemplate jdbcTemplate, String catalog, Integer minId, int offsetAdd, boolean append,
+                                boolean onlyCurrentIndex, int joinUpdateSize, Collection<String> onlyFieldName) {
         List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, minId, offsetAdd);
         if (dmlList.isEmpty()) {
             return dmlList;
@@ -229,11 +239,11 @@ public abstract class AbstractEs7xETLIntController {
                 }
             }
         }
-        esAdapter.sync(dmlList, false, true);
+        esAdapter.sync(dmlList, false, true, onlyCurrentIndex, joinUpdateSize, onlyFieldName);
         return dmlList;
     }
 
-    protected int syncById(JdbcTemplate jdbcTemplate, String catalog, Collection<Integer> id) {
+    protected int syncById(JdbcTemplate jdbcTemplate, String catalog, Collection<Integer> id, boolean onlyCurrentIndex, Collection<String> onlyFieldNameSet) {
         if (id == null || id.isEmpty()) {
             return 0;
         }
@@ -244,7 +254,7 @@ public abstract class AbstractEs7xETLIntController {
             for (Dml dml : dmlList) {
                 dml.setDestination(esAdapter.getConfiguration().getCanalAdapter().getDestination());
             }
-            esAdapter.sync(dmlList, false, true);
+            esAdapter.sync(dmlList, false, true, onlyCurrentIndex, 1, onlyFieldNameSet);
             count += dmlList.size();
         }
         return count;
@@ -335,10 +345,12 @@ public abstract class AbstractEs7xETLIntController {
             int i = 0;
             try {
                 for (cOffset = offset, i = 0; cOffset < endOffset; i++) {
+                    long ts = System.currentTimeMillis();
                     int cOffsetbefore = cOffset;
                     cOffset = run0(cOffset);
-                    log.info("all sync threadIndex {}/{}, offset = {}-{}, i ={}, maxId = {}",
-                            threadIndex, threads, cOffsetbefore, cOffset, i, maxId);
+                    log.info("all sync threadIndex {}/{}, offset = {}-{}, i ={}, remain = {}, cost = {}ms, maxId = {}",
+                            threadIndex, threads, cOffsetbefore, cOffset, i,
+                            endOffset - cOffset, System.currentTimeMillis() - ts, maxId);
                     if (cOffset == Integer.MAX_VALUE) {
                         break;
                     }

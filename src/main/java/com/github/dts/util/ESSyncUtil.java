@@ -175,6 +175,14 @@ public class ESSyncUtil {
         return jdbcTemplate;
     }
 
+    public static void appendConditionByExpr(StringBuilder sql, Object value, String owner, String columnName, String and) {
+        if (owner != null) {
+            sql.append(owner).append(".");
+        }
+        sql.append(columnName).append("=").append(value).append(' ');
+        sql.append(and);
+    }
+
     public static Boolean castToBoolean(Object value) {
         if (value == null) {
             return null;
@@ -213,10 +221,10 @@ public class ESSyncUtil {
     /**
      * 类型转换为Mapping中对应的类型
      *
-     * @param val     val
-     * @param fileName fileName
+     * @param val             val
+     * @param fileName        fileName
      * @param parentFieldName parentFieldName
-     * @param esTypes esTypes
+     * @param esTypes         esTypes
      * @return Mapping中对应的类型
      */
     public static Object typeConvert(Object val, String fileName, ESFieldTypesCache esTypes, String parentFieldName) {
@@ -228,7 +236,7 @@ public class ESSyncUtil {
         }
         Object esType;
         if (parentFieldName != null) {
-            Map<String, Object> properties = esTypes.getPropertiesAttr(parentFieldName, "properties");
+            Map<String, Object> properties = esTypes.getProperties(parentFieldName, "properties");
             if (properties == null) {
                 return val;
             }
@@ -243,7 +251,9 @@ public class ESSyncUtil {
         }
 
         Object res = val;
-        if ("integer".equals(esType)) {
+        if ("keyword".equals(esType) || "text".equals(esType)) {
+            res = val.toString();
+        } else if ("integer".equals(esType)) {
             if (val instanceof Number) {
                 res = ((Number) val).intValue();
             } else {
@@ -291,10 +301,10 @@ public class ESSyncUtil {
         } else if ("date".equals(esType)) {
             if (val instanceof java.sql.Time) {
                 DateTime dateTime = new DateTime(((java.sql.Time) val).getTime());
-                res = parseDate(fileName, dateTime, esTypes);
+                res = parseDate(fileName, parentFieldName, dateTime, esTypes);
             } else if (val instanceof java.sql.Timestamp) {
                 DateTime dateTime = new DateTime(((java.sql.Timestamp) val).getTime());
-                res = parseDate(fileName, dateTime, esTypes);
+                res = parseDate(fileName, parentFieldName, dateTime, esTypes);
             } else if (val instanceof java.sql.Date || val instanceof Date) {
                 DateTime dateTime;
                 if (val instanceof java.sql.Date) {
@@ -302,10 +312,10 @@ public class ESSyncUtil {
                 } else {
                     dateTime = new DateTime(((Date) val).getTime());
                 }
-                res = parseDate(fileName, dateTime, esTypes);
+                res = parseDate(fileName, parentFieldName, dateTime, esTypes);
             } else if (val instanceof Long) {
                 DateTime dateTime = new DateTime(((Long) val).longValue());
-                res = parseDate(fileName, dateTime, esTypes);
+                res = parseDate(fileName, parentFieldName, dateTime, esTypes);
             } else if (val instanceof String) {
                 String v = ((String) val).trim();
                 if (v.length() > 18 && v.charAt(4) == '-' && v.charAt(7) == '-' && v.charAt(10) == ' '
@@ -314,25 +324,25 @@ public class ESSyncUtil {
                     Date date = Util.parseDate(dt);
                     if (date != null) {
                         DateTime dateTime = new DateTime(date);
-                        res = parseDate(fileName, dateTime, esTypes);
+                        res = parseDate(fileName, parentFieldName, dateTime, esTypes);
                     }
                 } else if (v.length() == 10 && v.charAt(4) == '-' && v.charAt(7) == '-') {
                     Date date = Util.parseDate(v);
                     if (date != null) {
                         DateTime dateTime = new DateTime(date);
-                        res = parseDate(fileName, dateTime, esTypes);
+                        res = parseDate(fileName, parentFieldName, dateTime, esTypes);
                     }
                 } else if (v.length() == 7 && v.charAt(4) == '-') {
                     Date date = Util.parseDate(v);
                     if (date != null) {
                         DateTime dateTime = new DateTime(date);
-                        res = parseDate(fileName, dateTime, esTypes);
+                        res = parseDate(fileName, parentFieldName, dateTime, esTypes);
                     }
                 } else if (v.length() == 4) {
                     Date date = Util.parseDate(v);
                     if (date != null) {
                         DateTime dateTime = new DateTime(date);
-                        res = parseDate(fileName, dateTime, esTypes);
+                        res = parseDate(fileName, parentFieldName, dateTime, esTypes);
                     }
                 }
             }
@@ -463,7 +473,7 @@ public class ESSyncUtil {
     }
 
     public static SQL convertSqlByMapping(ESMapping mapping, Map<String, Object> data) {
-        Set<ColumnItem> idColumns = mapping.getSchemaItem().getIdColumns();
+        Set<ColumnItem> idColumns = mapping.getSchemaItem().getGroupByIdColumns();
         TableItem mainTable = mapping.getSchemaItem().getMainTable();
 
         List<Object> args = new ArrayList<>();
@@ -517,10 +527,18 @@ public class ESSyncUtil {
         return false;
     }
 
-    private static Object parseDate(String k, DateTime dateTime, Map<String, Object> esFieldType) {
+    private static Object parseDate(String k, String parentFieldName, DateTime dateTime, Map<String, Object> esFieldType) {
         if (esFieldType instanceof ESFieldTypesCache) {
-            Set<String> esFormatSet = ((ESFieldTypesCache) esFieldType).getPropertiesAttrFormat(k);
+            Set<String> esFormatSet;
+            if (parentFieldName != null) {
+                esFormatSet = ESFieldTypesCache.parseFormatToSet(((ESFieldTypesCache) esFieldType).getProperties(parentFieldName, "properties", k, "format"));
+            } else {
+                esFormatSet = ESFieldTypesCache.parseFormatToSet(((ESFieldTypesCache) esFieldType).getProperties(k, "format"));
+            }
             if (esFormatSet != null) {
+                if (esFormatSet.size() == 1) {
+                    return dateTime.toString(esFormatSet.iterator().next());
+                }
                 for (String format : ES_FORMAT_SUPPORT) {
                     if (esFormatSet.contains(format)) {
                         return dateTime.toString(format);
@@ -555,7 +573,7 @@ public class ESSyncUtil {
                 Object res = val;
                 if (val instanceof java.sql.Timestamp) {
                     DateTime dateTime = new DateTime(((java.sql.Timestamp) val).getTime());
-                    res = parseDate(k, dateTime, esFieldType);
+                    res = parseDate(k, null, dateTime, esFieldType);
                 } else if (val instanceof java.sql.Date || val instanceof Date) {
                     DateTime dateTime;
                     if (val instanceof java.sql.Date) {
@@ -563,9 +581,9 @@ public class ESSyncUtil {
                     } else {
                         dateTime = new DateTime(((Date) val).getTime());
                     }
-                    res = parseDate(k, dateTime, esFieldType);
+                    res = parseDate(k, null, dateTime, esFieldType);
                 } else if (val instanceof Map) {
-                    res = convertType((Map<String, Object>) val, (Map) (esFieldType instanceof ESFieldTypesCache ? ((ESFieldTypesCache) esFieldType).getPropertiesAttr(k, "properties") : Collections.emptyMap()));
+                    res = convertType((Map<String, Object>) val, (Map) (esFieldType instanceof ESFieldTypesCache ? ((ESFieldTypesCache) esFieldType).getProperties(k, "properties") : Collections.emptyMap()));
                 } else if (val instanceof ArrayList) {
                     List list = (List) val;
                     List reslist = new ArrayList();

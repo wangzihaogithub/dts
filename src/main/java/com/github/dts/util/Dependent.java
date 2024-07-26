@@ -1,8 +1,6 @@
 package com.github.dts.util;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 
 /**
  * 表依赖关系
@@ -47,6 +45,17 @@ public class Dependent {
         return list;
     }
 
+    public Map<String, Object> getMergeDataMap() {
+        Map<String, Object> mergeDataMap = new HashMap<>();
+        if (!ESSyncUtil.isEmpty(dml.getOld()) && index < dml.getOld().size()) {
+            mergeDataMap.putAll(dml.getOld().get(index));
+        }
+        if (!ESSyncUtil.isEmpty(dml.getData()) && index < dml.getData().size()) {
+            mergeDataMap.putAll(dml.getData().get(index));
+        }
+        return mergeDataMap;
+    }
+
     public Dml getDml() {
         return dml;
     }
@@ -73,11 +82,7 @@ public class Dependent {
 
     @Override
     public String toString() {
-        return "Dependent{" +
-                "dml=" + dml +
-                ", schemaItem=" + schemaItem +
-                ", index=" + index +
-                '}';
+        return dml.getType() + "." + dml.getTable() + "(" + schemaItem + ")";
     }
 
     @Override
@@ -101,10 +106,6 @@ public class Dependent {
         return dml.getTable().equalsIgnoreCase(nestedMainTable.getTableName());
     }
 
-    public boolean isMainTable() {
-        return isIndexMainTable() || isNestedMainTable();
-    }
-
     public boolean isNestedSlaveTable() {
         for (SchemaItem.TableItem tableItem : nestedSlaveTableList) {
             if (dml.getTable().equalsIgnoreCase(tableItem.getTableName())) {
@@ -112,5 +113,13 @@ public class Dependent {
             }
         }
         return false;
+    }
+
+    public boolean containsObjectField(Collection<String> fieldName) {
+        ESSyncConfig.ObjectField objectField = schemaItem.getObjectField();
+        if (objectField == null) {
+            return false;
+        }
+        return fieldName.contains(objectField.getFieldName());
     }
 }

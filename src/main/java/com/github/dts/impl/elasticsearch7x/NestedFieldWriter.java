@@ -17,15 +17,16 @@ import java.util.stream.Collectors;
  * @author acer01
  */
 public class NestedFieldWriter {
-
     private final Map<String, List<SchemaItem>> schemaItemMap;
+    private final Map<String, List<SchemaItem>> onlyCurrentIndexSchemaItemMap;
     private final ESTemplate esTemplate;
     private final CacheMap cacheMap;
     private final ExecutorService mainTableListenerExecutor;
     private final int threads;
 
     public NestedFieldWriter(int nestedFieldThreads, Map<String, ESSyncConfig> map, ESTemplate esTemplate, CacheMap cacheMap) {
-        this.schemaItemMap = toListenerMap(map);
+        this.schemaItemMap = toListenerMap(map, false);
+        this.onlyCurrentIndexSchemaItemMap = toListenerMap(map, true);
         this.esTemplate = esTemplate;
         this.cacheMap = cacheMap;
         this.threads = nestedFieldThreads;
@@ -33,6 +34,79 @@ public class NestedFieldWriter {
                 1,
                 nestedFieldThreads,
                 60_000L, "ESNestedMainWriter", true, false);
+    }
+
+    public static void executeMergeUpdateES(List<MergeJdbcTemplateSQL<DependentSQL>> mergeSqlList,
+                                            ESTemplate.BulkRequestList bulkRequestList,
+                                            CacheMap cacheMap,
+                                            ESTemplate es7xTemplate,
+                                            ExecutorService executorService,
+                                            int threads) {
+        if (mergeSqlList.isEmpty()) {
+            return;
+        }
+        if (executorService == null) {
+            executeEsTemplateUpdate(mergeSqlList, bulkRequestList, cacheMap, es7xTemplate);
+        } else {
+            List<List<MergeJdbcTemplateSQL<DependentSQL>>> partition = Lists.partition(new ArrayList<>(mergeSqlList),
+                    Math.max(5, (mergeSqlList.size() + 1) / threads));
+            if (partition.size() == 1) {
+                executeEsTemplateUpdate(mergeSqlList, bulkRequestList, cacheMap, es7xTemplate);
+            } else {
+                List<Future> futures = partition.stream()
+                        .map(e -> executorService.submit(() -> executeEsTemplateUpdate(e, bulkRequestList, cacheMap, es7xTemplate)))
+                        .collect(Collectors.toList());
+                for (Future future : futures) {
+                    try {
+                        future.get();
+                    } catch (Exception e) {
+                        Util.sneakyThrows(e);
+                    }
+                }
+            }
+        }
+    }
+
+    public static void executeEsTemplateUpdate(ESTemplate.BulkRequestList bulkRequestList,
+                                               ESTemplate esTemplate,
+                                               DependentSQL sql,
+                                               List<Map<String, Object>> rowList) {
+        executeEsTemplateUpdate(bulkRequestList, esTemplate, sql.getPkValue(), sql.getDependent().getSchemaItem(), rowList);
+    }
+
+    public static void executeEsTemplateUpdate(ESTemplate.BulkRequestList bulkRequestList,
+                                               ESTemplate esTemplate,
+                                               Object pkValue,
+                                               SchemaItem schemaItem,
+                                               List<Map<String, Object>> rowList) {
+        if (pkValue == null) {
+            return;
+        }
+        ESSyncConfig.ESMapping esMapping = schemaItem.getEsMapping();
+        ESSyncConfig.ObjectField objectField = schemaItem.getObjectField();
+        switch (objectField.getType()) {
+            case ARRAY_SQL: {
+                for (Map<String, Object> row : rowList) {
+                    esTemplate.convertValueType(esMapping, objectField.getFieldName(), row);
+                }
+                //更新ES文档 (执行完会统一提交, 这里不用commit)
+                esTemplate.update(esMapping, objectField.getFieldName(), pkValue, Collections.singletonMap(
+                        objectField.getFieldName(), rowList), bulkRequestList);
+                break;
+            }
+            case OBJECT_SQL: {
+                Map<String, Object> resultMap = rowList == null || rowList.isEmpty() ? null : rowList.get(0);
+                if (resultMap != null) {
+                    esTemplate.convertValueType(esMapping, objectField.getFieldName(), resultMap);
+                }
+                //更新ES文档 (执行完会统一提交, 这里不用commit)
+                esTemplate.update(esMapping, objectField.getFieldName(), pkValue, Collections.singletonMap(
+                        objectField.getFieldName(), resultMap), bulkRequestList);
+                break;
+            }
+            default: {
+            }
+        }
     }
 
     /**
@@ -66,8 +140,14 @@ public class NestedFieldWriter {
                 Dependent dependent = new Dependent(schemaItem, i,
                         indexMainTable, nestedMainTable, nestedSlaveTableList,
                         dml);
-                if (dependent.isMainTable()) {
+                if (dependent.isIndexMainTable()) {
                     dependentGroup.addMain(dependent);
+                } else if (dependent.isNestedMainTable()) {
+                    if (dependent.getSchemaItem().isJoinByParentPrimaryKey()) {
+                        dependentGroup.addMain(dependent);
+                    } else {
+                        dependentGroup.addMainJoin(dependent);
+                    }
                 } else {
                     dependentGroup.addSlave(dependent);
                 }
@@ -81,7 +161,7 @@ public class NestedFieldWriter {
      *
      * @return 表与sql的关系
      */
-    private static Map<String, List<SchemaItem>> toListenerMap(Map<String, ESSyncConfig> esSyncConfigMap) {
+    private static Map<String, List<SchemaItem>> toListenerMap(Map<String, ESSyncConfig> esSyncConfigMap, boolean onlyCurrentIndex) {
         Map<String, List<SchemaItem>> schemaItemMap = new LinkedHashMap<>();
         for (ESSyncConfig syncConfig : esSyncConfigMap.values()) {
             for (ESSyncConfig.ObjectField objectField : syncConfig.getEsMapping().getObjFields().values()) {
@@ -91,14 +171,19 @@ public class NestedFieldWriter {
                 }
                 SchemaItem.TableItem mainTable = syncConfig.getEsMapping().getSchemaItem().getMainTable();
                 String mainTableName = mainTable.getTableName();
-                Set<String> tableNameSet = schemaItem.getTableItemAliases().keySet();
-                for (String tableName : tableNameSet) {
-                    schemaItemMap.computeIfAbsent(tableName, e -> new ArrayList<>(2))
-                            .add(schemaItem);
-                }
-                if (!tableNameSet.contains(mainTableName)) {
+                if (onlyCurrentIndex) {
                     schemaItemMap.computeIfAbsent(mainTableName, e -> new ArrayList<>(2))
                             .add(schemaItem);
+                } else {
+                    Set<String> tableNameSet = schemaItem.getTableItemAliases().keySet();
+                    for (String tableName : tableNameSet) {
+                        schemaItemMap.computeIfAbsent(tableName, e -> new ArrayList<>(2))
+                                .add(schemaItem);
+                    }
+                    if (!tableNameSet.contains(mainTableName)) {
+                        schemaItemMap.computeIfAbsent(mainTableName, e -> new ArrayList<>(2))
+                                .add(schemaItem);
+                    }
                 }
             }
         }
@@ -110,106 +195,33 @@ public class NestedFieldWriter {
         Set<DependentSQL> sqlList = new LinkedHashSet<>();
         for (Dependent dependent : mainTableDependentList) {
             ESSyncConfig.ObjectField objectField = dependent.getSchemaItem().getObjectField();
-            int dmlIndex = dependent.getIndex();
-            Dml dml = dependent.getDml();
-
-            Map<String, Object> mergeDataMap = new HashMap<>();
-            if (!ESSyncUtil.isEmpty(dml.getOld()) && dmlIndex < dml.getOld().size()) {
-                mergeDataMap.putAll(dml.getOld().get(dmlIndex));
-            }
-            if (!ESSyncUtil.isEmpty(dml.getData()) && dmlIndex < dml.getData().size()) {
-                mergeDataMap.putAll(dml.getData().get(dmlIndex));
-            }
+            Map<String, Object> mergeDataMap = dependent.getMergeDataMap();
             if (mergeDataMap.isEmpty()) {
                 continue;
             }
             String fullSql = objectField.getFullSql(dependent.isIndexMainTable());
             SQL sql = SQL.convertToSql(fullSql, mergeDataMap);
-            sqlList.add(new DependentSQL(sql, dependent, autoUpdateChildren, objectField.getSchemaItem().getIdColumns()));
+
+            sqlList.add(new DependentSQL(sql, dependent, autoUpdateChildren, objectField.getSchemaItem().getGroupByIdColumns()));
         }
         return sqlList;
     }
 
-    public static void executeMergeUpdateES(List<MergeJdbcTemplateSQL<DependentSQL>> mergeSqlList,
-                                            ESTemplate.BulkRequestList bulkRequestList,
-                                            CacheMap cacheMap,
-                                            ESTemplate es7xTemplate,
-                                            ExecutorService executorService,
-                                            int threads) {
-        if (mergeSqlList.isEmpty()) {
-            return;
-        }
-        if (executorService == null) {
-            executeUpdateES(mergeSqlList, bulkRequestList, cacheMap, es7xTemplate);
-        } else {
-            List<List<MergeJdbcTemplateSQL<DependentSQL>>> partition = Lists.partition(new ArrayList<>(mergeSqlList),
-                    Math.max(5, (mergeSqlList.size() + 1) / threads));
-            if (partition.size() == 1) {
-                executeUpdateES(mergeSqlList, bulkRequestList, cacheMap, es7xTemplate);
-            } else {
-                List<Future> futures = partition.stream()
-                        .map(e -> executorService.submit(() -> executeUpdateES(e, bulkRequestList, cacheMap, es7xTemplate)))
-                        .collect(Collectors.toList());
-                for (Future future : futures) {
-                    try {
-                        future.get();
-                    } catch (Exception e) {
-                        Util.sneakyThrows(e);
-                    }
-                }
-            }
-        }
+    private static void executeEsTemplateUpdate(List<MergeJdbcTemplateSQL<DependentSQL>> sqlList,
+                                                ESTemplate.BulkRequestList bulkRequestList,
+                                                CacheMap cacheMap,
+                                                ESTemplate esTemplate) {
+        MergeJdbcTemplateSQL.executeQueryList(sqlList, cacheMap, (sql, list) -> executeEsTemplateUpdate(bulkRequestList, esTemplate, sql, list));
     }
 
-    public static void executeUpdateES(List<MergeJdbcTemplateSQL<DependentSQL>> sqlList,
-                                       ESTemplate.BulkRequestList bulkRequestList,
-                                       CacheMap cacheMap,
-                                       ESTemplate esTemplate) {
-        Map<DependentSQL, List<Map<String, Object>>> batchRowGetterMap = MergeJdbcTemplateSQL.executeQueryList(sqlList, cacheMap);
-        for (Map.Entry<DependentSQL, List<Map<String, Object>>> entry : batchRowGetterMap.entrySet()) {
-            DependentSQL sql = entry.getKey();
-            Object pkValue = sql.getPkValue();
-            if (pkValue == null) {
-                continue;
-            }
-            SchemaItem schemaItem = sql.getDependent().getSchemaItem();
-            ESSyncConfig.ESMapping esMapping = schemaItem.getEsMapping();
-            ESSyncConfig.ObjectField objectField = schemaItem.getObjectField();
-            switch (objectField.getType()) {
-                case ARRAY_SQL: {
-                    List<Map<String, Object>> rowList = entry.getValue();
-                    for (Map<String, Object> row : rowList) {
-                        esTemplate.convertValueType(esMapping, objectField.getFieldName(), row);
-                    }
-                    //更新ES文档 (执行完会统一提交, 这里不用commit)
-                    esTemplate.update(esMapping, pkValue, Collections.singletonMap(
-                            objectField.getFieldName(), rowList), bulkRequestList);
-                    break;
-                }
-                case OBJECT_SQL: {
-                    List<Map<String, Object>> rowList = entry.getValue();
-                    Map<String, Object> resultMap = rowList == null || rowList.isEmpty() ? null : rowList.get(0);
-                    if (resultMap != null) {
-                        esTemplate.convertValueType(esMapping, objectField.getFieldName(), resultMap);
-                    }
-                    //更新ES文档 (执行完会统一提交, 这里不用commit)
-                    esTemplate.update(esMapping, pkValue, Collections.singletonMap(
-                            objectField.getFieldName(), resultMap), bulkRequestList);
-                    break;
-                }
-                default: {
-                }
-            }
-        }
-    }
-
-    public DependentGroup convertToDependentGroup(List<Dml> dmls) {
+    public DependentGroup convertToDependentGroup(List<Dml> dmls, boolean onlyCurrentIndex) {
         DependentGroup dependentGroup = new DependentGroup();
         for (Dml dml : dmls) {
             if (Boolean.TRUE.equals(dml.getIsDdl())) {
                 continue;
             }
-            DependentGroup dmlDependentGroup = getDependentList(schemaItemMap.get(dml.getTable()), dml);
+            Map<String, List<SchemaItem>> map = onlyCurrentIndex ? onlyCurrentIndexSchemaItemMap : schemaItemMap;
+            DependentGroup dmlDependentGroup = getDependentList(map.get(dml.getTable()), dml);
             if (dmlDependentGroup != null) {
                 dependentGroup.add(dmlDependentGroup);
             }
@@ -241,21 +253,28 @@ public class NestedFieldWriter {
         }
 
         public Object getPkValue() {
-            ESSyncConfig.ObjectField objectField = dependent.getSchemaItem().getObjectField();
-            ESSyncConfig.ESMapping esMapping = objectField.getEsMapping();
             Map<String, Object> valueMap = getArgsMap();
-            Object pkValue;
+            String pkColumnName = getPkColumnName();
+            return pkColumnName != null ? valueMap.get(pkColumnName) : null;
+        }
+
+        public String getPkColumnName() {
+            ESSyncConfig.ObjectField objectField = dependent.getSchemaItem().getObjectField();
+            String columnName;
             if (dependent.isIndexMainTable()) {
                 if (autoUpdateChildren) {
-                    pkValue = valueMap.containsKey(esMapping.getPk()) ?
-                            valueMap.get(esMapping.getPk()) : valueMap.get(esMapping.get_id());
+                    columnName = objectField.getEsMapping().getSchemaItem().getIdField().getColumnName();
                 } else {
-                    pkValue = null;
+                    columnName = null;
                 }
             } else {
-                pkValue = valueMap.get(objectField.getParentDocumentId());
+                if (dependent.getSchemaItem().isJoinByParentPrimaryKey()) {
+                    columnName = objectField.getParentDocumentId();
+                } else {
+                    columnName = objectField.getEsMapping().getSchemaItem().getIdField().getColumnName();
+                }
             }
-            return pkValue;
+            return columnName;
         }
 
         @Override

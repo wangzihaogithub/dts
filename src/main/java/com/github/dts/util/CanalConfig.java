@@ -80,10 +80,12 @@ public class CanalConfig {
         ds.setTimeBetweenEvictionRunsMillis(60000);
         ds.setMinEvictableIdleTimeMillis(300000);
         ds.setValidationQuery("select 1");
-        try {
-            ds.init();
-        } catch (SQLException e) {
-            Util.sneakyThrows(e);
+        if (!datasourceConfig.isLazy()) {
+            try {
+                ds.init();
+            } catch (SQLException e) {
+                Util.sneakyThrows(e);
+            }
         }
         return ds;
     }
@@ -99,6 +101,15 @@ public class CanalConfig {
         private String username;                                 // jdbc username
         private String password;                                 // jdbc password
         private Integer maxActive = 100;                         // 连接池最大连接数,默认为3
+        private boolean lazy = true;
+
+        public void setLazy(boolean lazy) {
+            this.lazy = lazy;
+        }
+
+        public boolean isLazy() {
+            return lazy;
+        }
 
         public static DataSource getDataSource(String key) {
             return DATA_SOURCES.get(key);
@@ -204,14 +215,14 @@ public class CanalConfig {
         // 毫秒时间内拉取
         private Integer pullTimeout = 5;
         // redis- meta数据前缀
-        private String metaPrefix = "dts:";
+        private String redisMetaPrefix = "dts:${spring.profiles.active:}";
 
-        public String getMetaPrefix() {
-            return metaPrefix;
+        public String getRedisMetaPrefix() {
+            return redisMetaPrefix;
         }
 
-        public void setMetaPrefix(String metaPrefix) {
-            this.metaPrefix = metaPrefix;
+        public void setRedisMetaPrefix(String redisMetaPrefix) {
+            this.redisMetaPrefix = redisMetaPrefix;
         }
 
         public Class<? extends CanalConnector> getConnector() {
@@ -363,19 +374,69 @@ public class CanalConfig {
 
         public static class Es7x {
             private final SlaveNestedField slaveNestedField = new SlaveNestedField();
+            private final MainJoinTableField mainJoinTableField = new MainJoinTableField();
             private String resourcesDir = "es";
             private String[] address;// es 读地址
             private String username;// 账号，来源：租户账号
             private String password;// 密码，来源：租户密码
             private Map<String, String> properties; // 其余参数, 可填写适配器中的所需的配置信息
-            private int maxRetryCount = -1;// 错误请求重试几次
+            private int maxRetryCount = 1;// 错误请求重试几次
+            private int bulkRetryCount = 1;
             private int concurrentBulkRequest = 16;// 最大并发bulk请求
+            private int minAvailableSpaceHighBulkRequests = 2;// 高优先级bulk最少可用空间数量，最大实时性越好，保证实时性
             private int bulkCommitSize = 200;//每次bulk请求的大约提交条数
             private boolean refresh = true;
             private int refreshThreshold = 10;
             private int listenerThreads = 50;
             private int maxQueryCacheSize = 10000;//查询缓存大小
             private int nestedFieldThreads = 10;
+            private int joinUpdateSize = 10;
+            private int streamChunkSize = 1000;
+            private int basicMaxIdIn = 500;
+
+            public int getMinAvailableSpaceHighBulkRequests() {
+                return minAvailableSpaceHighBulkRequests;
+            }
+
+            public void setMinAvailableSpaceHighBulkRequests(int minAvailableSpaceHighBulkRequests) {
+                this.minAvailableSpaceHighBulkRequests = minAvailableSpaceHighBulkRequests;
+            }
+
+            public int getBulkRetryCount() {
+                return bulkRetryCount;
+            }
+
+            public void setBulkRetryCount(int bulkRetryCount) {
+                this.bulkRetryCount = bulkRetryCount;
+            }
+
+            public int getBasicMaxIdIn() {
+                return basicMaxIdIn;
+            }
+
+            public void setBasicMaxIdIn(int basicMaxIdIn) {
+                this.basicMaxIdIn = basicMaxIdIn;
+            }
+
+            public MainJoinTableField getMainJoinTableField() {
+                return mainJoinTableField;
+            }
+
+            public int getStreamChunkSize() {
+                return streamChunkSize;
+            }
+
+            public void setStreamChunkSize(int streamChunkSize) {
+                this.streamChunkSize = streamChunkSize;
+            }
+
+            public int getJoinUpdateSize() {
+                return joinUpdateSize;
+            }
+
+            public void setJoinUpdateSize(int joinUpdateSize) {
+                this.joinUpdateSize = joinUpdateSize;
+            }
 
             public int getNestedFieldThreads() {
                 return nestedFieldThreads;
@@ -487,6 +548,36 @@ public class CanalConfig {
 
             public SlaveNestedField getSlaveNestedField() {
                 return slaveNestedField;
+            }
+
+            public static class MainJoinTableField {
+                private int threads = 5;
+                private int queues = 100;
+                private boolean block = false;// 写从表是否阻塞主表
+
+                public int getThreads() {
+                    return threads;
+                }
+
+                public void setThreads(int threads) {
+                    this.threads = threads;
+                }
+
+                public int getQueues() {
+                    return queues;
+                }
+
+                public void setQueues(int queues) {
+                    this.queues = queues;
+                }
+
+                public boolean isBlock() {
+                    return block;
+                }
+
+                public void setBlock(boolean block) {
+                    this.block = block;
+                }
             }
 
             public static class SlaveNestedField {

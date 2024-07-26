@@ -23,23 +23,25 @@ public class BasicFieldWriter {
 
     private static final Logger logger = LoggerFactory.getLogger(BasicFieldWriter.class);
     private final ESTemplate esTemplate;
+    private final int maxIdInCount;
 
-    public BasicFieldWriter(ESTemplate esTemplate) {
+    public BasicFieldWriter(ESTemplate esTemplate, int maxIdInCount) {
         this.esTemplate = esTemplate;
+        this.maxIdInCount = maxIdInCount;
     }
 
-    private static void executeUpdate(List<ESSyncConfigSQL> sqlList) {
-        List<MergeJdbcTemplateSQL<ESSyncConfigSQL>> mergeList = MergeJdbcTemplateSQL.merge(sqlList, 500);
-        Map<ESSyncConfigSQL, List<Map<String, Object>>> executedMap = MergeJdbcTemplateSQL.executeQueryList(mergeList, null);
-        for (Map.Entry<ESSyncConfigSQL, List<Map<String, Object>>> entry : executedMap.entrySet()) {
-            ESSyncConfigSQL sql = entry.getKey();
-            sql.run(entry.getValue());
-        }
+    private static void executeUpdate(List<ESSyncConfigSQL> sqlList, int maxIdInCount) {
+        List<MergeJdbcTemplateSQL<ESSyncConfigSQL>> mergeList = MergeJdbcTemplateSQL.merge(sqlList, maxIdInCount);
+        MergeJdbcTemplateSQL.executeQueryList(mergeList, null, ESSyncConfigSQL::run);
+    }
+
+    private static boolean isMainTable(SchemaItem schemaItem, String table) {
+        return schemaItem.getMainTable().getTableName().equalsIgnoreCase(table);
     }
 
     public void write(Collection<ESSyncConfig> configList, List<Dml> dmlList, ESTemplate.BulkRequestList bulkRequestList) {
         List<ESSyncConfigSQL> sqlList = writeEsReturnSql(configList, dmlList, bulkRequestList);
-        executeUpdate(sqlList);
+        executeUpdate(sqlList, maxIdInCount);
     }
 
     private List<ESSyncConfigSQL> writeEsReturnSql(Collection<ESSyncConfig> configList, List<Dml> dmlList, ESTemplate.BulkRequestList bulkRequestList) {
@@ -97,12 +99,12 @@ public class BasicFieldWriter {
 
             if (schemaItem.getAliasTableItems().size() == 1 && schemaItem.isAllFieldsSimple()) {
                 // ------单表 & 所有字段都为简单字段------
-                if (schemaItem.getMainTable().getTableName().equalsIgnoreCase(dml.getTable())) {
+                if (isMainTable(schemaItem, dml.getTable())) {
                     singleTableSimpleFiledInsert(config, data, bulkRequestList);
                 }
             } else {
                 // ------是主表 查询sql来插入------
-                if (schemaItem.getMainTable().getTableName().equalsIgnoreCase(dml.getTable())) {
+                if (isMainTable(schemaItem, dml.getTable())) {
                     InsertESSyncConfigSQL sql = mainTableInsert(config, dml, data, bulkRequestList);
                     list.add(sql);
                 }
@@ -190,12 +192,13 @@ public class BasicFieldWriter {
                 continue;
             }
 
-            if (schemaItem.getAliasTableItems().size() == 1 && schemaItem.isAllFieldsSimple()) {
-                // ------单表 & 所有字段都为简单字段------
-                singleTableSimpleFiledUpdate(config, dml, data, old, bulkRequestList);
-            } else {
-                // ------主表 查询sql来更新------
-                if (schemaItem.getMainTable().getTableName().equalsIgnoreCase(dml.getTable())) {
+            // 主表
+            if (isMainTable(schemaItem, dml.getTable())) {
+                if (schemaItem.getAliasTableItems().size() == 1 && schemaItem.isAllFieldsSimple()) {
+                    // ------单表 & 所有字段都为简单字段------
+                    singleTableSimpleFiledUpdate(config, dml, data, old, bulkRequestList);
+                } else {
+                    // ------主表 查询sql来更新------
                     ESMapping mapping = config.getEsMapping();
                     String idFieldName = mapping.get_id() == null ? mapping.getPk() : mapping.get_id();
 
@@ -309,7 +312,7 @@ public class BasicFieldWriter {
             ESMapping mapping = config.getEsMapping();
 
             // ------是主表------
-            if (schemaItem.getMainTable().getTableName().equalsIgnoreCase(dml.getTable())) {
+            if (isMainTable(schemaItem, dml.getTable())) {
                 if (mapping.get_id() != null) {
                     FieldItem idFieldItem = schemaItem.getIdFieldItem(mapping);
                     // 主键为简单字段
@@ -337,7 +340,6 @@ public class BasicFieldWriter {
                         list.add(sql);
                     }
                 }
-
             }
 
             // 从表的操作
@@ -451,6 +453,7 @@ public class BasicFieldWriter {
      */
     private InsertESSyncConfigSQL mainTableInsert(ESSyncConfig config, Dml dml, Map<String, Object> data, ESTemplate.BulkRequestList bulkRequestList) {
         ESMapping mapping = config.getEsMapping();
+
         SQL sql = ESSyncUtil.convertSqlByMapping(mapping, data);
         return new InsertESSyncConfigSQL(sql, config, dml, data, bulkRequestList, esTemplate);
     }

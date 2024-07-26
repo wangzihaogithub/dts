@@ -82,16 +82,23 @@ public class StartupServer implements ApplicationRunner {
             log.info("adapter for canal is empty config");
             return;
         }
+
+        Environment env = beanFactory.getBean(Environment.class);
         for (CanalConfig.CanalAdapter canalAdapter : canalClientConfig.getCanalAdapters()) {
             if (!canalAdapter.isEnable()) {
                 continue;
+            }
+
+            String metaPrefix = canalAdapter.getRedisMetaPrefix();
+            if (metaPrefix != null) {
+                canalAdapter.setRedisMetaPrefix(env.resolvePlaceholders(metaPrefix));
             }
             List<Adapter> adapterList = new ArrayList<>();
             for (CanalConfig.Group connectorGroup : canalAdapter.getGroups()) {
                 for (CanalConfig.OuterAdapterConfig config : connectorGroup.getOuterAdapters()) {
                     config.setCanalAdapter(canalAdapter);
                     config.setConnectorGroup(connectorGroup);
-                    adapterList.add(loadAdapter(config));
+                    adapterList.add(loadAdapter(canalAdapter, config, env));
                 }
             }
 
@@ -104,9 +111,8 @@ public class StartupServer implements ApplicationRunner {
         }
     }
 
-    private Adapter loadAdapter(CanalConfig.OuterAdapterConfig config) {
+    private Adapter loadAdapter(CanalConfig.CanalAdapter canalAdapter, CanalConfig.OuterAdapterConfig config, Environment env) {
         try {
-            Environment env = beanFactory.getBean(Environment.class);
             Properties evnProperties = null;
             if (env instanceof StandardEnvironment) {
                 evnProperties = new Properties();
@@ -134,7 +140,7 @@ public class StartupServer implements ApplicationRunner {
                     throw new IllegalArgumentException("adapter");
                 }
                 adapterMap.put(name, adapter);
-                adapter.init(config, evnProperties);
+                adapter.init(canalAdapter, config, evnProperties);
                 log.info("Load canal adapter: {} succeed", config.getName());
             }
             return adapter;

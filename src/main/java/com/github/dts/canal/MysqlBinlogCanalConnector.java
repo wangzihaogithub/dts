@@ -81,7 +81,7 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
         Properties properties = config.getProperties();
 
         this.selectAck2 = !rebuild;
-        this.metaPrefix = config.getMetaPrefix();
+        this.metaPrefix = config.getRedisMetaPrefix();
         this.startupServer = startupServer;
         String clientIdentityName = config.clientIdentity();
         this.destination = config.getDestination();
@@ -471,7 +471,7 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
 
     @Override
     public void ack() {
-        if (lastMessage != null) {
+        if (connect && lastMessage != null) {
             server.ack(identity, lastMessage.getId());
         }
     }
@@ -507,6 +507,8 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
         if (connect) {
             server.unsubscribe(identity);
             server.stop(identity.getDestination());
+            server.stop();
+            this.connect = false;
         }
     }
 
@@ -546,10 +548,11 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
     }
 
     private synchronized void rebuild(String clientIdentityName, String message) {
-        log.warn("rebuild {}, error = {}", clientIdentityName, message);
         if (rebuildConsumer != null) {
             File file = new File(new File(dataDir, clientIdentityName), "meta.dat");
-            if (deleteDir(file)) {
+            boolean deletedDir = deleteDir(file);
+            log.info("=============> rebuild destination: {} <============= file='{}', delete={}, lastMessage={}", clientIdentityName, file, deletedDir, lastMessage);
+            if (deletedDir) {
                 lastMessage = null;
             }
             rebuildConsumer.accept(MysqlBinlogCanalConnector.this);
@@ -589,7 +592,7 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
             this.identity = identity;
             this.selectAck2 = selectAck2;
             this.metaDataRepository = MetaDataRepository.newInstance(
-                    prefix + startupServer.getEnv() + ":" + identity.getDestination(), startupServer.getBeanFactory());
+                    prefix + ":" + identity.getDestination(), startupServer.getBeanFactory());
         }
 
         @Override
@@ -609,7 +612,7 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
         public void start() {
             super.start();
             if (metaDataRepository != null) {
-                scheduled = Util.newScheduled(1, metaDataRepository.getClass().getSimpleName(), true);
+                scheduled = Util.newScheduled(1, metaDataRepository.name(), true);
                 scheduled.scheduleAtFixedRate(() -> {
                     if (cursorChange.compareAndSet(true, false)) {
                         Object cursor = this.cursor;
@@ -645,8 +648,12 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
         @Override
         public void sendAlarm(String clientIdentityName, String msg) {
             super.sendAlarm(clientIdentityName, msg);
-            if (msg != null && msg.contains("Could not find first log file name in binary log index file")) {
-                rebuild(clientIdentityName, msg);
+            if (msg != null) {
+                if (msg.contains("Could not find first log file name in binary log index file")
+                        || msg.contains("Timeout occurred")
+                ) {
+                    rebuild(clientIdentityName, msg);
+                }
             }
         }
     }

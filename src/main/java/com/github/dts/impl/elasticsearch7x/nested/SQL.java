@@ -42,6 +42,10 @@ public class SQL {
         }
     }
 
+    public static String wrapPlaceholder(String key) {
+        return PLACEHOLDER_BEGIN + key + PLACEHOLDER_END;
+    }
+
     /**
      * 将sql表达式与参数 转换为JDBC所需的sql对象
      *
@@ -54,6 +58,7 @@ public class SQL {
 
         List<Object> argsList = new ArrayList<>();
         StringBuilder sqlBuffer = new StringBuilder(expressionsSql);
+        Map<String, Object> argsMap = new LinkedHashMap<>(args);
         Placeholder placeholder;
         while ((placeholder = placeholderQueue.poll()) != null) {
             int offset = expressionsSql.length() - sqlBuffer.length();
@@ -61,10 +66,14 @@ public class SQL {
                     placeholder.getBeginIndex() - PLACEHOLDER_BEGIN.length() - offset,
                     placeholder.getEndIndex() + PLACEHOLDER_END.length() - offset,
                     "?");
-            Object value = args.get(placeholder.getKey());
+            String key = placeholder.getKey();
+            Object value = args.get(key);
+            if (value == null) {
+                argsMap.put(key, null);
+            }
             argsList.add(value);
         }
-        return new SQL(ESSyncUtil.stringCache(sqlBuffer.toString()), argsList.toArray(), args);
+        return new SQL(ESSyncUtil.stringCache(sqlBuffer.toString()), argsList.toArray(), argsMap);
     }
 
     public Map<String, Object> getArgsMap() {

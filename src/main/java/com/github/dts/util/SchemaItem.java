@@ -1,5 +1,6 @@
 package com.github.dts.util;
 
+import com.github.dts.impl.elasticsearch7x.nested.SQL;
 import com.github.dts.util.ESSyncConfig.ESMapping;
 import org.springframework.util.LinkedCaseInsensitiveMap;
 
@@ -25,7 +26,8 @@ public class SchemaItem {
     private TableItem mainTable;
     private List<TableItem> slaveTableList;
     private FieldItem idField;
-    private Set<ColumnItem> idColumns;
+    private Set<ColumnItem> groupByIdColumns;
+    private Boolean joinByParentPrimaryKey;
 
     public SchemaItem() {
     }
@@ -39,29 +41,64 @@ public class SchemaItem {
 
     }
 
-    public Set<ColumnItem> getIdColumns() {
-        if (idColumns == null) {
-            if (objectField != null) {
-                if (objectField.isSqlType()) {
-                    this.idColumns = parseByObjectFieldIdColumns();
-                } else {
-                    this.idColumns = Collections.emptySet();
-                }
+    public boolean isJoinByParentPrimaryKey() {
+        if (joinByParentPrimaryKey == null) {
+            if (objectField != null && objectField.isSqlType()) {
+                List<SqlParser.BinaryOpExpr> varColumnList = SqlParser.getVarColumnList(getObjectField().getOnParentChangeWhereSql());
+                FieldItem idField = getIdField();
+                String id = SQL.wrapPlaceholder(idField.getColumnName());
+                joinByParentPrimaryKey = varColumnList.stream().anyMatch(e -> e.getValue().equalsIgnoreCase(id));
             } else {
-                this.idColumns = parseByMainIdColumns();
+                joinByParentPrimaryKey = false;
             }
         }
-        return idColumns;
+        return joinByParentPrimaryKey;
+    }
+
+    public Set<ColumnItem> getGroupByIdColumns() {
+        if (groupByIdColumns == null) {
+            Set<ColumnItem> groupByIdColumns;
+            if (objectField != null) {
+                String[] groupBy = objectField.getGroupByIdColumns();
+                if (groupBy != null && groupBy.length > 0) {
+                    groupByIdColumns = Arrays.stream(groupBy).map(e -> {
+                        String[] split = e.split("[.]");
+                        ColumnItem columnItem = new ColumnItem();
+                        if (split.length == 1) {
+                            columnItem.setColumnName(split[0]);
+                        } else {
+                            columnItem.setColumnName(split[0]);
+                            columnItem.setOwner(split[1]);
+                        }
+                        return columnItem;
+                    }).collect(Collectors.toCollection(LinkedHashSet::new));
+                } else {
+                    if (objectField.getType() == ESSyncConfig.ObjectField.Type.OBJECT_SQL) {
+                        groupByIdColumns = parseByObjectFieldIdColumns();
+                    } else {
+                        groupByIdColumns = Collections.emptySet();
+                    }
+                }
+            } else {
+                groupByIdColumns = parseByMainIdColumns();
+            }
+            this.groupByIdColumns = groupByIdColumns;
+        }
+        return groupByIdColumns;
     }
 
     private Set<ColumnItem> parseByObjectFieldIdColumns() {
         Set<ColumnItem> idColumns = new LinkedHashSet<>();
         TableItem mainTable = getMainTable();
-        Map<String, List<String>> childColumnList = SqlParser.getVarColumnList(objectField.getOnChildChangeWhereSql());
-        List<String> mainColumnList = childColumnList.get(mainTable.getAlias());
-        if (mainColumnList == null || mainColumnList.isEmpty()) {
-            childColumnList = SqlParser.getVarColumnList(objectField.getOnParentChangeWhereSql());
-            mainColumnList = childColumnList.get(mainTable.getAlias());
+        List<String> mainColumnList = SqlParser.getVarColumnList(objectField.getOnChildChangeWhereSql()).stream()
+                .filter(e -> e.isOwner(mainTable.getAlias()))
+                .map(SqlParser.BinaryOpExpr::getName)
+                .collect(Collectors.toList());
+        if (mainColumnList.isEmpty()) {
+            mainColumnList = SqlParser.getVarColumnList(objectField.getOnParentChangeWhereSql()).stream()
+                    .filter(e -> e.isOwner(mainTable.getAlias()))
+                    .map(SqlParser.BinaryOpExpr::getName)
+                    .collect(Collectors.toList());
         }
         LinkedHashSet<String> mainColumnSet = new LinkedHashSet<>(mainColumnList);
         for (String column : mainColumnSet) {
@@ -90,7 +127,11 @@ public class SchemaItem {
 
     @Override
     public String toString() {
-        return mainTable == null ? "" : mainTable.tableName + "[" + sql + "]";
+        if (objectField == null) {
+            return String.valueOf(esMapping);
+        } else {
+            return Objects.toString(esMapping, "") + " [" + objectField + "]";
+        }
     }
 
     public void init(ESSyncConfig.ObjectField objectField, ESMapping esMapping) {
@@ -108,8 +149,9 @@ public class SchemaItem {
             mainTable.main = true;
         }
         getSlaveTableList();
-        getIdColumns();
+        getGroupByIdColumns();
         getIdField();
+        isJoinByParentPrimaryKey();
     }
 
     public FieldItem getIdField() {

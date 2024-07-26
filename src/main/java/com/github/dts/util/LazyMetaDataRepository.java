@@ -38,4 +38,11 @@ public class LazyMetaDataRepository implements MetaDataRepository {
         }
         repository.setCursor(cursor);
     }
+
+    @Override
+    public String name() {
+        MetaDataRepository repository = getRepository();
+        String name = repository == null ? "null" : repository.name();
+        return "Lazy(" + name + ")";
+    }
 }

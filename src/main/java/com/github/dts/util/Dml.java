@@ -183,11 +183,19 @@ public class Dml implements Serializable {
         this.isDdl = isDdl;
     }
 
-    public boolean isTypeDelete(){
+    public boolean isTypeInit() {
+        return "INIT".equalsIgnoreCase(type);
+    }
+
+    public boolean isTypeInsert() {
+        return "INSERT".equalsIgnoreCase(type);
+    }
+
+    public boolean isTypeDelete() {
         return "DELETE".equalsIgnoreCase(type);
     }
 
-    public boolean isTypeUpdate(){
+    public boolean isTypeUpdate() {
         return "UPDATE".equalsIgnoreCase(type);
     }
 

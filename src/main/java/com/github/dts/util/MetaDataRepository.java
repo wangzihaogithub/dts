@@ -33,4 +33,7 @@ public interface MetaDataRepository {
     default void close() {
     }
 
+    default String name() {
+        return getClass().getSimpleName();
+    }
 }
