@@ -15,6 +15,7 @@ public interface Adapter {
     /**
      * 外部适配器初始化接口
      *
+     * @param canalAdapter 适配器参数
      * @param configuration 外部适配器配置信息
      * @param envProperties 环境变量的配置属性
      */
