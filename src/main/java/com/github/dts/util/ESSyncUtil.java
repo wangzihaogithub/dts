@@ -45,7 +45,7 @@ public class ESSyncUtil {
     }
 
     public static Map<String, ESSyncConfig> loadYamlToBean(Properties envProperties, File resourcesDir, String env) {
-        log.info("## Start loading es mapping config ... {}", resourcesDir);
+        log.info("## Start loading es mapping config {}", resourcesDir);
         Map<String, ESSyncConfig> esSyncConfig = new LinkedHashMap<>();
         Map<String, byte[]> yamlMap = loadYamlToBytes(resourcesDir);
         for (Map.Entry<String, byte[]> entry : yamlMap.entrySet()) {

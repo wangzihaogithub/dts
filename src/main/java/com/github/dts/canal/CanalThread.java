@@ -145,7 +145,7 @@ public class CanalThread extends Thread {
                                 }
                             } catch (Exception e) {
                                 exception = e;
-                                logger.error("=============={}======>Error sync not ACK!<====================", e, e);
+                                logger.error("=============={}======>Error sync not ACK!<====================", e.toString(), e);
                                 if (lastErrorTimestamp == 0
                                         // 10分钟内闭嘴
                                         || System.currentTimeMillis() - lastErrorTimestamp > 1000 * 60 * 10) {

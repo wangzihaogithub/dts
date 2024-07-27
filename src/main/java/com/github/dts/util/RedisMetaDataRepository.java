@@ -27,7 +27,7 @@ public class RedisMetaDataRepository implements MetaDataRepository {
                 connection.close();
                 return true;
             } catch (Exception e) {
-                log.warn("RedisConnection is not active {}", e, e);
+                log.warn("RedisConnection is not active {}", e.toString());
                 return false;
             }
         } else {

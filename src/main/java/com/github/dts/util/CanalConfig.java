@@ -374,7 +374,7 @@ public class CanalConfig {
 
         public static class Es7x {
             private final SlaveNestedField slaveNestedField = new SlaveNestedField();
-            private final MainJoinTableField mainJoinTableField = new MainJoinTableField();
+            private final MainJoinNestedField mainJoinNestedField = new MainJoinNestedField();
             private String resourcesDir = "es";
             private String[] address;// es 读地址
             private String username;// 账号，来源：租户账号
@@ -418,8 +418,8 @@ public class CanalConfig {
                 this.basicMaxIdIn = basicMaxIdIn;
             }
 
-            public MainJoinTableField getMainJoinTableField() {
-                return mainJoinTableField;
+            public MainJoinNestedField getMainJoinTableField() {
+                return mainJoinNestedField;
             }
 
             public int getStreamChunkSize() {
@@ -550,9 +550,9 @@ public class CanalConfig {
                 return slaveNestedField;
             }
 
-            public static class MainJoinTableField {
-                private int threads = 5;
-                private int queues = 100;
+            public static class MainJoinNestedField {
+                private int threads = 1;
+                private int queues = 1000;
                 private boolean block = false;// 写从表是否阻塞主表
 
                 public int getThreads() {
@@ -581,8 +581,8 @@ public class CanalConfig {
             }
 
             public static class SlaveNestedField {
-                private int threads = 5;
-                private int queues = 100;
+                private int threads = 1;
+                private int queues = 1000;
                 private boolean block = false;// 写从表是否阻塞主表
 
                 public int getThreads() {

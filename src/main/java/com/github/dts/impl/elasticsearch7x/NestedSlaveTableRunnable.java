@@ -69,7 +69,7 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
             log.info("NestedMainJoinTable={}ms, rowCount={}, ts={}, error={}",
                     System.currentTimeMillis() - timestamp.getTime(),
                     updateDmlList.size(),
-                    timestamp, e, e);
+                    timestamp, e.toString(), e);
             completeExceptionally(e);
             throw e;
         } finally {

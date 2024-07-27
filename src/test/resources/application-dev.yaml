@@ -1,7 +1,7 @@
-cnwy.binlog-prefix: 'cnwy.'
 canal.conf:
   srcDataSources:
     defaultDS:
+      # 填上数据库地址账号密码就可以debug了
       url: 'jdbc:mysql://xxx.com:3306/cnwy?useUnicode=true&characterEncoding=utf-8&allowMultiQueries=true&rewriteBatchedStatements=true&zeroDateTimeBehavior=CONVERT_TO_NULL'
       username: 'xxx'
       password: 'xxx'
@@ -9,26 +9,27 @@ canal.conf:
     - destination: 'cnwybinlog'
       connector: com.github.dts.canal.MysqlBinlogCanalConnector
       topics:
-        - '${cnwy.binlog-prefix}job'
-        - '${cnwy.binlog-prefix}job_region'
-        - '${cnwy.binlog-prefix}job_specialty'
-        - '${cnwy.binlog-prefix}corp'
-        - '${cnwy.binlog-prefix}corp_name'
-        - '${cnwy.binlog-prefix}corp_region'
-        - '${cnwy.binlog-prefix}region'
-        - '${cnwy.binlog-prefix}corp_relation_tag'
-        - '${cnwy.binlog-prefix}corp_tag'
-        - '${cnwy.binlog-prefix}corp_category'
-        - '${cnwy.binlog-prefix}notice'
-        - '${cnwy.binlog-prefix}corp_recruit_url'
+        - 'cnwy.job'
+        - 'cnwy.job_region'
+        - 'cnwy.job_specialty'
+        - 'cnwy.corp'
+        - 'cnwy.corp_name'
+        - 'cnwy.corp_region'
+        - 'cnwy.region'
+        - 'cnwy.corp_relation_tag'
+        - 'cnwy.corp_tag'
+        - 'cnwy.corp_category'
+        - 'cnwy.notice'
+        - 'cnwy.corp_recruit_url'
       properties: {
         dataSource: 'defaultDS',
         maxDumpThread: 1,
-        enableGTID: true
+#        enableGTID: true
       }
       groups:
         - outerAdapters:
             - name: 'adapterES7'
+              # 为了方便调试，可以随便填，直接启动开始debug
               es7x:
                 address: 'xxx:9200'
                 username: 'xxx'

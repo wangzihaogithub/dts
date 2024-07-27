@@ -70,7 +70,7 @@ public abstract class AbstractMessageService {
             Map map = restTemplate.postForObject(url, new HttpEntity<>(body, headers), Map.class);
             return map;
         } catch (Exception e) {
-            log.warn("sendDingtalk {} error {}", title, e, e);
+            log.warn("sendDingtalk {} error {}", title, e.toString());
             return Collections.emptyMap();
         }
     }

@@ -22,8 +22,8 @@ import java.util.stream.Collectors;
 /**
  * 根据日期全量灌数据，可以继承这个Controller
  * <pre>
- * curl "<a href="http://localhost:8080/es7x/job/syncAll?fieldName=create_time&offsetStart=2022-03-01&offsetEnd=2024-10-01">http://localhost:8080/es7x/job/syncAll</a>"
- * curl "<a href="http://localhost:8080/es7x/job/stop">http://localhost:8080/es7x/job/stop</a>"
+ * curl "<a href="http://localhost:8080/es7x/myxxx/syncAll?fieldName=create_time&offsetStart=2022-03-01&offsetEnd=2024-10-01">http://localhost:8080/es7x/myxxx/syncAll</a>"
+ * curl "<a href="http://localhost:8080/es7x/myxxx/stop">http://localhost:8080/es7x/myxxx/stop</a>"
  * </pre>
  */
 public abstract class AbstractEs7xETLDateController {
@@ -76,7 +76,7 @@ public abstract class AbstractEs7xETLDateController {
                 try {
                     discard(clientIdentity);
                 } catch (InterruptedException e) {
-                    log.info("discard {}", e, e);
+                    log.info("discard {}", e.toString(), e);
                 }
             }).start();
         }

@@ -137,12 +137,12 @@ public class KafkaCanalConnector implements CanalConnector {
         try {
             kafkaConsumer.unsubscribe();
         } catch (Exception e) {
-            logger.warn("rebuild unsubscribe error = {}", e, e);
+            logger.warn("rebuild unsubscribe error = {}", e.toString(), e);
         }
         try {
             disconnect();
         } catch (Exception e) {
-            logger.warn("rebuild disconnect error = {}", e, e);
+            logger.warn("rebuild disconnect error = {}", e.toString(), e);
         }
         connect(lastProperties);
         subscribe(lastTopic);

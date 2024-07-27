@@ -156,7 +156,7 @@ public class Util {
                                     try {
                                         runnable.run();
                                     } catch (Exception e) {
-                                        logger.warn("Scheduled error {}", e, e);
+                                        logger.warn("Scheduled error {}", e.toString(), e);
                                         throw e;
                                     }
                                 } else {
@@ -207,7 +207,7 @@ public class Util {
                                     try {
                                         runnable.run();
                                     } catch (Exception e) {
-                                        logger.warn("error {}", e, e);
+                                        logger.warn("error {}", e.toString(), e);
                                         throw e;
                                     }
                                 } else {

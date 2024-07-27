@@ -22,9 +22,9 @@ import java.util.stream.Collectors;
 /**
  * 根据自增ID的全量灌数据，可以继承这个Controller
  * <pre>
- * curl "<a href="http://localhost:8080/es7x/job/syncById?id=1,2">http://localhost:8080/es7x/job/syncById?id=1,2</a>"
- * curl "<a href="http://localhost:8080/es7x/job/syncAll">http://localhost:8080/es7x/job/syncAll</a>"
- * curl "<a href="http://localhost:8080/es7x/job/stop">http://localhost:8080/es7x/job/stop</a>"
+ * curl "<a href="http://localhost:8080/es7x/myxxx/syncById?id=1,2">http://localhost:8080/es7x/myxxx/syncById?id=1,2</a>"
+ * curl "<a href="http://localhost:8080/es7x/myxxx/syncAll">http://localhost:8080/es7x/myxxx/syncAll</a>"
+ * curl "<a href="http://localhost:8080/es7x/myxxx/stop">http://localhost:8080/es7x/myxxx/stop</a>"
  * </pre>
  */
 public abstract class AbstractEs7xETLIntController {

@@ -23,10 +23,7 @@ import com.alibaba.otter.canal.server.embedded.CanalServerWithEmbedded;
 import com.alibaba.otter.canal.sink.entry.EntryEventSink;
 import com.alibaba.otter.canal.store.memory.MemoryEventStoreWithBuffer;
 import com.alibaba.otter.canal.store.model.BatchMode;
-import com.github.dts.util.CanalConfig;
-import com.github.dts.util.Dml;
-import com.github.dts.util.MetaDataRepository;
-import com.github.dts.util.Util;
+import com.github.dts.util.*;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.mysql.cj.jdbc.MysqlDataSource;
@@ -73,6 +70,8 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
     private Consumer<CanalConnector> rebuildConsumer;
     private boolean connect;
     private MetaDataFileMixedMetaManager metaManager;
+    // 最大Canal事件存储内存
+    private final RingBufferSizeMemoryEnum eventStoreMemoryEnum;
 
     public MysqlBinlogCanalConnector(CanalConfig canalConfig,
                                      CanalConfig.CanalAdapter config,
@@ -104,6 +103,11 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
             this.dataSource = dataSource(url, username, password);
         }
 
+        // JVM内存的${maxEventStoreMemoryJvmRate}%，分给Canal事件存储用
+        int maxEventStoreMemoryJvmRate = Integer.parseInt(properties.getProperty("maxEventStoreMemoryJvmRate", "35%").trim().replace("%", "").trim());
+        this.eventStoreMemoryEnum = RingBufferSizeMemoryEnum.getByJvmMaxMemoryRate(maxEventStoreMemoryJvmRate);
+
+        log.info("binlog used max eventStoreMemory = {}, by jvm memory{}%", eventStoreMemoryEnum, maxEventStoreMemoryJvmRate);
         this.enableGTID = "true".equalsIgnoreCase(properties.getProperty("enableGTID", "false"));
         this.slaveId = Integer.parseInt(properties.getProperty("slaveId", String.valueOf(generateUniqueServerId(clientIdentityName, Util.getIPAddress()))));
         this.dataDir = new File(properties.getProperty("dataDir", System.getProperty("user.dir")));
@@ -337,6 +341,15 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
                         }
                     }
                 };
+
+        int availableProcessors = Runtime.getRuntime().availableProcessors();
+        if (availableProcessors < 4) {
+            eventParser.setParallel(false);
+        } else {
+            eventParser.setParallelThreadSize(availableProcessors * 40 / 100); // 40%的能力跑解析,剩余部分处理网络
+            eventParser.setParallelBufferSize(256); // 必须为2的幂
+        }
+
         eventParser.setDestination(identity.getDestination());
         eventParser.setSlaveId(slaveId);
         eventParser.setDetectingEnable(false);
@@ -389,6 +402,8 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
         eventParser.setEnableTsdb(false);
         MemoryEventStoreWithBuffer eventStore = new MemoryEventStoreWithBuffer();
         eventStore.setBatchMode(BatchMode.MEMSIZE);
+        eventStore.setBufferSize(eventStoreMemoryEnum.getBufferSizeKB());
+        eventStore.setBufferMemUnit(1024); // memsize的单位，默认为1kb大小
 
         EntryEventSink eventSink = new EntryEventSink();
         eventSink.setEventStore(eventStore);
@@ -431,6 +446,7 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
         try {
             waitMaxDumpThread();
         } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             return;
         }
         if (!server.isStart()) {
@@ -444,6 +460,7 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
         try {
             waitMaxDumpThread();
         } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             return;
         }
 
@@ -503,9 +520,11 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
     }
 
     @Override
-    public void disconnect() {
+    public synchronized void disconnect() {
         if (connect) {
-            server.unsubscribe(identity);
+            if (server.isStart(identity.getDestination())) {
+                server.unsubscribe(identity);
+            }
             server.stop(identity.getDestination());
             server.stop();
             this.connect = false;

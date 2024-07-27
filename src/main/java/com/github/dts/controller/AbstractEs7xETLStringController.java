@@ -29,9 +29,9 @@ import java.util.stream.Collectors;
  * 2024071120001563920040989	苏州城市建设投资发展集团	苏州物资控股（集团）有限责任公司
  * </pre>
  * <pre>
- * curl "<a href="http://localhost:8080/es7x/corp/syncById?id=2024071120255559720056013,2024071118325561520000001">http://localhost:8080/es7x/corp/syncById?id=2024071120255559720056013,2024071118325561520000001</a>"
- * curl "<a href="http://localhost:8080/es7x/corp/syncAll">http://localhost:8080/es7x/corp/syncAll</a>"
- * curl "<a href="http://localhost:8080/es7x/corp/stop">http://localhost:8080/es7x/corp/stop</a>"
+ * curl "<a href="http://localhost:8080/es7x/myxxx/syncById?id=2024071120255559720056013,2024071118325561520000001">http://localhost:8080/es7x/myxxx/syncById?id=2024071120255559720056013,2024071118325561520000001</a>"
+ * curl "<a href="http://localhost:8080/es7x/myxxx/syncAll">http://localhost:8080/es7x/myxxx/syncAll</a>"
+ * curl "<a href="http://localhost:8080/es7x/myxxx/stop">http://localhost:8080/es7x/myxxx/stop</a>"
  * </pre>
  */
 public abstract class AbstractEs7xETLStringController {

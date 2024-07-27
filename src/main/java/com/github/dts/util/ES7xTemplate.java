@@ -56,7 +56,7 @@ public class ES7xTemplate implements ESTemplate {
                 return fun.apply(rs);
             }
         } catch (Exception e) {
-            logger.error("sqlRs has error, sql: {} ,异常信息：{}", sql, e, e);
+            logger.error("sqlRs has error, sql: {} ,异常信息：{}", sql, e.toString());
             Util.sneakyThrows(e);
             return null;
         }

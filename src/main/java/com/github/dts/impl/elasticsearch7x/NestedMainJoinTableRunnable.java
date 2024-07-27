@@ -113,7 +113,7 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
             log.info("NestedMainJoinTable={}ms, rowCount={}, ts={}, error={}",
                     System.currentTimeMillis() - maxTimestamp.getTime(),
                     childrenCounter.intValue(),
-                    maxTimestamp, e, e);
+                    maxTimestamp, e.toString(), e);
             completeExceptionally(e);
             throw e;
         }
