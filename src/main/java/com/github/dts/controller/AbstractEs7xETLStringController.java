@@ -175,7 +175,8 @@ public abstract class AbstractEs7xETLStringController {
 
     @RequestMapping("/deleteTrim")
     public Integer deleteTrim(@RequestParam(required = false, defaultValue = "500") int offsetAdd,
-                              @RequestParam String esIndexName) {
+                              @RequestParam String esIndexName,
+                              @RequestParam(required = false, defaultValue = "1000") int maxSendMessageDeleteIdSize) {
         List<ES7xAdapter> adapterList = startupServer.getAdapter(ES7xAdapter.class);
         if (adapterList.isEmpty()) {
             return 0;
@@ -183,34 +184,48 @@ public abstract class AbstractEs7xETLStringController {
 
         executorService.execute(() -> {
             for (ES7xAdapter adapter : adapterList) {
-                Map<String, ESSyncConfig> configMap = adapter.getEsSyncConfigByIndex(esIndexName);
-                for (ESSyncConfig config : configMap.values()) {
-                    ESSyncConfig.ESMapping esMapping = config.getEsMapping();
-                    JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(config.getDataSourceKey());
-                    String pk = esMapping.getPk();
-                    String tableName = esMapping.getSchemaItem().getMainTable().getTableName();
+                int hitListSize = 0;
+                int deleteSize = 0;
+                List<String> deleteIdList = new ArrayList<>();
+                Timestamp timestamp = new Timestamp(System.currentTimeMillis());
+                try {
+                    Map<String, ESSyncConfig> configMap = adapter.getEsSyncConfigByIndex(esIndexName);
+                    for (ESSyncConfig config : configMap.values()) {
+                        ESSyncConfig.ESMapping esMapping = config.getEsMapping();
+                        JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(config.getDataSourceKey());
+                        String pk = esMapping.getPk();
+                        String tableName = esMapping.getSchemaItem().getMainTable().getTableName();
 
-                    ESTemplate esTemplate = adapter.getEsTemplate();
+                        ESTemplate esTemplate = adapter.getEsTemplate();
 
-                    Object[] searchAfter = null;
-                    do {
-                        ESTemplate.ESSearchResponse searchResponse = esTemplate.searchAfter(esMapping, searchAfter, offsetAdd);
-                        List<ESTemplate.Hit> hitList = searchResponse.getHitList();
-                        if (hitList.isEmpty()) {
-                            break;
-                        }
-                        String ids = hitList.stream().map(ESTemplate.Hit::getId).collect(Collectors.joining("\",\""));
-                        String sql = String.format("select %s from %s where %s in (\"%s\")", pk, tableName, pk, ids);
-                        Set<String> dbIds = new HashSet<>(jdbcTemplate.queryForList(sql, String.class));
-                        for (ESTemplate.Hit hit : hitList) {
-                            String id = hit.getId();
-                            if (!dbIds.contains(id)) {
-                                esTemplate.delete(esMapping, id, null, null);
+                        Object[] searchAfter = null;
+                        do {
+                            ESTemplate.ESSearchResponse searchResponse = esTemplate.searchAfter(esMapping, searchAfter, offsetAdd);
+                            List<ESTemplate.Hit> hitList = searchResponse.getHitList();
+                            if (hitList.isEmpty()) {
+                                break;
                             }
-                        }
-                        esTemplate.commit();
-                        searchAfter = searchResponse.getLastSortValues();
-                    } while (true);
+                            hitListSize += hitList.size();
+                            String ids = hitList.stream().map(ESTemplate.Hit::getId).collect(Collectors.joining("\",\""));
+                            String sql = String.format("select %s from %s where %s in (\"%s\")", pk, tableName, pk, ids);
+                            Set<String> dbIds = new HashSet<>(jdbcTemplate.queryForList(sql, String.class));
+                            for (ESTemplate.Hit hit : hitList) {
+                                String id = hit.getId();
+                                if (!dbIds.contains(id)) {
+                                    esTemplate.delete(esMapping, id, null, null);
+                                    deleteSize++;
+                                    if (deleteIdList.size() < maxSendMessageDeleteIdSize) {
+                                        deleteIdList.add(id);
+                                    }
+                                }
+                            }
+                            esTemplate.commit();
+                            searchAfter = searchResponse.getLastSortValues();
+                        } while (true);
+                        sendTrimDone(timestamp, hitListSize, deleteSize, deleteIdList);
+                    }
+                } catch (Exception e) {
+                    sendTrimError(e, timestamp, hitListSize, deleteSize, deleteIdList);
                 }
             }
         });
@@ -288,4 +303,35 @@ public abstract class AbstractEs7xETLStringController {
                 + ",\n\n 对象 = " + getClass().getSimpleName();
         messageService.send(title, content);
     }
+
+    protected void sendTrimDone(Date startTime, int dmlSize, int deleteSize, List<String> deleteIdList) {
+        String title = "ES搜索全量校验Trim数据-结束";
+        String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
+                + " \n\n   ---  "
+                + ",\n\n 开始时间 = " + startTime
+                + ",\n\n 结束时间 = " + new Timestamp(System.currentTimeMillis())
+                + ",\n\n 校验条数 = " + dmlSize
+                + ",\n\n 删除条数 = " + deleteSize
+                + ",\n\n 删除ID = " + deleteIdList
+                + ",\n\n 对象 = " + getClass().getSimpleName();
+        messageService.send(title, content);
+    }
+
+    private void sendTrimError(Throwable throwable, Date timestamp, int dmlSize, int deleteSize, List<String> deleteIdList) {
+        String title = "ES搜索全量校验Trim数据-异常";
+        StringWriter writer = new StringWriter();
+        throwable.printStackTrace(new PrintWriter(writer));
+
+        String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
+                + " \n\n   ---  "
+                + ",\n\n 对象 = " + getClass().getSimpleName()
+                + ",\n\n 开始时间 = " + timestamp
+                + ",\n\n 校验条数 = " + dmlSize
+                + ",\n\n 删除条数 = " + deleteSize
+                + ",\n\n 删除ID = " + deleteIdList
+                + ",\n\n 异常 = " + throwable
+                + ",\n\n 明细 = " + writer;
+        messageService.send(title, content);
+    }
+
 }
