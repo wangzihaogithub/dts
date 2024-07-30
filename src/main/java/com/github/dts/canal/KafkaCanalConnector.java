@@ -203,6 +203,7 @@ public class KafkaCanalConnector implements CanalConnector {
                 kafkaConsumer.seek(partition, offset);
             }
 
+            getAck2().ack();
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("endOffsets", endOffsets.toString());
             result.put("currentOffsets", currentOffsets.toString());

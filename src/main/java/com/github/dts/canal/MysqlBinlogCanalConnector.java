@@ -547,6 +547,7 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
             this.lastMessage = message;
             maxId = message.getId();
             ack();
+            getAck2().ack();
         }
         Map<String, Object> result = new HashMap<>();
         result.put("minId", minId);
