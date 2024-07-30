@@ -368,6 +368,9 @@ public class ESSyncConfig {
 
             switch (type) {
                 case ARRAY: {
+                    if (val instanceof Collection) {
+                        return val;
+                    }
                     String varStr = val.toString();
                     if (Util.isEmpty(varStr)) {
                         return null;
@@ -376,9 +379,15 @@ public class ESSyncConfig {
                     return Arrays.asList(values);
                 }
                 case OBJECT: {
+                    if (val instanceof Map) {
+                        return val;
+                    }
                     return JsonUtil.toMap(val.toString(), true);
                 }
                 case BOOLEAN: {
+                    if (val instanceof Boolean) {
+                        return val;
+                    }
                     return ESSyncUtil.castToBoolean(val);
                 }
                 case STATIC_METHOD: {
