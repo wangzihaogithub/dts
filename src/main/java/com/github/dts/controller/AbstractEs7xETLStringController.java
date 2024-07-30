@@ -45,40 +45,6 @@ public abstract class AbstractEs7xETLStringController {
     protected AbstractMessageService messageService;
     private boolean stop = false;
 
-    private static String getDmlListMaxId(List<Dml> list) {
-        if (list.isEmpty()) {
-            return null;
-        }
-        Dml dml = list.get(list.size() - 1);
-        List<String> pkNames = dml.getPkNames();
-        if (pkNames.size() != 1) {
-            throw new IllegalArgumentException("pkNames.size() != 1: " + pkNames);
-        }
-        String pkName = pkNames.iterator().next();
-        Map<String, Object> last = dml.getData().get(dml.getData().size() - 1);
-        Object o = last.get(pkName);
-        return o == null || "".equals(o) ? null : o.toString();
-    }
-
-    protected List<Dml> convertDmlList(JdbcTemplate jdbcTemplate, String catalog, String minId, int limit, String tableName, String idColumnName, ESSyncConfig config) {
-        List<Map<String, Object>> jobList = selectList(jdbcTemplate, minId, limit, tableName, idColumnName);
-        List<Dml> dmlList = new ArrayList<>();
-        for (Map<String, Object> row : jobList) {
-            dmlList.addAll(Dml.convertInsert(Arrays.asList(row), Arrays.asList(idColumnName), tableName, catalog, new String[]{config.getDestination()}));
-        }
-        return dmlList;
-    }
-
-    protected List<Map<String, Object>> selectList(JdbcTemplate jdbcTemplate, String minId, int limit, String tableName, String idColumnName) {
-        String sql;
-        if (limit == 1) {
-            sql = "select * from " + tableName + " where " + idColumnName + " = ? limit ?";
-        } else {
-            sql = "select * from " + tableName + " where " + idColumnName + " > ? limit ?";
-        }
-        return jdbcTemplate.queryForList(sql, minId, limit);
-    }
-
     @RequestMapping("/syncAll")
     public String syncAll(
             @RequestParam(required = false, defaultValue = "0") String offsetStart,
@@ -126,22 +92,6 @@ public abstract class AbstractEs7xETLStringController {
             }
         });
         return "1";
-    }
-
-    private void sendError(Throwable throwable, String minId, Date timestamp, int dmlSize) {
-        String title = "ES搜索全量刷数据-异常";
-        StringWriter writer = new StringWriter();
-        throwable.printStackTrace(new PrintWriter(writer));
-
-        String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
-                + " \n\n   ---  "
-                + ",\n\n 对象 = " + getClass().getSimpleName()
-                + ",\n\n minOffset = " + minId
-                + ",\n\n 开始时间 = " + timestamp
-                + ",\n\n DML条数 = " + dmlSize
-                + ",\n\n 异常 = " + throwable
-                + ",\n\n 明细 = " + writer;
-        messageService.send(title, content);
     }
 
     @RequestMapping("/syncById")
@@ -238,23 +188,13 @@ public abstract class AbstractEs7xETLStringController {
         return stop;
     }
 
-    private List<Map> discard(String clientIdentity) throws InterruptedException {
-        List<Map> list = new ArrayList<>();
+    @RequestMapping("/discard")
+    public List discard(@RequestParam String clientIdentity) throws InterruptedException {
+        List list = new ArrayList();
         for (StartupServer.ThreadRef thread : startupServer.getCanalThread(clientIdentity)) {
             list.add(thread.getCanalThread().getConnector().setDiscard(true));
         }
         return list;
-    }
-
-    private void setSuspendEs7x(boolean suspend, String clientIdentity) {
-        List<StartupServer.ThreadRef> canalThread = startupServer.getCanalThread(clientIdentity);
-        for (StartupServer.ThreadRef thread : canalThread) {
-            if (suspend) {
-                thread.stopThread();
-            } else {
-                thread.startThread();
-            }
-        }
     }
 
     protected List<Dml> syncAll(JdbcTemplate jdbcTemplate, String catalog, String minId, int limit, boolean append, boolean onlyCurrentIndex,
@@ -297,10 +237,10 @@ public abstract class AbstractEs7xETLStringController {
         String title = "ES搜索全量刷数据-结束";
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
+                + ",\n\n 对象 = " + getClass().getSimpleName()
                 + ",\n\n 开始时间 = " + startTime
                 + ",\n\n 结束时间 = " + new Timestamp(System.currentTimeMillis())
-                + ",\n\n DML条数 = " + dmlSize
-                + ",\n\n 对象 = " + getClass().getSimpleName();
+                + ",\n\n DML条数 = " + dmlSize;
         messageService.send(title, content);
     }
 
@@ -308,12 +248,12 @@ public abstract class AbstractEs7xETLStringController {
         String title = "ES搜索全量校验Trim数据-结束";
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
+                + ",\n\n 对象 = " + getClass().getSimpleName()
                 + ",\n\n 开始时间 = " + startTime
                 + ",\n\n 结束时间 = " + new Timestamp(System.currentTimeMillis())
                 + ",\n\n 校验条数 = " + dmlSize
                 + ",\n\n 删除条数 = " + deleteSize
-                + ",\n\n 删除ID = " + deleteIdList
-                + ",\n\n 对象 = " + getClass().getSimpleName();
+                + ",\n\n 删除ID = " + deleteIdList;
         messageService.send(title, content);
     }
 
@@ -332,6 +272,56 @@ public abstract class AbstractEs7xETLStringController {
                 + ",\n\n 异常 = " + throwable
                 + ",\n\n 明细 = " + writer;
         messageService.send(title, content);
+    }
+
+    private void sendError(Throwable throwable, String minId, Date timestamp, int dmlSize) {
+        String title = "ES搜索全量刷数据-异常";
+        StringWriter writer = new StringWriter();
+        throwable.printStackTrace(new PrintWriter(writer));
+
+        String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
+                + " \n\n   ---  "
+                + ",\n\n 对象 = " + getClass().getSimpleName()
+                + ",\n\n minOffset = " + minId
+                + ",\n\n 开始时间 = " + timestamp
+                + ",\n\n DML条数 = " + dmlSize
+                + ",\n\n 异常 = " + throwable
+                + ",\n\n 明细 = " + writer;
+        messageService.send(title, content);
+    }
+
+    private static String getDmlListMaxId(List<Dml> list) {
+        if (list.isEmpty()) {
+            return null;
+        }
+        Dml dml = list.get(list.size() - 1);
+        List<String> pkNames = dml.getPkNames();
+        if (pkNames.size() != 1) {
+            throw new IllegalArgumentException("pkNames.size() != 1: " + pkNames);
+        }
+        String pkName = pkNames.iterator().next();
+        Map<String, Object> last = dml.getData().get(dml.getData().size() - 1);
+        Object o = last.get(pkName);
+        return o == null || "".equals(o) ? null : o.toString();
+    }
+
+    protected List<Dml> convertDmlList(JdbcTemplate jdbcTemplate, String catalog, String minId, int limit, String tableName, String idColumnName, ESSyncConfig config) {
+        List<Map<String, Object>> jobList = selectList(jdbcTemplate, minId, limit, tableName, idColumnName);
+        List<Dml> dmlList = new ArrayList<>();
+        for (Map<String, Object> row : jobList) {
+            dmlList.addAll(Dml.convertInsert(Arrays.asList(row), Arrays.asList(idColumnName), tableName, catalog, new String[]{config.getDestination()}));
+        }
+        return dmlList;
+    }
+
+    protected List<Map<String, Object>> selectList(JdbcTemplate jdbcTemplate, String minId, int limit, String tableName, String idColumnName) {
+        String sql;
+        if (limit == 1) {
+            sql = "select * from " + tableName + " where " + idColumnName + " = ? limit ?";
+        } else {
+            sql = "select * from " + tableName + " where " + idColumnName + " > ? limit ?";
+        }
+        return jdbcTemplate.queryForList(sql, minId, limit);
     }
 
 }
