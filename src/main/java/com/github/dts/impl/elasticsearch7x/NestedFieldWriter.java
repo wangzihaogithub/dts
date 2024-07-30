@@ -86,22 +86,28 @@ public class NestedFieldWriter {
         ESSyncConfig.ObjectField objectField = schemaItem.getObjectField();
         switch (objectField.getType()) {
             case ARRAY_SQL: {
+                List<Map<String, Object>> rowListCopy = new ArrayList<>();
                 for (Map<String, Object> row : rowList) {
-                    esTemplate.convertValueType(esMapping, objectField.getFieldName(), row);
+                    Map<String, Object> rowCopy = new LinkedHashMap<>(row);
+                    esTemplate.convertValueType(esMapping, objectField.getFieldName(), rowCopy);
+                    rowListCopy.add(rowCopy);
                 }
                 //更新ES文档 (执行完会统一提交, 这里不用commit)
                 esTemplate.update(esMapping, objectField.getFieldName(), pkValue, Collections.singletonMap(
-                        objectField.getFieldName(), rowList), bulkRequestList);
+                        objectField.getFieldName(), rowListCopy), bulkRequestList);
                 break;
             }
             case OBJECT_SQL: {
-                Map<String, Object> resultMap = rowList == null || rowList.isEmpty() ? null : rowList.get(0);
-                if (resultMap != null) {
-                    esTemplate.convertValueType(esMapping, objectField.getFieldName(), resultMap);
+                Map<String, Object> rowCopy;
+                if (rowList != null && !rowList.isEmpty()) {
+                    rowCopy = new LinkedHashMap<>(rowList.get(0));
+                    esTemplate.convertValueType(esMapping, objectField.getFieldName(), rowCopy);
+                } else {
+                    rowCopy = null;
                 }
                 //更新ES文档 (执行完会统一提交, 这里不用commit)
                 esTemplate.update(esMapping, objectField.getFieldName(), pkValue, Collections.singletonMap(
-                        objectField.getFieldName(), resultMap), bulkRequestList);
+                        objectField.getFieldName(), rowCopy), bulkRequestList);
                 break;
             }
             default: {
