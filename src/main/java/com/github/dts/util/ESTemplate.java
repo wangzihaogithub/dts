@@ -2,8 +2,7 @@ package com.github.dts.util;
 
 import com.github.dts.util.ESSyncConfig.ESMapping;
 
-import java.util.Collection;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 
 public interface ESTemplate extends AutoCloseable {
@@ -27,6 +26,7 @@ public interface ESTemplate extends AutoCloseable {
      * @param bulkRequestList bulkRequestList
      */
     void update(ESMapping mapping, Object pkVal, Map<String, Object> esFieldData, BulkRequestList bulkRequestList);
+
     void update(ESMapping mapping, String parentFieldName, Object pkVal, Map<String, Object> esFieldData, BulkRequestList bulkRequestList);
 
     /**
@@ -50,6 +50,8 @@ public interface ESTemplate extends AutoCloseable {
     ESBulkRequest.ESBulkResponse deleteByIdRange(ESMapping mapping, String minId, String maxId);
 
     ESBulkRequest.ESBulkResponse deleteByRange(ESMapping mapping, String fieldName, Object minValue, Object maxValue, Integer limit);
+
+    ESSearchResponse searchAfter(ESMapping mapping, Object[] searchAfter, Integer limit);
 
     /**
      * 通过主键删除数据
@@ -92,11 +94,11 @@ public interface ESTemplate extends AutoCloseable {
     /**
      * 转换类型
      *
-     * @param esMapping     es映射关系
+     * @param esMapping       es映射关系
      * @param parentFieldName 父字段
-     * @param theConvertMap 需要转换的数据
+     * @param theConvertMap   需要转换的数据
      */
-    void convertValueType(ESMapping esMapping,String parentFieldName,
+    void convertValueType(ESMapping esMapping, String parentFieldName,
                           Map<String, Object> theConvertMap);
 
 
@@ -123,5 +125,40 @@ public interface ESTemplate extends AutoCloseable {
 
         void commit(ESTemplate esTemplate);
 
+    }
+
+    class ESSearchResponse {
+        private final List<Hit> hitList = new ArrayList<>();
+
+        public List<Hit> getHitList() {
+            return hitList;
+        }
+
+        public Object[] getLastSortValues() {
+            if (hitList.isEmpty()) {
+                return null;
+            }
+            ESTemplate.Hit hit = hitList.get(hitList.size() - 1);
+            return hit.getSortValues();
+        }
+    }
+
+    static class Hit extends LinkedHashMap<String, Object> {
+        private final String id;
+        private final Object[] sortValues;
+
+        public Hit(String id, Map<String, Object> map, Object[] sortValues) {
+            super(map);
+            this.id = id;
+            this.sortValues = sortValues;
+        }
+
+        public String getId() {
+            return id;
+        }
+
+        public Object[] getSortValues() {
+            return sortValues;
+        }
     }
 }

@@ -76,6 +76,16 @@ public class StartupServer implements ApplicationRunner {
         return type.cast(adapterMap.get(name));
     }
 
+    public <T extends Adapter> List<T> getAdapter(Class<T> type) {
+        List<T> list = new ArrayList<>();
+        for (Adapter value : adapterMap.values()) {
+            if (type.isAssignableFrom(value.getClass())) {
+                list.add((T) value);
+            }
+        }
+        return list;
+    }
+
     public void start(CanalConfig canalClientConfig) {
         // 初始化canal-client的适配器
         if (canalClientConfig.getCanalAdapters() == null) {

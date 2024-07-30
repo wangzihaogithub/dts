@@ -50,13 +50,15 @@ public class Dml implements Serializable {
                                           List<String> pkNames,
                                           String table,
                                           String catalog, String[] destination) {
+        long timeMillis = System.currentTimeMillis();
+
         List<Dml> dmlList = new ArrayList<>();
         for (Map row : rowList) {
             Dml dml = new Dml();
             dml.setData(Arrays.asList(row));
             dml.setTable(table);
-            dml.setEs(System.currentTimeMillis());
-            dml.setTs(System.currentTimeMillis());
+            dml.setEs(timeMillis);
+            dml.setTs(timeMillis);
             dml.setType("INSERT");
             dml.setIsDdl(false);
             dml.setPkNames(pkNames);

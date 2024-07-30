@@ -65,17 +65,11 @@ public abstract class AbstractEs7xETLIntController {
         return maxId == Integer.MIN_VALUE ? null : maxId;
     }
 
-    protected abstract Integer selectMaxId(JdbcTemplate jdbcTemplate);
-
-    protected abstract ES7xAdapter getES7xAdapter();
-
-    protected abstract List<Dml> convertDmlList(JdbcTemplate jdbcTemplate, String catalog, Integer minId, int limit);
-
-    protected List<Dml> convertDmlList(JdbcTemplate jdbcTemplate, String catalog, Integer minId, int limit, String tableName, String idColumnName) {
+    protected List<Dml> convertDmlList(JdbcTemplate jdbcTemplate, String catalog, Integer minId, int limit, String tableName, String idColumnName, ESSyncConfig config) {
         List<Map<String, Object>> jobList = selectList(jdbcTemplate, minId, limit, tableName, idColumnName);
         List<Dml> dmlList = new ArrayList<>();
         for (Map<String, Object> row : jobList) {
-            dmlList.addAll(Dml.convertInsert(Arrays.asList(row), Arrays.asList(idColumnName), tableName, catalog));
+            dmlList.addAll(Dml.convertInsert(Arrays.asList(row), Arrays.asList(idColumnName), tableName, catalog, new String[]{config.getDestination()}));
         }
         return dmlList;
     }
@@ -90,8 +84,48 @@ public abstract class AbstractEs7xETLIntController {
         return jdbcTemplate.queryForList(sql, minId, limit);
     }
 
-    protected ES7xAdapter getES7xAdapter(String name) {
-        return startupServer.getAdapter(name, ES7xAdapter.class);
+    @RequestMapping("/deleteTrim")
+    public Integer deleteTrim(@RequestParam(required = false, defaultValue = "500") int offsetAdd,
+                              @RequestParam String esIndexName) {
+        List<ES7xAdapter> adapterList = startupServer.getAdapter(ES7xAdapter.class);
+        if (adapterList.isEmpty()) {
+            return 0;
+        }
+
+        executorService.execute(() -> {
+            for (ES7xAdapter adapter : adapterList) {
+                Map<String, ESSyncConfig> configMap = adapter.getEsSyncConfigByIndex(esIndexName);
+                for (ESSyncConfig config : configMap.values()) {
+                    ESSyncConfig.ESMapping esMapping = config.getEsMapping();
+                    JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(config.getDataSourceKey());
+                    String pk = esMapping.getPk();
+                    String tableName = esMapping.getSchemaItem().getMainTable().getTableName();
+
+                    ESTemplate esTemplate = adapter.getEsTemplate();
+
+                    Object[] searchAfter = null;
+                    do {
+                        ESTemplate.ESSearchResponse searchResponse = esTemplate.searchAfter(esMapping, searchAfter, offsetAdd);
+                        List<ESTemplate.Hit> hitList = searchResponse.getHitList();
+                        if (hitList.isEmpty()) {
+                            break;
+                        }
+                        String ids = hitList.stream().map(ESTemplate.Hit::getId).collect(Collectors.joining(","));
+                        String sql = String.format("select %s from %s where %s in (%s)", pk, tableName, pk, ids);
+                        Set<String> dbIds = new HashSet<>(jdbcTemplate.queryForList(sql, String.class));
+                        for (ESTemplate.Hit hit : hitList) {
+                            String id = hit.getId();
+                            if (!dbIds.contains(id)) {
+                                esTemplate.delete(esMapping, id, null, null);
+                            }
+                        }
+                        esTemplate.commit();
+                        searchAfter = searchResponse.getLastSortValues();
+                    } while (true);
+                }
+            }
+        });
+        return 1;
     }
 
     @RequestMapping("/syncAll")
@@ -99,89 +133,117 @@ public abstract class AbstractEs7xETLIntController {
             @RequestParam(required = false, defaultValue = "50") int threads,
             @RequestParam(required = false, defaultValue = "0") int offsetStart,
             Integer offsetEnd,
-            @RequestParam(required = false, defaultValue = "1000") int offsetAdd,
-            @RequestParam(required = false, defaultValue = "defaultDS") String ds,
+            @RequestParam(required = false, defaultValue = "500") int offsetAdd,
+            @RequestParam String esIndexName,
             @RequestParam(required = false, defaultValue = "true") boolean append,
             @RequestParam(required = false, defaultValue = "false") boolean discard,
             @RequestParam(required = false, defaultValue = "false") boolean onlyCurrentIndex,
             @RequestParam(required = false, defaultValue = "100") int joinUpdateSize,
             String[] onlyFieldName) {
-        JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(ds);
-        String catalog = CanalConfig.DatasourceConfig.getCatalog(ds);
+        List<ES7xAdapter> adapterList = startupServer.getAdapter(ES7xAdapter.class);
+        if (adapterList.isEmpty()) {
+            return new ArrayList<>();
+        }
 
         Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(StringUtils::isNotBlank).collect(Collectors.toSet());
-        String clientIdentity = getES7xAdapter().getClientIdentity();
-        if (discard) {
-            new Thread(() -> {
-                try {
-                    discard(clientIdentity);
-                } catch (InterruptedException e) {
-                    log.info("discard {}", e, e);
-                }
-            }).start();
-        }
 
-        setSuspendEs7x(true, clientIdentity);
         this.stop = false;
 
-        Integer maxId = offsetEnd == null || offsetEnd == Integer.MAX_VALUE ?
-                selectMaxId(jdbcTemplate) : offsetEnd;
-
         List<SyncRunnable> runnableList = new ArrayList<>();
-        Date timestamp = new Timestamp(System.currentTimeMillis());
-        AtomicInteger done = new AtomicInteger(0);
-        AtomicInteger dmlSize = new AtomicInteger(0);
-        for (int i = 0; i < threads; i++) {
-            runnableList.add(new SyncRunnable(getClass().getSimpleName(), messageService, i, offsetStart, maxId, threads) {
-                @Override
-                public int run0(int offset) {
-                    if (stop) {
-                        return Integer.MAX_VALUE;
+        for (ES7xAdapter adapter : adapterList) {
+            String clientIdentity = adapter.getClientIdentity();
+            if (discard) {
+                new Thread(() -> {
+                    try {
+                        discard(clientIdentity);
+                    } catch (InterruptedException e) {
+                        log.info("discard {}", e, e);
                     }
-                    List<Dml> list = syncAll(jdbcTemplate, catalog, offset, offsetAdd, append, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet);
-                    dmlSize.addAndGet(list.size());
-                    if (log.isInfoEnabled()) {
-                        log.info("syncAll dmlSize = {}, minOffset = {} ", dmlSize.intValue(), SyncRunnable.minOffset(runnableList));
-                    }
-                    Integer dmlListMaxId = getDmlListMaxId(list);
-                    return dmlListMaxId == null ? Integer.MAX_VALUE : dmlListMaxId;
-                }
+                }).start();
+            }
+            setSuspendEs7x(true, clientIdentity);
 
-                @Override
-                public void done() {
-                    if (done.incrementAndGet() == threads) {
-                        if (log.isInfoEnabled()) {
-                            log.info("syncAll done {}", this);
+            Map<String, ESSyncConfig> configMap = adapter.getEsSyncConfigByIndex(esIndexName);
+            for (ESSyncConfig config : configMap.values()) {
+
+                JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(config.getDataSourceKey());
+                String catalog = CanalConfig.DatasourceConfig.getCatalog(config.getDataSourceKey());
+                String pk = config.getEsMapping().getPk();
+                String tableName = config.getEsMapping().getSchemaItem().getMainTable().getTableName();
+
+                Integer maxId = offsetEnd == null || offsetEnd == Integer.MAX_VALUE ?
+                        selectMaxId(jdbcTemplate, pk, tableName) : offsetEnd;
+
+                Date timestamp = new Timestamp(System.currentTimeMillis());
+                AtomicInteger done = new AtomicInteger(0);
+                AtomicInteger dmlSize = new AtomicInteger(0);
+                for (int i = 0; i < threads; i++) {
+                    runnableList.add(new SyncRunnable(getClass().getSimpleName(), messageService, i, offsetStart, maxId, threads) {
+                        @Override
+                        public int run0(int offset) {
+                            if (stop) {
+                                return Integer.MAX_VALUE;
+                            }
+                            List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, offset, offsetAdd, tableName, pk, config);
+
+                            if (!append) {
+                                Integer dmlListMaxId = getDmlListMaxId(dmlList);
+                                adapter.getEsTemplate().deleteByRange(config.getEsMapping(), ESSyncConfig.ES_ID_FIELD_NAME, offset, dmlListMaxId, offsetAdd);
+                            }
+                            if (!dmlList.isEmpty()) {
+                                adapter.sync(dmlList, false, true, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet);
+                            }
+                            dmlSize.addAndGet(dmlList.size());
+                            if (log.isInfoEnabled()) {
+                                log.info("syncAll dmlSize = {}, minOffset = {} ", dmlSize.intValue(), SyncRunnable.minOffset(runnableList));
+                            }
+                            Integer dmlListMaxId = getDmlListMaxId(dmlList);
+                            return dmlListMaxId == null ? Integer.MAX_VALUE : dmlListMaxId;
                         }
-                        setSuspendEs7x(false, clientIdentity);
-                        sendDone(runnableList, timestamp, dmlSize.intValue());
-                    }
+
+                        @Override
+                        public void done() {
+                            if (done.incrementAndGet() == threads) {
+                                if (log.isInfoEnabled()) {
+                                    log.info("syncAll done {}", this);
+                                }
+                                setSuspendEs7x(false, clientIdentity);
+                                sendDone(runnableList, timestamp, dmlSize.intValue());
+                            }
+                        }
+                    });
                 }
-            });
-        }
-        for (SyncRunnable runnable : runnableList) {
-            executorService.execute(runnable);
+                for (SyncRunnable runnable : runnableList) {
+                    executorService.execute(runnable);
+                }
+            }
         }
         return runnableList;
     }
 
     @RequestMapping("/syncById")
     public Object syncById(@RequestParam Integer[] id,
-                           @RequestParam(required = false, defaultValue = "defaultDS") String ds,
                            @RequestParam(required = false, defaultValue = "false") boolean onlyCurrentIndex,
+                           @RequestParam String esIndexName,
                            String[] onlyFieldName) {
-        JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(ds);
-        String catalog = CanalConfig.DatasourceConfig.getCatalog(ds);
+        List<ES7xAdapter> adapterList = startupServer.getAdapter(ES7xAdapter.class);
         Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(StringUtils::isNotBlank).collect(Collectors.toSet());
-        stop = false;
+
         int count = 0;
-        try {
-            count = id.length;
-            syncById(jdbcTemplate, catalog, Arrays.asList(id), onlyCurrentIndex, onlyFieldNameSet);
-        } finally {
-            log.info("all sync end.  total = {} ", count);
+        for (ES7xAdapter adapter : adapterList) {
+            Map<String, ESSyncConfig> configMap = adapter.getEsSyncConfigByIndex(esIndexName);
+            for (ESSyncConfig config : configMap.values()) {
+                JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(config.getDataSourceKey());
+                String catalog = CanalConfig.DatasourceConfig.getCatalog(config.getDataSourceKey());
+                try {
+                    count += id.length;
+                    syncById(jdbcTemplate, catalog, Arrays.asList(id), onlyCurrentIndex, onlyFieldNameSet, adapter, config);
+                } finally {
+                    log.info("all sync end.  total = {} ", count);
+                }
+            }
         }
-        return 1;
+        return count;
     }
 
     @RequestMapping("/stop")
@@ -213,47 +275,17 @@ public abstract class AbstractEs7xETLIntController {
         return jdbcTemplate.queryForObject("select max(" + idFiled + ") from " + tableName, Integer.class);
     }
 
-    protected List<Dml> syncAll(JdbcTemplate jdbcTemplate, String catalog, Integer minId, int offsetAdd, boolean append,
-                                boolean onlyCurrentIndex, int joinUpdateSize, Collection<String> onlyFieldName) {
-        List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, minId, offsetAdd);
-        if (dmlList.isEmpty()) {
-            return dmlList;
-        }
-        ES7xAdapter esAdapter = getES7xAdapter();
-        for (Dml dml : dmlList) {
-            dml.setDestination(esAdapter.getConfiguration().getCanalAdapter().getDestination());
-        }
-        if (!append) {
-            Set<String> tableNameSet = new LinkedHashSet<>(2);
-            for (Dml dml : dmlList) {
-                tableNameSet.add(dml.getTable());
-            }
-            Integer dmlListMaxId = getDmlListMaxId(dmlList);
-            Set<Map<String, ESSyncConfig>> configMapList = Collections.newSetFromMap(new IdentityHashMap<>());
-            for (String tableName : tableNameSet) {
-                configMapList.addAll(esAdapter.getEsSyncConfig(catalog, tableName));
-            }
-            for (Map<String, ESSyncConfig> configMap : configMapList) {
-                for (ESSyncConfig config : configMap.values()) {
-                    esAdapter.getEsTemplate().deleteByRange(config.getEsMapping(), ESSyncConfig.ES_ID_FIELD_NAME, minId, dmlListMaxId, offsetAdd);
-                }
-            }
-        }
-        esAdapter.sync(dmlList, false, true, onlyCurrentIndex, joinUpdateSize, onlyFieldName);
-        return dmlList;
-    }
-
-    protected int syncById(JdbcTemplate jdbcTemplate, String catalog, Collection<Integer> id, boolean onlyCurrentIndex, Collection<String> onlyFieldNameSet) {
+    protected int syncById(JdbcTemplate jdbcTemplate, String catalog, Collection<Integer> id,
+                           boolean onlyCurrentIndex, Collection<String> onlyFieldNameSet,
+                           ES7xAdapter esAdapter, ESSyncConfig config) {
         if (id == null || id.isEmpty()) {
             return 0;
         }
-        ES7xAdapter esAdapter = getES7xAdapter();
         int count = 0;
+        String pk = config.getEsMapping().getPk();
+        String tableName = config.getEsMapping().getSchemaItem().getMainTable().getTableName();
         for (Integer i : id) {
-            List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, i, 1);
-            for (Dml dml : dmlList) {
-                dml.setDestination(esAdapter.getConfiguration().getCanalAdapter().getDestination());
-            }
+            List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, i, 1, pk, tableName, config);
             esAdapter.sync(dmlList, false, true, onlyCurrentIndex, 1, onlyFieldNameSet);
             count += dmlList.size();
         }

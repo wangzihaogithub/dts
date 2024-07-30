@@ -53,6 +53,7 @@ public abstract class AbstractEs7xETLDateController {
             @RequestParam(required = false, defaultValue = "0") String offsetStart,
             String offsetEnd,
             @RequestParam String fieldName,
+            @RequestParam String esIndexName,
             @RequestParam(required = false, defaultValue = "600000") long offsetAdd,
             @RequestParam(required = false, defaultValue = "defaultDS") String ds,
             @RequestParam(required = false, defaultValue = "true") boolean append,
@@ -60,6 +61,10 @@ public abstract class AbstractEs7xETLDateController {
             @RequestParam(required = false, defaultValue = "false") boolean onlyCurrentIndex,
             @RequestParam(required = false, defaultValue = "100") int joinUpdateSize,
             String[] onlyFieldName) {
+        List<ES7xAdapter> adapterList = startupServer.getAdapter(ES7xAdapter.class);
+        if (adapterList.isEmpty()) {
+            return new ArrayList<>();
+        }
         JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(ds);
         String catalog = CanalConfig.DatasourceConfig.getCatalog(ds);
 
@@ -81,49 +86,53 @@ public abstract class AbstractEs7xETLDateController {
             }).start();
         }
 
+        List<SyncRunnable> runnableList = new ArrayList<>();
         setSuspendEs7x(true, clientIdentity);
         this.stop = false;
+        for (ES7xAdapter adapter : adapterList) {
+            Map<String, ESSyncConfig> configMap = adapter.getEsSyncConfigByIndex(esIndexName);
+            for (ESSyncConfig config : configMap.values()) {
+                long maxId = offsetEndDate == null ?
+                        selectMaxDate(jdbcTemplate).getTime() : offsetEndDate;
 
-        long maxId = offsetEndDate == null ?
-                selectMaxDate(jdbcTemplate).getTime() : offsetEndDate;
-
-        List<SyncRunnable> runnableList = new ArrayList<>();
-        Date timestamp = new Timestamp(System.currentTimeMillis());
-        AtomicInteger done = new AtomicInteger(0);
-        AtomicInteger dmlSize = new AtomicInteger(0);
-        for (int i = 0; i < threads; i++) {
-            runnableList.add(new SyncRunnable(getClass().getSimpleName(), messageService, i, offsetStartDate, maxId, threads) {
-                @Override
-                public long run0(long offset) {
-                    if (stop) {
-                        return Long.MAX_VALUE;
-                    }
-                    long endOffset = offset + offsetAdd;
-                    if (offsetEndDate != null) {
-                        endOffset = Math.min(offsetEndDate, endOffset);
-                    }
-                    int sync = syncAll(jdbcTemplate, catalog, fieldName, offset, endOffset, append, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet);
-                    dmlSize.addAndGet(sync);
-                    if (log.isInfoEnabled()) {
-                        log.info("syncAll dmlSize = {}, minOffset = {} ", dmlSize.intValue(), SyncRunnable.minOffset(runnableList));
-                    }
-                    return endOffset;
-                }
-
-                @Override
-                public void done() {
-                    if (done.incrementAndGet() == threads) {
-                        if (log.isInfoEnabled()) {
-                            log.info("syncAll done {}", this);
+                Date timestamp = new Timestamp(System.currentTimeMillis());
+                AtomicInteger done = new AtomicInteger(0);
+                AtomicInteger dmlSize = new AtomicInteger(0);
+                for (int i = 0; i < threads; i++) {
+                    runnableList.add(new SyncRunnable(getClass().getSimpleName(), messageService, i, offsetStartDate, maxId, threads) {
+                        @Override
+                        public long run0(long offset) {
+                            if (stop) {
+                                return Long.MAX_VALUE;
+                            }
+                            long endOffset = offset + offsetAdd;
+                            if (offsetEndDate != null) {
+                                endOffset = Math.min(offsetEndDate, endOffset);
+                            }
+                            int sync = syncAll(jdbcTemplate, catalog, fieldName, offset, endOffset, append, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet, adapter, config);
+                            dmlSize.addAndGet(sync);
+                            if (log.isInfoEnabled()) {
+                                log.info("syncAll dmlSize = {}, minOffset = {} ", dmlSize.intValue(), SyncRunnable.minOffset(runnableList));
+                            }
+                            return endOffset;
                         }
-                        setSuspendEs7x(false, clientIdentity);
-                        sendDone(runnableList, timestamp, dmlSize.intValue());
-                    }
+
+                        @Override
+                        public void done() {
+                            if (done.incrementAndGet() == threads) {
+                                if (log.isInfoEnabled()) {
+                                    log.info("syncAll done {}", this);
+                                }
+                                setSuspendEs7x(false, clientIdentity);
+                                sendDone(runnableList, timestamp, dmlSize.intValue());
+                            }
+                        }
+                    });
                 }
-            });
-        }
-        for (SyncRunnable runnable : runnableList) {
-            executorService.execute(runnable);
+                for (SyncRunnable runnable : runnableList) {
+                    executorService.execute(runnable);
+                }
+            }
         }
         return runnableList;
     }
@@ -158,7 +167,8 @@ public abstract class AbstractEs7xETLDateController {
     }
 
     protected int syncAll(JdbcTemplate jdbcTemplate, String catalog, String fieldName,
-                          long minId, long maxId, boolean append, boolean onlyCurrentIndex, int joinUpdateSize, Collection<String> onlyFieldName) {
+                          long minId, long maxId, boolean append, boolean onlyCurrentIndex, int joinUpdateSize, Collection<String> onlyFieldName,
+                          ES7xAdapter adapter, ESSyncConfig config) {
         Timestamp minIdDate = new Timestamp(minId);
         Timestamp maxIdDate = new Timestamp(maxId);
 
@@ -171,20 +181,7 @@ public abstract class AbstractEs7xETLDateController {
             dml.setDestination(esAdapter.getConfiguration().getCanalAdapter().getDestination());
         }
         if (!append) {
-            Set<String> tableNameSet = new LinkedHashSet<>(2);
-            for (Dml dml : dmlList) {
-                tableNameSet.add(dml.getTable());
-            }
-            Set<Map<String, ESSyncConfig>> configMapList = Collections.newSetFromMap(new IdentityHashMap<>());
-            for (String tableName : tableNameSet) {
-                configMapList.addAll(esAdapter.getEsSyncConfig(catalog, tableName));
-            }
-            for (Map<String, ESSyncConfig> configMap : configMapList) {
-                for (ESSyncConfig config : configMap.values()) {
-                    ESBulkRequest.ESBulkResponse esBulkResponse = esAdapter.getEsTemplate().deleteByRange(config.getEsMapping(), fieldName, minIdDate, maxIdDate, null);
-                    esBulkResponse.isEmpty();
-                }
-            }
+            ESBulkRequest.ESBulkResponse esBulkResponse = esAdapter.getEsTemplate().deleteByRange(config.getEsMapping(), fieldName, minIdDate, maxIdDate, null);
         }
         esAdapter.sync(dmlList, false, true, onlyCurrentIndex, joinUpdateSize, onlyFieldName);
         return dmlList.size();

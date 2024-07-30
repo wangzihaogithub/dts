@@ -73,6 +73,30 @@ public class ES7xAdapter implements Adapter {
         }
     }
 
+    public Map<String, ESSyncConfig> getEsSyncConfigByIndex(String index) {
+        Map<String, ESSyncConfig> map = new  LinkedHashMap<>();
+        for (Map.Entry<String, ESSyncConfig> entry : esSyncConfig.entrySet()) {
+            if(entry.getValue().getEsMapping().get_index().equals(index)){
+                map.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return map;
+    }
+
+    public Map<String, ESSyncConfig> getEsSyncConfigByDestination(String destination) {
+        Map<String, ESSyncConfig> map = new  LinkedHashMap<>();
+        for (Map.Entry<String, ESSyncConfig> entry : esSyncConfig.entrySet()) {
+            if(entry.getValue().getDestination().equals(destination)){
+                map.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return map;
+    }
+
+    public Map<String, ESSyncConfig> getEsSyncConfig() {
+        return Collections.unmodifiableMap(esSyncConfig);
+    }
+
     @Override
     public CompletableFuture<Void> sync(List<Dml> dmls) {
         return sync(dmls, refresh, autoUpdateChildren, false, joinUpdateSize, null);

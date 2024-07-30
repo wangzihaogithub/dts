@@ -27,6 +27,7 @@ import org.elasticsearch.cluster.metadata.MappingMetaData;
 import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.rest.RestStatus;
 import org.elasticsearch.script.Script;
+import org.elasticsearch.search.sort.SortOrder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -426,13 +427,24 @@ public class ES7xConnection {
             searchRequest = new SearchRequest(index);
         }
 
+        public ESSearchRequest searchAfter(Object[] values) {
+            searchRequest.source().searchAfter(values);
+            return this;
+        }
+
         public ESSearchRequest setQuery(QueryBuilder queryBuilder) {
+
             searchRequest.source().query(queryBuilder);
             return this;
         }
 
         public ESSearchRequest size(int size) {
             searchRequest.source().size(size);
+            return this;
+        }
+
+        public ESSearchRequest sort(String name, String asc) {
+            searchRequest.source().sort(name, SortOrder.fromString(asc));
             return this;
         }
 

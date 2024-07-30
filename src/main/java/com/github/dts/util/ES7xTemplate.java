@@ -350,6 +350,25 @@ public class ES7xTemplate implements ESTemplate {
         return bulkRequest.bulk();
     }
 
+    @Override
+    public ESSearchResponse searchAfter(ESMapping mapping, Object[] searchAfter, Integer limit) {
+        ES7xConnection.ESSearchRequest esSearchRequest = new ES7xConnection.ESSearchRequest(mapping.get_index());
+        if (searchAfter != null) {
+            esSearchRequest.searchAfter(searchAfter);
+        }
+        esSearchRequest.fetchSource(mapping.get_id());
+        esSearchRequest.sort(mapping.get_id(),"ASC");
+        if (limit != null) {
+            esSearchRequest.size(limit);
+        }
+        SearchResponse response = esSearchRequest.getResponse(this.esConnection);
+        ESSearchResponse searchResponse = new ESSearchResponse();
+        for (SearchHit hit : response.getHits()) {
+            searchResponse.getHitList().add(new Hit(hit.getId(), hit.getSourceAsMap(), hit.getSortValues()));
+        }
+        return searchResponse;
+    }
+
     /**
      * 通过主键删除数据
      *
