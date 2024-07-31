@@ -164,7 +164,7 @@ public class ESSyncUtil {
         }
 
         //如果重新加载配置文件, 那么旧的数据源引用是无效的, 所以这里要判断一下
-        if (CanalConfig.DatasourceConfig.DATA_SOURCES.containsValue(jdbcTemplate.getDataSource())) {
+        if (CanalConfig.DatasourceConfig.contains(jdbcTemplate.getDataSource())) {
             return jdbcTemplate;
         }
         synchronized (JDBC_TEMPLATE_MAP) {

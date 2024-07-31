@@ -48,7 +48,7 @@ public class ES7xTemplate implements ESTemplate {
         }
     }
 
-    public static Object sqlRS(DataSource ds, String sql, Function<ResultSet, Object> fun) {
+    private static Object sqlRS(DataSource ds, String sql, Function<ResultSet, Object> fun) {
         try (Connection conn = ds.getConnection();
              Statement stmt = conn.createStatement(ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);) {
             stmt.setFetchSize(Integer.MIN_VALUE);

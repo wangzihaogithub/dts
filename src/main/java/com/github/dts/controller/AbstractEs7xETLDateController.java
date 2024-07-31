@@ -58,7 +58,7 @@ public abstract class AbstractEs7xETLDateController {
             @RequestParam(required = false, defaultValue = "defaultDS") String ds,
             @RequestParam(required = false, defaultValue = "true") boolean append,
             @RequestParam(required = false, defaultValue = "false") boolean discard,
-            @RequestParam(required = false, defaultValue = "false") boolean onlyCurrentIndex,
+            @RequestParam(required = false, defaultValue = "true") boolean onlyCurrentIndex,
             @RequestParam(required = false, defaultValue = "100") int joinUpdateSize,
             String[] onlyFieldName) {
         List<ES7xAdapter> adapterList = startupServer.getAdapter(ES7xAdapter.class);

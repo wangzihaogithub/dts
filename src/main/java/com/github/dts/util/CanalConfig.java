@@ -45,9 +45,7 @@ public class CanalConfig {
     public void setSrcDataSources(Map<String, DatasourceConfig> srcDataSources) {
         this.srcDataSources = srcDataSources;
         if (srcDataSources != null) {
-            for (Map.Entry<String, DatasourceConfig> entry : srcDataSources.entrySet()) {
-                DatasourceConfig.DATA_SOURCES.put(entry.getKey(), druidDataSource(entry.getValue()));
-            }
+            DatasourceConfig.setDataSource(srcDataSources);
         }
     }
 
@@ -66,33 +64,9 @@ public class CanalConfig {
                 '}';
     }
 
-    private DruidDataSource druidDataSource(DatasourceConfig datasourceConfig) {
-        // 加载数据源连接池
-        DruidDataSource ds = new DruidDataSource();
-        ds.setDriverClassName(datasourceConfig.getDriver());
-        ds.setUrl(datasourceConfig.getUrl());
-        ds.setUsername(datasourceConfig.getUsername());
-        ds.setPassword(datasourceConfig.getPassword());
-        ds.setInitialSize(1);
-        ds.setMinIdle(1);
-        ds.setMaxActive(datasourceConfig.getMaxActive());
-        ds.setMaxWait(60000);
-        ds.setTimeBetweenEvictionRunsMillis(60000);
-        ds.setMinEvictableIdleTimeMillis(300000);
-        ds.setValidationQuery("select 1");
-        if (!datasourceConfig.isLazy()) {
-            try {
-                ds.init();
-            } catch (SQLException e) {
-                Util.sneakyThrows(e);
-            }
-        }
-        return ds;
-    }
-
     public static class DatasourceConfig {
 
-        public final static Map<String, DataSource> DATA_SOURCES = new ConcurrentHashMap<>(); // key对应的数据源
+        private final static Map<String, DataSource> DATA_SOURCES = new ConcurrentHashMap<>(); // key对应的数据源
 
         private String driver = "com.mysql.cj.jdbc.Driver";   // 默认为mysql jdbc驱动
         private String url;                                      // jdbc url
@@ -103,12 +77,8 @@ public class CanalConfig {
         private Integer maxActive = 100;                         // 连接池最大连接数,默认为3
         private boolean lazy = true;
 
-        public void setLazy(boolean lazy) {
-            this.lazy = lazy;
-        }
-
-        public boolean isLazy() {
-            return lazy;
+        public static boolean contains(DataSource dataSource) {
+            return DATA_SOURCES.containsValue(dataSource);
         }
 
         public static DataSource getDataSource(String key) {
@@ -143,6 +113,56 @@ public class CanalConfig {
             }
             String schema = matcher.group(2);
             return schema;
+        }
+
+        public static void close() {
+            for (DataSource druidDataSource : DATA_SOURCES.values()) {
+                try {
+                    if (druidDataSource instanceof DruidDataSource) {
+                        ((DruidDataSource) druidDataSource).close();
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+            DATA_SOURCES.clear();
+        }
+
+        private static void setDataSource(Map<String, DatasourceConfig> srcDataSources) {
+            for (Map.Entry<String, DatasourceConfig> entry : srcDataSources.entrySet()) {
+                DatasourceConfig.DATA_SOURCES.put(entry.getKey(), druidDataSource(entry.getValue()));
+            }
+        }
+
+        private static DruidDataSource druidDataSource(DatasourceConfig config) {
+            // 加载数据源连接池
+            DruidDataSource ds = new DruidDataSource();
+            ds.setDriverClassName(config.getDriver());
+            ds.setUrl(config.getUrl());
+            ds.setUsername(config.getUsername());
+            ds.setPassword(config.getPassword());
+            ds.setInitialSize(1);
+            ds.setMinIdle(1);
+            ds.setMaxActive(config.getMaxActive());
+            ds.setMaxWait(60000);
+            ds.setTimeBetweenEvictionRunsMillis(60000);
+            ds.setMinEvictableIdleTimeMillis(300000);
+            ds.setValidationQuery("select 1");
+            if (!config.isLazy()) {
+                try {
+                    ds.init();
+                } catch (SQLException e) {
+                    Util.sneakyThrows(e);
+                }
+            }
+            return ds;
+        }
+
+        public boolean isLazy() {
+            return lazy;
+        }
+
+        public void setLazy(boolean lazy) {
+            this.lazy = lazy;
         }
 
         public String getDriver() {
@@ -215,7 +235,7 @@ public class CanalConfig {
         // 毫秒时间内拉取
         private Integer pullTimeout = 5;
         // redis- meta数据前缀
-        private String redisMetaPrefix = "dts:${spring.profiles.active:}";
+        private String redisMetaPrefix = "dts:${spring.profiles.active:def}";
 
         public String getRedisMetaPrefix() {
             return redisMetaPrefix;

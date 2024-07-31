@@ -1,6 +1,5 @@
 package com.github.dts.canal;
 
-import com.alibaba.druid.pool.DruidDataSource;
 import com.github.dts.impl.elasticsearch7x.ES7xAdapter;
 import com.github.dts.impl.rds.RDSAdapter;
 import com.github.dts.util.AbstractMessageService;
@@ -21,7 +20,6 @@ import org.springframework.core.env.StandardEnvironment;
 
 import javax.annotation.PreDestroy;
 import javax.annotation.Resource;
-import javax.sql.DataSource;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -51,6 +49,10 @@ public class StartupServer implements ApplicationRunner {
         return beanFactory;
     }
 
+    public AbstractMessageService getMessageService() {
+        return messageService;
+    }
+
     public List<ThreadRef> getCanalThread(String clientIdentity) {
         List<ThreadRef> threadRef = canalThreadMap.get(clientIdentity);
         return threadRef != null ? threadRef : Collections.emptyList();
@@ -62,7 +64,7 @@ public class StartupServer implements ApplicationRunner {
             return;
         }
         try {
-            log.info("## start the canal client adapters.");
+            log.info("## start '{}' canal client adapters.", env);
             start(canalConfig);
             running = true;
             log.info("## the canal client adapters are running now ......");
@@ -185,16 +187,7 @@ public class StartupServer implements ApplicationRunner {
                 }
             }
             log.info("All canal adapters destroyed");
-            for (DataSource druidDataSource : CanalConfig.DatasourceConfig.DATA_SOURCES.values()) {
-                try {
-                    if (druidDataSource instanceof DruidDataSource) {
-                        ((DruidDataSource) druidDataSource).close();
-                    }
-                } catch (Exception e) {
-                    log.error(e.getMessage(), e);
-                }
-            }
-            CanalConfig.DatasourceConfig.DATA_SOURCES.clear();
+            CanalConfig.DatasourceConfig.close();
         } catch (Throwable e) {
             log.warn("## something goes wrong when stopping canal client adapters:", e);
         } finally {

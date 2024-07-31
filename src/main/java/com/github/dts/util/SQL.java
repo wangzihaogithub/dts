@@ -1,9 +1,5 @@
 package com.github.dts.util;
 
-import com.alibaba.druid.sql.SQLUtils;
-import com.alibaba.druid.sql.ast.SQLStatement;
-import com.alibaba.druid.sql.ast.statement.SQLExprTableSource;
-import com.alibaba.druid.sql.visitor.SQLASTVisitorAdapter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -462,32 +458,12 @@ public abstract class SQL implements Cloneable {
         @Override
         public List<SQL> apply(Dml dml) {
             List<SQL> sqlList = new ArrayList<>(1);
-            SQL sql = new DdlSQL(dml.getIndex(), dml.getPacketId(), dml.getType(), trimSchema(dml.getSql()),
+            SQL sql = new DdlSQL(dml.getIndex(), dml.getPacketId(), dml.getType(), SqlParser.trimSchema(dml.getSql()),
                     dml.getDatabase(), dml.getTable(),
                     dml.getPkNames(), dml.getLogfileOffset(), dml.getLogfileName(), dml.getEs(), dml.getDestination());
             sql.originalSQL = sql.clone();
             sqlList.add(sql);
             return sqlList;
-        }
-
-        private String trimSchema(String sql) {
-            if (sql == null || sql.isEmpty()) {
-                return sql;
-            }
-            try {
-                SQLStatement statement = SQLUtils.parseSingleMysqlStatement(sql);
-                statement.accept(new SQLASTVisitorAdapter() {
-                    @Override
-                    public boolean visit(SQLExprTableSource x) {
-                        x.setSchema(null);
-                        return true;
-                    }
-                });
-                return statement.toString();
-            } catch (Exception e) {
-                log.warn("trimSchema fail sql = {}, error = {}", sql, e.toString(), e);
-                return sql;
-            }
         }
 
         private static class DdlSQL extends SQL {

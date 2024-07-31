@@ -65,12 +65,12 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
 
     @Override
     public void run() {
+        List<Dependent> dependentList = dmlList.stream().filter(e -> !ESSyncUtil.isEmpty(e.getDml().getPkNames())).collect(Collectors.toList());
+        if (dependentList.isEmpty()) {
+            return;
+        }
         AtomicInteger childrenCounter = new AtomicInteger();
         try {
-            List<Dependent> dependentList = dmlList.stream().filter(e -> !ESSyncUtil.isEmpty(e.getDml().getPkNames())).collect(Collectors.toList());
-            if (dependentList.isEmpty()) {
-                return;
-            }
             List<DependentSQL> parentSqlList = new ArrayList<>(dependentList.size());
             List<DependentSQL> childrenSqlList = new ArrayList<>(dependentList.size());
             for (Dependent dependent : dependentList) {
@@ -102,18 +102,18 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
                 });
             }
 
-            log.info("NestedMainJoinTable={}ms, rowCount={}, ts={}, changeSql={}",
+            log.info("NestedMainJoinTable={}ms, rowCount={}, ts={}, dependentList={}, changeSql={}",
                     System.currentTimeMillis() - maxTimestamp.getTime(),
                     childrenCounter.intValue(),
-                    maxTimestamp, childrenMergeSqlList);
+                    maxTimestamp, dependentList, childrenMergeSqlList);
 
             bulkRequestList.commit(es7xTemplate);
             complete(null);
         } catch (Exception e) {
-            log.info("NestedMainJoinTable={}ms, rowCount={}, ts={}, error={}",
+            log.info("NestedMainJoinTable={}ms, rowCount={}, ts={}, dependentList={}, error={}",
                     System.currentTimeMillis() - maxTimestamp.getTime(),
                     childrenCounter.intValue(),
-                    maxTimestamp, e.toString(), e);
+                    maxTimestamp, dependentList, e.toString(), e);
             completeExceptionally(e);
             throw e;
         }

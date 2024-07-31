@@ -41,6 +41,26 @@ public class SchemaItem {
 
     }
 
+    public void init(ESSyncConfig.ObjectField objectField, ESMapping esMapping) {
+        this.objectField = objectField;
+        this.esMapping = esMapping;
+        this.getTableItemAliases();
+        this.getColumnFields();
+        this.isAllFieldsSimple();
+        aliasTableItems.values().forEach(tableItem -> {
+            tableItem.getRelationTableFields();
+            tableItem.getRelationSelectFieldItems();
+        });
+        TableItem mainTable = getMainTable();
+        if (mainTable != null) {
+            mainTable.main = true;
+        }
+        getSlaveTableList();
+        isJoinByParentPrimaryKey();
+        getGroupByIdColumns();
+        getIdField();
+    }
+
     public boolean isJoinByParentPrimaryKey() {
         if (joinByParentPrimaryKey == null) {
             if (objectField != null && objectField.isSqlType()) {
@@ -59,22 +79,14 @@ public class SchemaItem {
         if (groupByIdColumns == null) {
             Set<ColumnItem> groupByIdColumns;
             if (objectField != null) {
-                String[] groupBy = objectField.getGroupByIdColumns();
+                String[] groupBy = objectField.groupByIdColumns();
                 if (groupBy != null && groupBy.length > 0) {
-                    groupByIdColumns = Arrays.stream(groupBy).map(e -> {
-                        String[] split = e.split("[.]");
-                        ColumnItem columnItem = new ColumnItem();
-                        if (split.length == 1) {
-                            columnItem.setColumnName(split[0]);
-                        } else {
-                            columnItem.setColumnName(split[0]);
-                            columnItem.setOwner(split[1]);
-                        }
-                        return columnItem;
-                    }).collect(Collectors.toCollection(LinkedHashSet::new));
+                    groupByIdColumns = Arrays.stream(groupBy).map(ColumnItem::parse).collect(Collectors.toCollection(LinkedHashSet::new));
                 } else {
                     if (objectField.getType() == ESSyncConfig.ObjectField.Type.OBJECT_SQL) {
                         groupByIdColumns = parseByObjectFieldIdColumns();
+                    } else if (!isJoinByParentPrimaryKey() && objectField.getType() == ESSyncConfig.ObjectField.Type.ARRAY_SQL) {
+                        throw new IllegalArgumentException("the join sql must have group by. sql = " + sql);
                     } else {
                         groupByIdColumns = Collections.emptySet();
                     }
@@ -132,26 +144,6 @@ public class SchemaItem {
         } else {
             return Objects.toString(esMapping, "") + " [" + objectField + "]";
         }
-    }
-
-    public void init(ESSyncConfig.ObjectField objectField, ESMapping esMapping) {
-        this.objectField = objectField;
-        this.esMapping = esMapping;
-        this.getTableItemAliases();
-        this.getColumnFields();
-        this.isAllFieldsSimple();
-        aliasTableItems.values().forEach(tableItem -> {
-            tableItem.getRelationTableFields();
-            tableItem.getRelationSelectFieldItems();
-        });
-        TableItem mainTable = getMainTable();
-        if (mainTable != null) {
-            mainTable.main = true;
-        }
-        getSlaveTableList();
-        getGroupByIdColumns();
-        getIdField();
-        isJoinByParentPrimaryKey();
     }
 
     public FieldItem getIdField() {
@@ -756,6 +748,18 @@ public class SchemaItem {
     public static class ColumnItem {
         private String owner;
         private String columnName;
+
+        public static ColumnItem parse(String e) {
+            String[] split = e.split("[.]");
+            ColumnItem columnItem = new ColumnItem();
+            if (split.length == 1) {
+                columnItem.setColumnName(split[0]);
+            } else {
+                columnItem.setOwner(split[0]);
+                columnItem.setColumnName(split[1]);
+            }
+            return columnItem;
+        }
 
         @Override
         public String toString() {

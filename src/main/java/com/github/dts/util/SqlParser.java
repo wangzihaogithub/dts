@@ -19,6 +19,7 @@ import com.github.dts.util.SchemaItem.TableItem;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * ES同步指定sql格式解析
@@ -30,6 +31,7 @@ public class SqlParser {
 
     public static final Map<String, String> CHANGE_SELECT_CACHE = new ConcurrentHashMap<>();
     private static final Map<String, Map<String, List<String>>> GET_COLUMN_LIST_CACHE = new ConcurrentHashMap<>();
+    private static final Map<String, String> REMOVE_GROUP_BY_CACHE = new ConcurrentHashMap<>();
 
     public static void main(String[] args) {
         SQLStatement sqlStatement = SQLUtils.parseSingleMysqlStatement(
@@ -43,13 +45,15 @@ public class SqlParser {
                         "left join order t2 on t2.user_id = t1.id " +
                         "where t1.name =#{name} and t1.id = 1 and t1.de_flag = 0");
 
-        Collection<ChangeSQL> changeSQLS = changeMergeSelect("        SELECT corpRelationTag.tag_id as tagId, corpTag.`name` as tagName, corpTag.category_id as categoryId, corpCategory.`name` as categoryName, corpCategory.sort as categorySort, corpCategory.`status` as categoryStatus, corpTag.source_enum as tagSource, corpTag.`status` as tagStatus, corpTag.change_flag as tagChangeFlag FROM corp_relation_tag corpRelationTag INNER JOIN corp_tag corpTag on corpTag.id = corpRelationTag.tag_id LEFT JOIN corp_category corpCategory on corpCategory.id = corpTag.category_id  WHERE corpRelationTag.corp_id in (?,?)\n",
+//        Collection<ChangeSQL> changeSQLS = changeMergeSelect("        SELECT corpRelationTag.tag_id as tagId, corpTag.`name` as tagName, corpTag.category_id as categoryId, corpCategory.`name` as categoryName, corpCategory.sort as categorySort, corpCategory.`status` as categoryStatus, corpTag.source_enum as tagSource, corpTag.`status` as tagStatus, corpTag.change_flag as tagChangeFlag FROM corp_relation_tag corpRelationTag INNER JOIN corp_tag corpTag on corpTag.id = corpRelationTag.tag_id LEFT JOIN corp_category corpCategory on corpCategory.id = corpTag.category_id  WHERE corpRelationTag.corp_id in (?,?)\n",
+//
+//                Arrays.asList(new Object[]{1}, new Object[]{2}), null);
 
-                Arrays.asList(new Object[]{1}, new Object[]{2}), null);
+        Collection<ChangeSQL> changeSQLS2 = changeMergeSelect("        SELECT corpRelationTag.tag_id as tagId, corpTag.`name` as tagName, corpTag.category_id as categoryId, corpCategory.`name` as categoryName, corpCategory.sort as categorySort, corpCategory.`status` as categoryStatus, corpTag.source_enum as tagSource, " +
+                        "corpTag.`status` as tagStatus, corpTag.change_flag as tagChangeFlag FROM corp_relation_tag corpRelationTag INNER JOIN corp_tag corpTag on corpTag.id = corpRelationTag.tag_id LEFT JOIN corp_category corpCategory on corpCategory.id = corpTag.category_id " +
+                        " WHERE tagStatus= ?\n",
 
-        Collection<ChangeSQL> changeSQLS2 = changeMergeSelect("        SELECT corpRelationTag.tag_id as tagId, corpTag.`name` as tagName, corpTag.category_id as categoryId, corpCategory.`name` as categoryName, corpCategory.sort as categorySort, corpCategory.`status` as categoryStatus, corpTag.source_enum as tagSource, corpTag.`status` as tagStatus, corpTag.change_flag as tagChangeFlag FROM corp_relation_tag corpRelationTag INNER JOIN corp_tag corpTag on corpTag.id = corpRelationTag.tag_id LEFT JOIN corp_category corpCategory on corpCategory.id = corpTag.category_id  WHERE corpRelationTag.corp_id = ?\n",
-
-                Arrays.asList(new Object[]{1}, new Object[]{2}), null);
+                Arrays.asList(new Object[]{1}, new Object[]{2}), Stream.of("corpRelationTag.id ", "corpRelationTag.id2").map(ColumnItem::parse).collect(Collectors.toList()));
 
         Collection<ChangeSQL> changeSQLS3 = changeMergeSelect("        SELECT corpRelationTag.tag_id as tagId, corpTag.`name` as tagName, corpTag.category_id as categoryId, corpCategory.`name` as categoryName, corpCategory.sort as categorySort, corpCategory.`status` as categoryStatus, corpTag.source_enum as tagSource, corpTag.`status` as tagStatus, corpTag.change_flag as tagChangeFlag FROM corp_relation_tag corpRelationTag INNER JOIN corp_tag corpTag on corpTag.id = corpRelationTag.tag_id LEFT JOIN corp_category corpCategory on corpCategory.id = corpTag.category_id  WHERE corpRelationTag.corp_id = ? and corpRelationTag.id2 = 2\n",
 
@@ -113,6 +117,25 @@ public class SqlParser {
             select.getSelect().getQueryBlock().setLimit(limit);
             return statement.toString();
         } else {
+            return sql;
+        }
+    }
+
+    public static String trimSchema(String sql) {
+        if (sql == null || sql.isEmpty()) {
+            return sql;
+        }
+        try {
+            SQLStatement statement = SQLUtils.parseSingleMysqlStatement(sql);
+            statement.accept(new SQLASTVisitorAdapter() {
+                @Override
+                public boolean visit(SQLExprTableSource x) {
+                    x.setSchema(null);
+                    return true;
+                }
+            });
+            return statement.toString();
+        } catch (Exception e) {
             return sql;
         }
     }
@@ -449,12 +472,23 @@ public class SqlParser {
                 if (whereBinaryOp.getOperator() == SQLBinaryOperator.Equality) {
                     SQLExpr left = whereBinaryOp.getLeft();
                     SQLExpr right = whereBinaryOp.getRight();
+                    if (left instanceof SQLIdentifierExpr) {
+                        left = ref(queryBlock.getSelectList(), (SQLIdentifierExpr) left);
+                    } else if (right instanceof SQLIdentifierExpr) {
+                        right = ref(queryBlock.getSelectList(), (SQLIdentifierExpr) right);
+                    }
                     if (left instanceof SQLVariantRefExpr && right instanceof SQLPropertyExpr) {
                         return mergeEqualitySql(args, sqlStatement, queryBlock,
-                                (SQLVariantRefExpr) left, (SQLPropertyExpr) right, needGroupBy);
+                                (SQLVariantRefExpr) left, right, ((SQLPropertyExpr) right).getName(), needGroupBy);
                     } else if (right instanceof SQLVariantRefExpr && left instanceof SQLPropertyExpr) {
                         return mergeEqualitySql(args, sqlStatement, queryBlock,
-                                (SQLVariantRefExpr) right, (SQLPropertyExpr) left, needGroupBy);
+                                (SQLVariantRefExpr) right, left, ((SQLPropertyExpr) left).getName(), needGroupBy);
+                    } else if (left instanceof SQLVariantRefExpr && right instanceof SQLIdentifierExpr) {
+                        return mergeEqualitySql(args, sqlStatement, queryBlock,
+                                (SQLVariantRefExpr) left, right, ((SQLIdentifierExpr) right).getName(), needGroupBy);
+                    } else if (right instanceof SQLVariantRefExpr && left instanceof SQLIdentifierExpr) {
+                        return mergeEqualitySql(args, sqlStatement, queryBlock,
+                                (SQLVariantRefExpr) right, left, ((SQLIdentifierExpr) left).getName(), needGroupBy);
                     }
                 }
             }
@@ -462,24 +496,24 @@ public class SqlParser {
         return null;
     }
 
+    private static SQLExpr ref(List<SQLSelectItem> selectItemList, SQLIdentifierExpr leftExpr) {
+        String name = cleanColumn(leftExpr.getName());
+        SQLSelectItem selectItem = selectItemList.stream().filter(e -> equalsExpr(name, e)).findFirst().orElse(null);
+        if (selectItem != null) {
+            return selectItem.getExpr();
+        } else {
+            return leftExpr;
+        }
+    }
+
     private static List<ChangeSQL> mergeEqualitySql(List<Object[]> args,
                                                     SQLStatement sqlStatement,
                                                     SQLSelectQueryBlock queryBlock,
-                                                    SQLVariantRefExpr right, SQLPropertyExpr leftExpr,
+                                                    SQLVariantRefExpr right, SQLExpr leftExpr,
+                                                    String leftExprName,
                                                     Collection<ColumnItem> needGroupBy) {
-        String columnName = normalize(leftExpr.getName());
-        List<String> addColumnNameList;
-        SQLSelectItem selectItem = queryBlock.getSelectList().stream().filter(e -> equalsExpr(leftExpr, e.getExpr())).findFirst().orElse(null);
-        String[] uniqueColumnNames;
-        if (selectItem != null) {
-            addColumnNameList = Collections.emptyList();
-            String alias = selectItem.getAlias();
-            uniqueColumnNames = new String[]{alias == null || alias.isEmpty() ? columnName : alias};
-        } else {
-            queryBlock.addSelectItem(leftExpr.clone());
-            addColumnNameList = Collections.singletonList(columnName);
-            uniqueColumnNames = new String[]{columnName};
-        }
+        String columnName = normalize(leftExprName);
+
         if (needGroupBy != null && !needGroupBy.isEmpty() && queryBlock.getGroupBy() == null) {
             SQLSelectGroupByClause groupByClause = new SQLSelectGroupByClause();
             for (ColumnItem columnItem : needGroupBy) {
@@ -495,6 +529,19 @@ public class SqlParser {
             }
             queryBlock.setGroupBy(groupByClause);
         }
+
+        SQLSelectItem selectItem = queryBlock.getSelectList().stream().filter(e -> equalsExpr(columnName, e)).findFirst().orElse(null);
+        String[] uniqueColumnNames;
+        List<String> addColumnNameList;
+        if (selectItem != null) {
+            addColumnNameList = Collections.emptyList();
+            String alias = selectItem.getAlias();
+            uniqueColumnNames = new String[]{alias == null || alias.isEmpty() ? columnName : alias};
+        } else {
+            queryBlock.addSelectItem(leftExpr.clone());
+            addColumnNameList = Collections.singletonList(columnName);
+            uniqueColumnNames = new String[]{columnName};
+        }
         List<ChangeSQL> resultList = new ArrayList<>();
         SQLInListExpr inListExpr = new SQLInListExpr(leftExpr.clone());
         Object[] newArgs = new Object[args.size()];
@@ -509,15 +556,48 @@ public class SqlParser {
         return resultList;
     }
 
-    private static boolean equalsExpr(SQLPropertyExpr expr, SQLExpr expr1) {
+    private static String name(SQLExpr expr) {
+        if (expr instanceof SQLPropertyExpr) {
+            return cleanColumn(((SQLPropertyExpr) expr).getName());
+        } else if (expr instanceof SQLIdentifierExpr) {
+            return cleanColumn(((SQLIdentifierExpr) expr).getName());
+        } else {
+            return null;
+        }
+    }
+
+    private static String key(int index, SQLExpr expr) {
+        String name = name(expr);
+        return "dts_key" + index + name;
+    }
+
+    private static boolean equalsExpr(String name, SQLSelectItem item) {
+        String alias = item.getAlias();
+        if (alias != null) {
+            return alias.equals(name);
+        } else {
+            SQLExpr expr = item.getExpr();
+            if (expr instanceof SQLPropertyExpr) {
+                return name.equalsIgnoreCase(cleanColumn(((SQLPropertyExpr) expr).getName()));
+            } else if (expr instanceof SQLIdentifierExpr) {
+                return name.equalsIgnoreCase(cleanColumn(((SQLIdentifierExpr) expr).getName()));
+            } else {
+                return false;
+            }
+        }
+    }
+
+    private static boolean equalsExpr(String ownerName, String name, SQLSelectItem item) {
+        SQLExpr expr1 = item.getExpr();
         if (expr1 instanceof SQLPropertyExpr) {
-            String ownerName = normalize(expr.getOwnerName());
-            String name = normalize(expr.getName());
             String ownerName1 = Objects.toString(normalize(((SQLPropertyExpr) expr1).getOwnerName()), "");
             String name1 = Objects.toString(normalize((((SQLPropertyExpr) expr1).getName())), "");
-            return ownerName1.equalsIgnoreCase(ownerName) && name1.equalsIgnoreCase(name);
+            boolean b = ownerName1.equalsIgnoreCase(ownerName) && name1.equalsIgnoreCase(name);
+            if (!b && ownerName == null) {
+                return Objects.equals(item.getAlias(), name);
+            }
+            return b;
         } else if (expr1 instanceof SQLIdentifierExpr) {
-            String name = normalize(expr.getName());
             String name1 = Objects.toString(normalize((((SQLIdentifierExpr) expr1).getName())), "");
             return name1.equalsIgnoreCase(name);
         } else {
@@ -542,6 +622,54 @@ public class SqlParser {
         }
 
         return ESSyncUtil.stringCache(column);
+    }
+
+    public static String[] getGroupByIdColumns(String sql) {
+        SQLStatement sqlStatement = SQLUtils.parseSingleMysqlStatement(sql);
+        List<String> list = new ArrayList<>();
+        if (sqlStatement instanceof SQLSelectStatement) {
+            SQLSelect select = ((SQLSelectStatement) sqlStatement).getSelect();
+            SQLSelectQueryBlock queryBlock = select.getQueryBlock();
+            SQLSelectGroupByClause groupBy = queryBlock.getGroupBy();
+            if (groupBy != null) {
+                List<SQLExpr> temp = new ArrayList<>(groupBy.getItems());
+                while (!temp.isEmpty()) {
+                    SQLExpr item = temp.remove(0);
+                    if (item instanceof SQLIdentifierExpr) {
+                        String name = cleanColumn(((SQLIdentifierExpr) item).getName());
+                        SQLSelectItem selectItem = queryBlock.getSelectList().stream().filter(e -> equalsExpr(name, e)).findFirst().orElse(null);
+                        if (selectItem != null) {
+                            temp.add(selectItem.getExpr());
+                        } else {
+                            list.add(name);
+                        }
+                    } else if (item instanceof SQLPropertyExpr) {
+                        String ownerName = cleanColumn(((SQLPropertyExpr) item).getOwnerName());
+                        String name = cleanColumn(((SQLPropertyExpr) item).getName());
+                        list.add(ownerName + "." + name);
+                    } else if (item instanceof SQLMethodInvokeExpr) {
+                        temp.addAll(((SQLMethodInvokeExpr) item).getArguments());
+                    }
+                }
+            }
+        }
+        return list.toArray(new String[0]);
+    }
+
+    public static String removeGroupBy(String sql) {
+        return REMOVE_GROUP_BY_CACHE.computeIfAbsent(sql, key -> {
+            SQLStatement sqlStatement = SQLUtils.parseSingleMysqlStatement(key);
+            if (sqlStatement instanceof SQLSelectStatement) {
+                SQLSelect select = ((SQLSelectStatement) sqlStatement).getSelect();
+                SQLSelectQueryBlock queryBlock = select.getQueryBlock();
+                SQLSelectGroupByClause groupBy = queryBlock.getGroupBy();
+                if (groupBy != null) {
+                    queryBlock.setGroupBy(null);
+                    return sqlStatement.toString();
+                }
+            }
+            return key;
+        });
     }
 
     public static class BinaryOpExpr {

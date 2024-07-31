@@ -48,11 +48,12 @@ public class ESSyncConfig {
             ObjectField objectField = entry.getValue();
             objectField.setEsMapping(esMapping);
             objectField.setFieldName(entry.getKey());
-            if (objectField.getSql() != null && !objectField.getSql().isEmpty()) {
-                SchemaItem schemaItem1 = SqlParser.parse(objectField.getSql());
+            String sql = objectField.getSql();
+            if (sql != null && !sql.isEmpty()) {
+                SchemaItem schemaItem1 = SqlParser.parse(objectField.sql());
                 schemaItem1.init(objectField, esMapping);
                 if (schemaItem1.getAliasTableItems().isEmpty() || schemaItem1.getSelectFields().isEmpty()) {
-                    throw new RuntimeException("Parse sql error" + objectField.getSql());
+                    throw new RuntimeException("Parse sql error" + sql);
                 }
                 objectField.setSchemaItem(schemaItem1);
             }
@@ -337,7 +338,6 @@ public class ESSyncConfig {
         private String parentDocumentId;
         private SchemaItem schemaItem;
         private ESMapping esMapping;
-        private String[] groupByIdColumns;
         private transient StaticMethodAccessor<ESStaticMethodParam> staticMethodAccessor;
 
         @Override
@@ -420,12 +420,8 @@ public class ESSyncConfig {
             this.parentDocumentId = parentDocumentId;
         }
 
-        public String[] getGroupByIdColumns() {
-            return groupByIdColumns;
-        }
-
-        public void setGroupByIdColumns(String[] groupByIdColumns) {
-            this.groupByIdColumns = groupByIdColumns;
+        public String[] groupByIdColumns() {
+            return SqlParser.getGroupByIdColumns(sql);
         }
 
         String parentDocumentId() {
@@ -464,10 +460,11 @@ public class ESSyncConfig {
         }
 
         public String getFullSql(boolean isParentChange) {
+            String sql1 = sql();
             if (isParentChange) {
-                return sql + " " + onParentChangeWhereSql;
+                return sql1 + " " + onParentChangeWhereSql;
             } else {
-                return sql + " " + onChildChangeWhereSql;
+                return sql1 + " " + onChildChangeWhereSql;
             }
         }
 
@@ -501,6 +498,10 @@ public class ESSyncConfig {
 
         public void setSql(String sql) {
             this.sql = sql;
+        }
+
+        public String sql() {
+            return SqlParser.removeGroupBy(sql);
         }
 
         public String getSplit() {
