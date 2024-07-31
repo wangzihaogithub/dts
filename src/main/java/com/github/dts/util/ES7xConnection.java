@@ -35,6 +35,7 @@ import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
@@ -493,12 +494,29 @@ public class ES7xConnection {
             this.lowBulkRequests = lowBulkRequests;
         }
 
+        private static void yieldThreadRandom() {
+            try {
+                Thread.sleep(ThreadLocalRandom.current().nextInt(5, 100));
+            } catch (InterruptedException e) {
+                Util.sneakyThrows(e);
+            }
+        }
+
         private static void yieldThread() {
             try {
                 Thread.sleep(1);
             } catch (InterruptedException e) {
                 Util.sneakyThrows(e);
             }
+        }
+
+        private static boolean hasTooManyRequests(BulkResponse responses) {
+            for (BulkItemResponse response : responses.getItems()) {
+                if (response.status() == RestStatus.TOO_MANY_REQUESTS) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private Collection<ConcurrentBulkRequest> prioritySort(BulkPriorityEnum priorityEnum) {
@@ -660,14 +678,26 @@ public class ES7xConnection {
             BulkRequestResponse requestResponse = new BulkRequestResponse(bulkRequest);
             requestResponse.response = bulk(bulkRequest);
             if (retry && requestResponse.response.hasFailures()) {
-                if (bulkRequest.numberOfActions() > 1) {
+                if (hasTooManyRequests(requestResponse.response)) {
+                    yieldThreadRandom();
+                } else if (bulkRequest.numberOfActions() > 1) {
                     ArrayList<DocWriteRequest<?>> errorRequests1 = new ArrayList<>();
                     ArrayList<DocWriteRequest<?>> errorRequests2 = new ArrayList<>();
-                    retryAndGetErrorRequests(Collections.unmodifiableList(bulkRequest.requests()), errorRequests1);
-                    retryAndGetErrorRequests(Collections.unmodifiableList(errorRequests1), errorRequests2);
-                    bulkRequest.clear();
-                    for (DocWriteRequest<?> errorRequest : errorRequests2) {
-                        bulkRequest.add(errorRequest);
+                    if (retryAndGetErrorRequests(Collections.unmodifiableList(bulkRequest.requests()), errorRequests1)) {
+                        if (retryAndGetErrorRequests(Collections.unmodifiableList(errorRequests1), errorRequests2)) {
+                            bulkRequest.clear();
+                            for (DocWriteRequest<?> errorRequest : errorRequests2) {
+                                bulkRequest.add(errorRequest);
+                            }
+                        } else {
+                            bulkRequest.clear();
+                            for (DocWriteRequest<?> errorRequest : errorRequests1) {
+                                bulkRequest.add(errorRequest);
+                            }
+                            yieldThreadRandom();
+                        }
+                    } else {
+                        yieldThreadRandom();
                     }
                 }
             } else {
@@ -676,15 +706,18 @@ public class ES7xConnection {
             return requestResponse;
         }
 
-        private void retryAndGetErrorRequests(List<DocWriteRequest<?>> readonlyRequests, List<DocWriteRequest<?>> errorRequests) throws IOException {
+        private boolean retryAndGetErrorRequests(List<DocWriteRequest<?>> readonlyRequests, List<DocWriteRequest<?>> errorRequests) throws IOException {
             if (readonlyRequests.isEmpty()) {
-                return;
+                return true;
             }
             List<List<DocWriteRequest<?>>> partition = Lists.partition(readonlyRequests, (readonlyRequests.size() + 1) / 2);
             for (List<DocWriteRequest<?>> rowList : partition) {
                 BulkRequest bulkRequest = new BulkRequest();
                 rowList.forEach(bulkRequest::add);
                 BulkResponse bulkItemResponses = bulk(bulkRequest);
+                if (hasTooManyRequests(bulkItemResponses)) {
+                    return false;
+                }
                 if (bulkItemResponses.hasFailures()) {
                     if (rowList.size() == 1) {
                         DocWriteRequest<?> retry = readonlyRequests.get(0);
@@ -695,11 +728,12 @@ public class ES7xConnection {
                         } else {
                             retryCounter.remove(retry);
                         }
-                    } else {
-                        retryAndGetErrorRequests(rowList, errorRequests);
+                    } else if (!rowList.isEmpty() && !retryAndGetErrorRequests(rowList, errorRequests)) {
+                        return false;
                     }
                 }
             }
+            return true;
         }
 
         @Override
