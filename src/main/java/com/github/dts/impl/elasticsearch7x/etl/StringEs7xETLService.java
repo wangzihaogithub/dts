@@ -53,25 +53,30 @@ public class StringEs7xETLService {
         return syncById(id, esIndexName, true, null);
     }
 
-    public Integer deleteTrim(String esIndexName) {
+    public int deleteTrim(String esIndexName) {
         return deleteTrim(esIndexName, 500, 100);
     }
 
-    public void syncAll(
+    public int syncAll(
             String esIndexName,
             String offsetStart,
             int offsetAdd,
             boolean append,
             boolean onlyCurrentIndex,
             int joinUpdateSize,
-            String[] onlyFieldName) {
+            Set<String> onlyFieldNameSet) {
         List<ES7xAdapter> adapterList = startupServer.getAdapter(ES7xAdapter.class);
-        if (adapterList.isEmpty()) {
-            return;
+        int count = 0;
+        for (ES7xAdapter adapter : adapterList) {
+            Map<String, ESSyncConfig> configMap = adapter.getEsSyncConfigByIndex(esIndexName);
+            count += configMap.size();
         }
-
-        Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(StringUtils::isNotBlank).collect(Collectors.toSet());
+        if (count == 0) {
+            return 0;
+        }
+        this.stop = false;
         executorService.execute(() -> {
+            AbstractMessageService messageService = startupServer.getMessageService();
             for (ES7xAdapter adapter : adapterList) {
                 Map<String, ESSyncConfig> configMap = adapter.getEsSyncConfigByIndex(esIndexName);
                 for (ESSyncConfig config : configMap.values()) {
@@ -94,33 +99,31 @@ public class StringEs7xETLService {
                                 break;
                             }
                         } while (minId != null);
-                        sendDone(timestamp, dmlSize.intValue());
+                        sendDone(messageService, timestamp, dmlSize.intValue(), onlyFieldNameSet, adapter, config);
                     } catch (Exception e) {
-                        sendError(e, minId, timestamp, dmlSize.get());
+                        sendError(messageService, e, minId, timestamp, dmlSize.get(), onlyFieldNameSet, adapter, config);
                         throw e;
                     }
                 }
             }
         });
+        return count;
     }
 
-    public Object syncById(String[] id,
-                           String esIndexName,
-                           boolean onlyCurrentIndex,
-                           String[] onlyFieldName) {
+    public int syncById(String[] id,
+                        String esIndexName,
+                        boolean onlyCurrentIndex,
+                        Set<String> onlyFieldNameSet) {
         List<ES7xAdapter> adapterList = startupServer.getAdapter(ES7xAdapter.class);
         if (adapterList.isEmpty()) {
-            return "empty";
+            return 0;
         }
         int count = 0;
-        Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(StringUtils::isNotBlank).collect(Collectors.toSet());
         for (ES7xAdapter adapter : adapterList) {
             Map<String, ESSyncConfig> configMap = adapter.getEsSyncConfigByIndex(esIndexName);
             for (ESSyncConfig config : configMap.values()) {
                 JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(config.getDataSourceKey());
                 String catalog = CanalConfig.DatasourceConfig.getCatalog(config.getDataSourceKey());
-                stop = false;
-
                 try {
                     count += id.length;
                     syncById(jdbcTemplate, catalog, Arrays.asList(id), onlyCurrentIndex, onlyFieldNameSet, adapter, config);
@@ -132,15 +135,16 @@ public class StringEs7xETLService {
         return count;
     }
 
-    public Integer deleteTrim(String esIndexName,
-                              int offsetAdd,
-                              int maxSendMessageDeleteIdSize) {
+    public int deleteTrim(String esIndexName,
+                          int offsetAdd,
+                          int maxSendMessageDeleteIdSize) {
         List<ES7xAdapter> adapterList = startupServer.getAdapter(ES7xAdapter.class);
         if (adapterList.isEmpty()) {
             return 0;
         }
 
         executorService.execute(() -> {
+            AbstractMessageService messageService = startupServer.getMessageService();
             for (ES7xAdapter adapter : adapterList) {
                 int hitListSize = 0;
                 int deleteSize = 0;
@@ -180,14 +184,14 @@ public class StringEs7xETLService {
                             esTemplate.commit();
                             searchAfter = searchResponse.getLastSortValues();
                         } while (true);
-                        sendTrimDone(timestamp, hitListSize, deleteSize, deleteIdList);
+                        sendTrimDone(messageService, timestamp, hitListSize, deleteSize, deleteIdList);
                     }
                 } catch (Exception e) {
-                    sendTrimError(e, timestamp, hitListSize, deleteSize, deleteIdList);
+                    sendTrimError(messageService, e, timestamp, hitListSize, deleteSize, deleteIdList);
                 }
             }
         });
-        return 1;
+        return adapterList.size();
     }
 
     public void stopSync() {
@@ -238,18 +242,22 @@ public class StringEs7xETLService {
         return count;
     }
 
-    protected void sendDone(Date startTime, int dmlSize) {
+    protected void sendDone(AbstractMessageService messageService, Date startTime, int dmlSize,
+                            Set<String> onlyFieldNameSet, ES7xAdapter adapter, ESSyncConfig config) {
         String title = "ES搜索全量刷数据-结束";
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
                 + ",\n\n 对象 = " + getClass().getSimpleName()
+                + ",\n\n 索引 = " + config.getEsMapping().get_index()
+                + ",\n\n 影响字段 = " + (onlyFieldNameSet == null ? "全部" : onlyFieldNameSet)
                 + ",\n\n 开始时间 = " + startTime
                 + ",\n\n 结束时间 = " + new Timestamp(System.currentTimeMillis())
                 + ",\n\n DML条数 = " + dmlSize;
-        startupServer.getMessageService().send(title, content);
+        messageService.send(title, content);
     }
 
-    protected void sendError(Throwable throwable, String minId, Date timestamp, int dmlSize) {
+    protected void sendError(AbstractMessageService messageService, Throwable throwable, String minId,
+                             Date timestamp, int dmlSize, Set<String> onlyFieldNameSet, ES7xAdapter adapter, ESSyncConfig config) {
         String title = "ES搜索全量刷数据-异常";
         StringWriter writer = new StringWriter();
         throwable.printStackTrace(new PrintWriter(writer));
@@ -257,15 +265,17 @@ public class StringEs7xETLService {
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
                 + ",\n\n 对象 = " + getClass().getSimpleName()
+                + ",\n\n 索引 = " + config.getEsMapping().get_index()
+                + ",\n\n 影响字段 = " + (onlyFieldNameSet == null ? "全部" : onlyFieldNameSet)
                 + ",\n\n minOffset = " + minId
                 + ",\n\n 开始时间 = " + timestamp
                 + ",\n\n DML条数 = " + dmlSize
                 + ",\n\n 异常 = " + throwable
                 + ",\n\n 明细 = " + writer;
-        startupServer.getMessageService().send(title, content);
+        messageService.send(title, content);
     }
 
-    protected void sendTrimDone(Date startTime, int dmlSize, int deleteSize, List<String> deleteIdList) {
+    protected void sendTrimDone(AbstractMessageService messageService, Date startTime, int dmlSize, int deleteSize, List<String> deleteIdList) {
         String title = "ES搜索全量校验Trim数据-结束";
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
@@ -275,10 +285,10 @@ public class StringEs7xETLService {
                 + ",\n\n 校验条数 = " + dmlSize
                 + ",\n\n 删除条数 = " + deleteSize
                 + ",\n\n 删除ID = " + deleteIdList;
-        startupServer.getMessageService().send(title, content);
+        messageService.send(title, content);
     }
 
-    protected void sendTrimError(Throwable throwable, Date timestamp, int dmlSize, int deleteSize, List<String> deleteIdList) {
+    protected void sendTrimError(AbstractMessageService messageService, Throwable throwable, Date timestamp, int dmlSize, int deleteSize, List<String> deleteIdList) {
         String title = "ES搜索全量校验Trim数据-异常";
         StringWriter writer = new StringWriter();
         throwable.printStackTrace(new PrintWriter(writer));
@@ -292,7 +302,7 @@ public class StringEs7xETLService {
                 + ",\n\n 删除ID = " + deleteIdList
                 + ",\n\n 异常 = " + throwable
                 + ",\n\n 明细 = " + writer;
-        startupServer.getMessageService().send(title, content);
+        messageService.send(title, content);
     }
 
     protected List<Dml> convertDmlList(JdbcTemplate jdbcTemplate, String catalog, String minId, int limit, String tableName, String idColumnName, ESSyncConfig config) {

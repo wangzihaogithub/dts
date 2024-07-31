@@ -74,7 +74,7 @@ public abstract class AbstractEs7xETLDateController {
         long offsetStartDate = offsetStartParse.getTime();
         Long offsetEndDate = offsetEndParse == null ? null : offsetEndParse.getTime();
 
-        Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(StringUtils::isNotBlank).collect(Collectors.toSet());
+        Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(StringUtils::isNotBlank).collect(Collectors.toCollection(LinkedHashSet::new));
         String clientIdentity = getES7xAdapter().getClientIdentity();
         if (discard) {
             new Thread(() -> {
