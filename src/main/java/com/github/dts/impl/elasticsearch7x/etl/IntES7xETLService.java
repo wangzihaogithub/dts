@@ -261,7 +261,7 @@ public class IntES7xETLService {
         String pk = config.getEsMapping().getPk();
         String tableName = config.getEsMapping().getSchemaItem().getMainTable().getTableName();
         for (Integer i : id) {
-            List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, i, 1, pk, tableName, config);
+            List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, i, 1, tableName, pk, config);
             esAdapter.sync(dmlList, false, true, onlyCurrentIndex, 1, onlyFieldNameSet);
             count += dmlList.size();
         }

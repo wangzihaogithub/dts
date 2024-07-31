@@ -207,7 +207,7 @@ public class StringEs7xETLService {
                                 ES7xAdapter esAdapter, ESSyncConfig config) {
         String tableName = config.getEsMapping().getSchemaItem().getMainTable().getTableName();
         String pk = config.getEsMapping().getPk();
-        List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, minId, limit, pk, tableName, config);
+        List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, minId, limit, tableName, pk, config);
         if (dmlList.isEmpty()) {
             return dmlList;
         }
@@ -228,7 +228,7 @@ public class StringEs7xETLService {
         String tableName = config.getEsMapping().getSchemaItem().getMainTable().getTableName();
         String pk = config.getEsMapping().getPk();
         for (String i : id) {
-            List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, i, 1, pk, tableName, config);
+            List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, i, 1, tableName, pk, config);
             for (Dml dml : dmlList) {
                 dml.setDestination(esAdapter.getConfiguration().getCanalAdapter().getDestination());
             }
