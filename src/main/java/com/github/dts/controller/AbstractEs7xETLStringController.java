@@ -2,11 +2,16 @@ package com.github.dts.controller;
 
 import com.github.dts.canal.StartupServer;
 import com.github.dts.impl.elasticsearch7x.etl.StringEs7xETLService;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
+import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 根据非自增ID的全量灌数据，可以继承这个Controller
@@ -40,9 +45,9 @@ public abstract class AbstractEs7xETLStringController {
             @RequestParam(required = false, defaultValue = "true") boolean onlyCurrentIndex,
             @RequestParam(required = false, defaultValue = "100") int joinUpdateSize,
             String[] onlyFieldName) {
-        stringEs7xETLService.syncAll(esIndexName, offsetStart, offsetAdd,
-                append, onlyCurrentIndex, joinUpdateSize, onlyFieldName);
-        return 1;
+        Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(StringUtils::isNotBlank).collect(Collectors.toCollection(LinkedHashSet::new));
+        return stringEs7xETLService.syncAll(esIndexName, offsetStart, offsetAdd,
+                append, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet);
     }
 
     @RequestMapping("/syncById")
@@ -50,7 +55,8 @@ public abstract class AbstractEs7xETLStringController {
                            @RequestParam String esIndexName,
                            @RequestParam(required = false, defaultValue = "true") boolean onlyCurrentIndex,
                            String[] onlyFieldName) {
-        return stringEs7xETLService.syncById(id, esIndexName, onlyCurrentIndex, onlyFieldName);
+        Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(StringUtils::isNotBlank).collect(Collectors.toCollection(LinkedHashSet::new));
+        return stringEs7xETLService.syncById(id, esIndexName, onlyCurrentIndex, onlyFieldNameSet);
     }
 
     @RequestMapping("/deleteTrim")

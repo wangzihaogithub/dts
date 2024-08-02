@@ -2,11 +2,16 @@ package com.github.dts.controller;
 
 import com.github.dts.canal.StartupServer;
 import com.github.dts.impl.elasticsearch7x.etl.IntES7xETLService;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
+import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 根据自增ID的全量灌数据，可以继承这个Controller
@@ -25,11 +30,10 @@ public abstract class AbstractEs7xETLIntController {
     }
 
     @RequestMapping("/deleteTrim")
-    public Integer deleteTrim(@RequestParam String esIndexName,
+    public boolean deleteTrim(@RequestParam String esIndexName,
                               @RequestParam(required = false, defaultValue = "500") int offsetAdd,
                               @RequestParam(required = false, defaultValue = "1000") int maxSendMessageDeleteIdSize) {
-        intES7xETLService.deleteTrim(esIndexName, offsetAdd, maxSendMessageDeleteIdSize);
-        return 1;
+        return intES7xETLService.deleteTrim(esIndexName, offsetAdd, maxSendMessageDeleteIdSize);
     }
 
     @RequestMapping("/syncAll")
@@ -44,7 +48,8 @@ public abstract class AbstractEs7xETLIntController {
             @RequestParam(required = false, defaultValue = "true") boolean onlyCurrentIndex,
             @RequestParam(required = false, defaultValue = "100") int joinUpdateSize,
             String[] onlyFieldName) {
-        return intES7xETLService.syncAll(esIndexName, threads, offsetStart, offsetEnd, offsetAdd, append, discard, onlyCurrentIndex, joinUpdateSize, onlyFieldName);
+        Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(StringUtils::isNotBlank).collect(Collectors.toCollection(LinkedHashSet::new));
+        return intES7xETLService.syncAll(esIndexName, threads, offsetStart, offsetEnd, offsetAdd, append, discard, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet);
     }
 
     @RequestMapping("/syncById")
@@ -52,7 +57,8 @@ public abstract class AbstractEs7xETLIntController {
                            @RequestParam String esIndexName,
                            @RequestParam(required = false, defaultValue = "true") boolean onlyCurrentIndex,
                            String[] onlyFieldName) {
-        return intES7xETLService.syncById(id, esIndexName, onlyCurrentIndex, onlyFieldName);
+        Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(StringUtils::isNotBlank).collect(Collectors.toCollection(LinkedHashSet::new));
+        return intES7xETLService.syncById(id, esIndexName, onlyCurrentIndex, onlyFieldNameSet);
     }
 
     @RequestMapping("/stop")
