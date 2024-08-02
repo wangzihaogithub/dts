@@ -3,7 +3,6 @@ package com.github.dts.impl.elasticsearch7x.etl;
 import com.github.dts.canal.StartupServer;
 import com.github.dts.impl.elasticsearch7x.ES7xAdapter;
 import com.github.dts.util.*;
-import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -36,8 +35,10 @@ public class StringEs7xETLService {
     protected final StartupServer startupServer;
     private final ExecutorService executorService;
     private boolean stop = false;
+    private final String name;
 
     public StringEs7xETLService(String name, StartupServer startupServer) {
+        this.name = name;
         this.executorService = Util.newFixedThreadPool(1000, 5000L,
                 name, true);
         this.startupServer = startupServer;
@@ -68,8 +69,7 @@ public class StringEs7xETLService {
         List<ES7xAdapter> adapterList = startupServer.getAdapter(ES7xAdapter.class);
         int count = 0;
         for (ES7xAdapter adapter : adapterList) {
-            Map<String, ESSyncConfig> configMap = adapter.getEsSyncConfigByIndex(esIndexName);
-            count += configMap.size();
+            count += adapter.getEsSyncConfigByIndex(esIndexName).size();
         }
         if (count == 0) {
             return 0;
@@ -99,9 +99,9 @@ public class StringEs7xETLService {
                                 break;
                             }
                         } while (minId != null);
-                        sendDone(messageService, timestamp, dmlSize.intValue(), onlyFieldNameSet, adapter, config);
+                        sendDone(messageService, timestamp, dmlSize.intValue(), onlyFieldNameSet, adapter, config, onlyCurrentIndex);
                     } catch (Exception e) {
-                        sendError(messageService, e, minId, timestamp, dmlSize.get(), onlyFieldNameSet, adapter, config);
+                        sendError(messageService, e, minId, timestamp, dmlSize.get(), onlyFieldNameSet, adapter, config, onlyCurrentIndex);
                         throw e;
                     }
                 }
@@ -139,8 +139,12 @@ public class StringEs7xETLService {
                           int offsetAdd,
                           int maxSendMessageDeleteIdSize) {
         List<ES7xAdapter> adapterList = startupServer.getAdapter(ES7xAdapter.class);
-        if (adapterList.isEmpty()) {
-            return 0;
+        int r = 0;
+        for (ES7xAdapter adapter : adapterList) {
+            r += adapter.getEsSyncConfigByIndex(esIndexName).size();
+        }
+        if (r == 0) {
+            return r;
         }
 
         executorService.execute(() -> {
@@ -191,7 +195,7 @@ public class StringEs7xETLService {
                 }
             }
         });
-        return adapterList.size();
+        return r;
     }
 
     public void stopSync() {
@@ -243,12 +247,13 @@ public class StringEs7xETLService {
     }
 
     protected void sendDone(AbstractMessageService messageService, Date startTime, int dmlSize,
-                            Set<String> onlyFieldNameSet, ES7xAdapter adapter, ESSyncConfig config) {
+                            Set<String> onlyFieldNameSet, ES7xAdapter adapter, ESSyncConfig config, boolean onlyCurrentIndex) {
         String title = "ES搜索全量刷数据-结束";
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
-                + ",\n\n 对象 = " + getClass().getSimpleName()
+                + ",\n\n 对象 = " + getName()
                 + ",\n\n 索引 = " + config.getEsMapping().get_index()
+                + ",\n\n 是否需要更新关联索引 = " + !onlyCurrentIndex
                 + ",\n\n 影响字段 = " + (onlyFieldNameSet == null ? "全部" : onlyFieldNameSet)
                 + ",\n\n 开始时间 = " + startTime
                 + ",\n\n 结束时间 = " + new Timestamp(System.currentTimeMillis())
@@ -257,15 +262,16 @@ public class StringEs7xETLService {
     }
 
     protected void sendError(AbstractMessageService messageService, Throwable throwable, String minId,
-                             Date timestamp, int dmlSize, Set<String> onlyFieldNameSet, ES7xAdapter adapter, ESSyncConfig config) {
+                             Date timestamp, int dmlSize, Set<String> onlyFieldNameSet, ES7xAdapter adapter, ESSyncConfig config, boolean onlyCurrentIndex) {
         String title = "ES搜索全量刷数据-异常";
         StringWriter writer = new StringWriter();
         throwable.printStackTrace(new PrintWriter(writer));
 
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
-                + ",\n\n 对象 = " + getClass().getSimpleName()
+                + ",\n\n 对象 = " + getName()
                 + ",\n\n 索引 = " + config.getEsMapping().get_index()
+                + ",\n\n 是否需要更新关联索引 = " + !onlyCurrentIndex
                 + ",\n\n 影响字段 = " + (onlyFieldNameSet == null ? "全部" : onlyFieldNameSet)
                 + ",\n\n minOffset = " + minId
                 + ",\n\n 开始时间 = " + timestamp
@@ -279,7 +285,7 @@ public class StringEs7xETLService {
         String title = "ES搜索全量校验Trim数据-结束";
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
-                + ",\n\n 对象 = " + getClass().getSimpleName()
+                + ",\n\n 对象 = " + getName()
                 + ",\n\n 开始时间 = " + startTime
                 + ",\n\n 结束时间 = " + new Timestamp(System.currentTimeMillis())
                 + ",\n\n 校验条数 = " + dmlSize
@@ -295,7 +301,7 @@ public class StringEs7xETLService {
 
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
-                + ",\n\n 对象 = " + getClass().getSimpleName()
+                + ",\n\n 对象 = " + getName()
                 + ",\n\n 开始时间 = " + timestamp
                 + ",\n\n 校验条数 = " + dmlSize
                 + ",\n\n 删除条数 = " + deleteSize
@@ -339,4 +345,7 @@ public class StringEs7xETLService {
         return o == null || "".equals(o) ? null : o.toString();
     }
 
+    public String getName() {
+        return name;
+    }
 }

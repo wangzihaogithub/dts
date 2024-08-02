@@ -30,7 +30,7 @@ public abstract class AbstractEs7xETLIntController {
     }
 
     @RequestMapping("/deleteTrim")
-    public boolean deleteTrim(@RequestParam String esIndexName,
+    public int deleteTrim(@RequestParam String esIndexName,
                               @RequestParam(required = false, defaultValue = "500") int offsetAdd,
                               @RequestParam(required = false, defaultValue = "1000") int maxSendMessageDeleteIdSize) {
         return intES7xETLService.deleteTrim(esIndexName, offsetAdd, maxSendMessageDeleteIdSize);
