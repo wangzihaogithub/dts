@@ -21,14 +21,6 @@ public enum RingBufferSizeMemoryEnum {
         this.memoryKB = bufferSizeKB * bufferSizeKB;
     }
 
-    public int getBufferSizeKB() {
-        return bufferSizeKB;
-    }
-
-    public int getMemoryKB() {
-        return memoryKB;
-    }
-
     public static RingBufferSizeMemoryEnum getByJvmMaxMemoryRate(int rate) {
         long jvmMaxMemory = Runtime.getRuntime().maxMemory();
         double jvmMaxMemoryKB = jvmMaxMemory / 1024D;
@@ -46,6 +38,21 @@ public enum RingBufferSizeMemoryEnum {
         }
         int diffHi = hi.memoryKB - usedMemoryKB;
         int diffLo = usedMemoryKB - lo.memoryKB;
-        return diffLo < diffHi ? lo : hi;
+        RingBufferSizeMemoryEnum result = diffLo < diffHi ? lo : hi;
+
+        RingBufferSizeMemoryEnum min = RingBufferSizeMemoryEnum.MEMORY_1G;
+        if (result.getBufferSizeKB() < min.getBufferSizeKB() && jvmMaxMemory > min.getBufferSizeKB()) {
+            return min;
+        } else {
+            return result;
+        }
+    }
+
+    public int getBufferSizeKB() {
+        return bufferSizeKB;
+    }
+
+    public int getMemoryKB() {
+        return memoryKB;
     }
 }

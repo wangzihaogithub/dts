@@ -549,6 +549,9 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
             ack();
             getAck2().ack();
         }
+        metaManager.setCursor(null, true);
+        File file = new File(new File(dataDir, identity.getDestination()), "meta.dat");
+        boolean deletedDir = deleteDir(file);
         Map<String, Object> result = new HashMap<>();
         result.put("minId", minId);
         result.put("maxId", maxId);
@@ -636,9 +639,7 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
                 scheduled.scheduleAtFixedRate(() -> {
                     if (cursorChange.compareAndSet(true, false)) {
                         Object cursor = this.cursor;
-                        if (cursor != null) {
-                            metaDataRepository.setCursor(cursor);
-                        }
+                        metaDataRepository.setCursor(cursor);
                     }
                 }, period, period, TimeUnit.MILLISECONDS);
 

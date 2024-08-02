@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.serializer.RedisSerializer;
 
 import java.nio.charset.Charset;
 
@@ -16,6 +17,8 @@ public class RedisMetaDataRepository implements MetaDataRepository {
 
     public RedisMetaDataRepository(String key, Object redisConnectionFactory) {
         this.key = key.getBytes(UTF_8);
+        redisTemplate.setKeySerializer(RedisSerializer.byteArray());
+        redisTemplate.setValueSerializer(RedisSerializer.byteArray());
         redisTemplate.setConnectionFactory((RedisConnectionFactory) redisConnectionFactory);
         redisTemplate.afterPropertiesSet();
     }
@@ -37,27 +40,31 @@ public class RedisMetaDataRepository implements MetaDataRepository {
 
     @Override
     public <T> T getCursor() {
-        byte[] bytes = redisTemplate.opsForValue().get(key);
-        if (bytes == null || bytes.length == 0) {
-            return null;
-        }
-        Data data = JsonUtil.toBean(new String(bytes, UTF_8), Data.class);
         try {
+            byte[] bytes = redisTemplate.opsForValue().get(key);
+            if (bytes == null || bytes.length == 0) {
+                return null;
+            }
+            Data data = JsonUtil.toBean(new String(bytes, UTF_8), Data.class);
             Class<T> type = (Class<T>) Class.forName(data.getClassName());
             return JsonUtil.toBean(data.getValue(), type);
-        } catch (ClassNotFoundException e) {
-            Util.sneakyThrows(e);
+        } catch (Exception e) {
+            log.warn("getCursor fail {}", e.toString(), e);
             return null;
         }
     }
 
     @Override
     public void setCursor(Object cursor) {
-        if (cursor == null) {
-            redisTemplate.delete(key);
-        } else {
-            Data data = new Data(cursor.getClass().getName(), JsonUtil.toJson(cursor));
-            redisTemplate.opsForValue().set(key, JsonUtil.toJsonUTF8Bytes(data));
+        try {
+            if (cursor == null) {
+                redisTemplate.delete(key);
+            } else {
+                Data data = new Data(cursor.getClass().getName(), JsonUtil.toJson(cursor));
+                redisTemplate.opsForValue().set(key, JsonUtil.toJsonUTF8Bytes(data));
+            }
+        } catch (Exception e) {
+            log.warn("setCursor fail {}", e.toString(), e);
         }
     }
 
