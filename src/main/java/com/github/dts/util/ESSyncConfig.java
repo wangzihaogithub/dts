@@ -437,7 +437,7 @@ public class ESSyncConfig {
             }
             LinkedHashSet<String> mainColumnSet = new LinkedHashSet<>(mainColumnList);
             if (mainColumnSet.size() != 1) {
-                throw new IllegalArgumentException("parentDocumentId is only support single column. find " + mainColumnSet);
+                throw new IllegalArgumentException("parentDocumentId is only support single var column. find " + mainColumnSet);
             }
             return mainColumnSet.iterator().next();
         }

@@ -76,16 +76,14 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
                     List<List<T>> partition = Lists.partition(valueList, maxIdInCount);
                     for (List<T> list : partition) {
                         List<Object[]> argsList = list.stream().map(SQL::getArgs).collect(Collectors.toList());
-                        List<SqlParser.ChangeSQL> changeSQLList = SqlParser.changeMergeSelect(first.getExprSql(), argsList, first.getNeedGroupBy());
-                        if (changeSQLList != null) {
-                            for (SqlParser.ChangeSQL changeSQL : changeSQLList) {
-                                result.add(new MergeJdbcTemplateSQL<>(
-                                        changeSQL.getSql(), changeSQL.getArgs(),
-                                        first.getDataSourceKey(),
-                                        changeSQL.getUniqueColumnNames(), changeSQL.getAddColumnNameList(),
-                                        list,
-                                        first.getNeedGroupBy()));
-                            }
+                        SqlParser.ChangeSQL changeSQL = SqlParser.changeMergeSelect(first.getExprSql(), argsList, first.getNeedGroupBy());
+                        if (changeSQL != null) {
+                            result.add(new MergeJdbcTemplateSQL<>(
+                                    changeSQL.getSql(), changeSQL.getArgs(),
+                                    first.getDataSourceKey(),
+                                    changeSQL.getUniqueColumnNames(), changeSQL.getAddColumnNameList(),
+                                    list,
+                                    first.getNeedGroupBy()));
                         } else {
                             for (T value : list) {
                                 result.add(new MergeJdbcTemplateSQL<>(
