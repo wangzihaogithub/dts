@@ -2,7 +2,6 @@ package com.github.dts.util;
 
 import com.github.dts.impl.elasticsearch7x.ES7xAdapter;
 import com.github.dts.impl.elasticsearch7x.NestedFieldWriter;
-import org.apache.commons.lang3.StringUtils;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -57,7 +56,7 @@ public class ESSyncConfig {
                 }
                 objectField.setSchemaItem(schemaItem1);
             }
-            if (StringUtils.isBlank(objectField.getParentDocumentId())) {
+            if (Util.isBlank(objectField.getParentDocumentId())) {
                 objectField.setParentDocumentId(objectField.parentDocumentId());
             }
         }

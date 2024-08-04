@@ -13,6 +13,7 @@ import java.sql.Timestamp;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 /**
@@ -43,7 +44,7 @@ public class IntES7xETLService {
                 true, false, true, 100, null);
     }
 
-    public Object syncById(Integer[] id,
+    public Object syncById(Long[] id,
                            String esIndexName) {
         return syncById(id, esIndexName, true, null);
     }
@@ -53,8 +54,8 @@ public class IntES7xETLService {
     }
 
     public int deleteTrim(String esIndexName,
-                              int offsetAdd,
-                              int maxSendMessageDeleteIdSize) {
+                          int offsetAdd,
+                          int maxSendMessageDeleteIdSize) {
         List<ES7xAdapter> adapterList = startupServer.getAdapter(ES7xAdapter.class);
         int r = 0;
         for (ES7xAdapter adapter : adapterList) {
@@ -67,8 +68,8 @@ public class IntES7xETLService {
         executorService.execute(() -> {
             AbstractMessageService messageService = startupServer.getMessageService();
             for (ES7xAdapter adapter : adapterList) {
-                int hitListSize = 0;
-                int deleteSize = 0;
+                long hitListSize = 0;
+                long deleteSize = 0;
                 List<String> deleteIdList = new ArrayList<>();
                 Timestamp timestamp = new Timestamp(System.currentTimeMillis());
                 ESSyncConfig lastConfig = null;
@@ -120,8 +121,8 @@ public class IntES7xETLService {
     public List<SyncRunnable> syncAll(
             String esIndexName,
             int threads,
-            int offsetStart,
-            Integer offsetEnd,
+            long offsetStart,
+            Long offsetEnd,
             int offsetAdd,
             boolean append,
             boolean discard,
@@ -159,24 +160,24 @@ public class IntES7xETLService {
                 String pk = config.getEsMapping().getPk();
                 String tableName = config.getEsMapping().getSchemaItem().getMainTable().getTableName();
 
-                Integer maxId = offsetEnd == null || offsetEnd == Integer.MAX_VALUE ?
+                Long maxId = offsetEnd == null || offsetEnd == Long.MAX_VALUE ?
                         selectMaxId(jdbcTemplate, pk, tableName) : offsetEnd;
 
                 Date timestamp = new Timestamp(System.currentTimeMillis());
                 AtomicInteger done = new AtomicInteger(0);
-                AtomicInteger dmlSize = new AtomicInteger(0);
+                AtomicLong dmlSize = new AtomicLong(0);
                 for (int i = 0; i < threads; i++) {
                     runnableList.add(new SyncRunnable(name, this,
                             i, offsetStart, maxId, threads, onlyFieldNameSet, adapter, config, onlyCurrentIndex) {
                         @Override
-                        public int run0(int offset) {
+                        public long run0(long offset) {
                             if (stop) {
-                                return Integer.MAX_VALUE;
+                                return Long.MAX_VALUE;
                             }
                             List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, offset, offsetAdd, tableName, pk, config);
 
                             if (!append) {
-                                Integer dmlListMaxId = getDmlListMaxId(dmlList);
+                                Long dmlListMaxId = getDmlListMaxId(dmlList);
                                 adapter.getEsTemplate().deleteByRange(config.getEsMapping(), ESSyncConfig.ES_ID_FIELD_NAME, offset, dmlListMaxId, offsetAdd);
                             }
                             if (!dmlList.isEmpty()) {
@@ -184,10 +185,10 @@ public class IntES7xETLService {
                             }
                             dmlSize.addAndGet(dmlList.size());
                             if (log.isInfoEnabled()) {
-                                log.info("syncAll dmlSize = {}, minOffset = {} ", dmlSize.intValue(), SyncRunnable.minOffset(runnableList));
+                                log.info("syncAll dmlSize = {}, minOffset = {} ", dmlSize.longValue(), SyncRunnable.minOffset(runnableList));
                             }
-                            Integer dmlListMaxId = getDmlListMaxId(dmlList);
-                            return dmlListMaxId == null ? Integer.MAX_VALUE : dmlListMaxId;
+                            Long dmlListMaxId = getDmlListMaxId(dmlList);
+                            return dmlListMaxId == null ? Long.MAX_VALUE : dmlListMaxId;
                         }
 
                         @Override
@@ -197,7 +198,7 @@ public class IntES7xETLService {
                                     log.info("syncAll done {}", this);
                                 }
                                 setSuspendEs7x(false, clientIdentity);
-                                sendDone(messageService, runnableList, timestamp, dmlSize.intValue(), onlyFieldNameSet, adapter, config, onlyCurrentIndex);
+                                sendDone(messageService, runnableList, timestamp, dmlSize.longValue(), onlyFieldNameSet, adapter, config, onlyCurrentIndex);
                             }
                         }
                     });
@@ -210,7 +211,7 @@ public class IntES7xETLService {
         return runnableList;
     }
 
-    public int syncById(Integer[] id,
+    public int syncById(Long[] id,
                         String esIndexName,
                         boolean onlyCurrentIndex,
                         Set<String> onlyFieldNameSet) {
@@ -256,11 +257,11 @@ public class IntES7xETLService {
         }
     }
 
-    protected Integer selectMaxId(JdbcTemplate jdbcTemplate, String idFiled, String tableName) {
-        return jdbcTemplate.queryForObject("select max(" + idFiled + ") from " + tableName, Integer.class);
+    protected Long selectMaxId(JdbcTemplate jdbcTemplate, String idFiled, String tableName) {
+        return jdbcTemplate.queryForObject("select max(" + idFiled + ") from " + tableName, Long.class);
     }
 
-    protected int syncById(JdbcTemplate jdbcTemplate, String catalog, Collection<Integer> id,
+    protected int syncById(JdbcTemplate jdbcTemplate, String catalog, Collection<Long> id,
                            boolean onlyCurrentIndex, Collection<String> onlyFieldNameSet,
                            ES7xAdapter esAdapter, ESSyncConfig config) {
         if (id == null || id.isEmpty()) {
@@ -269,7 +270,7 @@ public class IntES7xETLService {
         int count = 0;
         String pk = config.getEsMapping().getPk();
         String tableName = config.getEsMapping().getSchemaItem().getMainTable().getTableName();
-        for (Integer i : id) {
+        for (Long i : id) {
             List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, i, 1, tableName, pk, config);
             esAdapter.sync(dmlList, false, true, onlyCurrentIndex, 1, onlyFieldNameSet);
             count += dmlList.size();
@@ -278,7 +279,7 @@ public class IntES7xETLService {
     }
 
     protected void sendDone(AbstractMessageService messageService, List<SyncRunnable> runnableList,
-                            Date startTime, int dmlSize,
+                            Date startTime, long dmlSize,
                             Set<String> onlyFieldNameSet,
                             ES7xAdapter adapter, ESSyncConfig config, boolean onlyCurrentIndex) {
         String title = "ES搜索全量刷数据-结束";
@@ -296,7 +297,7 @@ public class IntES7xETLService {
     }
 
     protected void sendError(AbstractMessageService messageService, Throwable throwable,
-                             SyncRunnable runnable, Integer minOffset,
+                             SyncRunnable runnable, Long minOffset,
                              Set<String> onlyFieldNameSet,
                              ES7xAdapter adapter, ESSyncConfig config, boolean onlyCurrentIndex) {
         String title = "ES搜索全量刷数据-异常";
@@ -318,7 +319,7 @@ public class IntES7xETLService {
     }
 
     protected void sendTrimDone(AbstractMessageService messageService, Date startTime,
-                                int dmlSize, int deleteSize, List<String> deleteIdList,
+                                long dmlSize, long deleteSize, List<String> deleteIdList,
                                 ES7xAdapter adapter, ESSyncConfig config) {
         String title = "ES搜索全量校验Trim数据-结束";
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
@@ -333,7 +334,7 @@ public class IntES7xETLService {
     }
 
     protected void sendTrimError(AbstractMessageService messageService, Throwable throwable,
-                                 Date timestamp, int dmlSize, int deleteSize, List<String> deleteIdList,
+                                 Date timestamp, long dmlSize, long deleteSize, List<String> deleteIdList,
                                  ES7xAdapter adapter, ESSyncConfig config) {
         String title = "ES搜索全量校验Trim数据-异常";
         StringWriter writer = new StringWriter();
@@ -351,7 +352,7 @@ public class IntES7xETLService {
         messageService.send(title, content);
     }
 
-    protected List<Dml> convertDmlList(JdbcTemplate jdbcTemplate, String catalog, Integer minId, int limit, String tableName, String idColumnName, ESSyncConfig config) {
+    protected List<Dml> convertDmlList(JdbcTemplate jdbcTemplate, String catalog, Long minId, int limit, String tableName, String idColumnName, ESSyncConfig config) {
         List<Map<String, Object>> jobList = selectList(jdbcTemplate, minId, limit, tableName, idColumnName);
         List<Dml> dmlList = new ArrayList<>();
         for (Map<String, Object> row : jobList) {
@@ -360,7 +361,7 @@ public class IntES7xETLService {
         return dmlList;
     }
 
-    protected List<Map<String, Object>> selectList(JdbcTemplate jdbcTemplate, Integer minId, int limit, String tableName, String idColumnName) {
+    protected List<Map<String, Object>> selectList(JdbcTemplate jdbcTemplate, Long minId, int limit, String tableName, String idColumnName) {
         String sql;
         if (limit == 1) {
             sql = "select * from " + tableName + " where " + idColumnName + " = ? limit ?";
@@ -370,8 +371,8 @@ public class IntES7xETLService {
         return jdbcTemplate.queryForList(sql, minId, limit);
     }
 
-    protected Integer getDmlListMaxId(List<Dml> list) {
-        int maxId = Integer.MIN_VALUE;
+    protected Long getDmlListMaxId(List<Dml> list) {
+        long maxId = Long.MIN_VALUE;
         for (Dml dml : list) {
             List<String> pkNames = dml.getPkNames();
             if (pkNames.size() != 1) {
@@ -383,31 +384,31 @@ public class IntES7xETLService {
                 if (o == null) {
                     continue;
                 }
-                int id;
-                if (o instanceof Integer) {
-                    id = (Integer) o;
+                long id;
+                if (o instanceof Long) {
+                    id = (Long) o;
                 } else {
-                    id = Integer.parseInt(o.toString());
+                    id = Long.parseLong(o.toString());
                 }
                 if (id > maxId) {
                     maxId = id;
                 }
             }
         }
-        return maxId == Integer.MIN_VALUE ? null : maxId;
+        return maxId == Long.MIN_VALUE ? null : maxId;
     }
 
     public static abstract class SyncRunnable implements Runnable {
         private static final List<SyncRunnable> RUNNABLE_LIST = Collections.synchronizedList(new ArrayList<>());
         protected final int threadIndex;
-        private final int maxId;
+        private final long maxId;
         private final int threads;
-        private final int offset;
-        private final int endOffset;
-        private final int offsetStart;
+        private final long offset;
+        private final long endOffset;
+        private final long offsetStart;
         private final IntES7xETLService service;
         private final String name;
-        protected int cOffset;
+        protected long currOffset;
         private boolean done;
         private final Set<String> onlyFieldNameSet;
         private final ES7xAdapter adapter;
@@ -415,7 +416,7 @@ public class IntES7xETLService {
         private final boolean onlyCurrentIndex;
 
         public SyncRunnable(String name, IntES7xETLService service,
-                            int threadIndex, int offsetStart, int maxId, int threads,
+                            int threadIndex, long offsetStart, long maxId, int threads,
                             Set<String> onlyFieldNameSet,
                             ES7xAdapter adapter,
                             ESSyncConfig config, boolean onlyCurrentIndex) {
@@ -429,29 +430,29 @@ public class IntES7xETLService {
             this.maxId = maxId;
             this.threads = threads;
             this.offsetStart = offsetStart;
-            int allocation = ((maxId + 1 - offsetStart) / threads);
+            long allocation = ((maxId + 1 - offsetStart) / threads);
             this.offset = offsetStart + (threadIndex * allocation);
             this.endOffset = threadIndex + 1 == threads ? offset + allocation * 3 : offset + allocation;
-            this.cOffset = offset;
+            this.currOffset = offset;
             RUNNABLE_LIST.add(this);
         }
 
-        public static Integer minOffset(List<SyncRunnable> list) {
-            Integer min = null;
+        public static Long minOffset(List<SyncRunnable> list) {
+            Long min = null;
             for (SyncRunnable runnable : list) {
                 if (!runnable.done) {
                     if (min == null) {
-                        min = runnable.cOffset;
+                        min = runnable.currOffset;
                     } else {
-                        min = Math.min(min, runnable.cOffset);
+                        min = Math.min(min, runnable.currOffset);
                     }
                 }
             }
             return min;
         }
 
-        public int getcOffset() {
-            return cOffset;
+        public long getCurrOffset() {
+            return currOffset;
         }
 
         public String getName() {
@@ -466,28 +467,28 @@ public class IntES7xETLService {
         public void run() {
             int i = 0;
             try {
-                for (cOffset = offset, i = 0; cOffset < endOffset; i++) {
+                for (currOffset = offset, i = 0; currOffset < endOffset; i++) {
                     long ts = System.currentTimeMillis();
-                    int cOffsetbefore = cOffset;
-                    cOffset = run0(cOffset);
+                    long cOffsetbefore = currOffset;
+                    currOffset = run0(currOffset);
                     log.info("all sync threadIndex {}/{}, offset = {}-{}, i ={}, remain = {}, cost = {}ms, maxId = {}",
-                            threadIndex, threads, cOffsetbefore, cOffset, i,
-                            endOffset - cOffset, System.currentTimeMillis() - ts, maxId);
-                    if (cOffset == Integer.MAX_VALUE) {
+                            threadIndex, threads, cOffsetbefore, currOffset, i,
+                            endOffset - currOffset, System.currentTimeMillis() - ts, maxId);
+                    if (currOffset == Long.MAX_VALUE) {
                         break;
                     }
-                    if (cOffsetbefore == cOffset && cOffsetbefore == maxId) {
+                    if (cOffsetbefore == currOffset && cOffsetbefore == maxId) {
                         break;
                     }
                 }
             } catch (Exception e) {
-                Integer minOffset = SyncRunnable.minOffset(SyncRunnable.RUNNABLE_LIST);
+                Long minOffset = SyncRunnable.minOffset(SyncRunnable.RUNNABLE_LIST);
                 service.sendError(service.startupServer.getMessageService(), e, this, minOffset, onlyFieldNameSet, adapter, config, onlyCurrentIndex);
                 throw e;
             } finally {
                 done = true;
                 log.info("all sync done threadIndex {}/{}, offset = {}, i ={}, maxId = {}, info ={} ",
-                        threadIndex, threads, cOffset, i, maxId, this);
+                        threadIndex, threads, currOffset, i, maxId, this);
                 done();
             }
         }
@@ -496,13 +497,13 @@ public class IntES7xETLService {
 
         }
 
-        public abstract int run0(int offset);
+        public abstract long run0(long offset);
 
         public int getThreadIndex() {
             return threadIndex;
         }
 
-        public int getMaxId() {
+        public long getMaxId() {
             return maxId;
         }
 
@@ -510,15 +511,15 @@ public class IntES7xETLService {
             return threads;
         }
 
-        public int getOffset() {
+        public long getOffset() {
             return offset;
         }
 
-        public int getEndOffset() {
+        public long getEndOffset() {
             return endOffset;
         }
 
-        public int getOffsetStart() {
+        public long getOffsetStart() {
             return offsetStart;
         }
 
@@ -526,7 +527,7 @@ public class IntES7xETLService {
         public String toString() {
             return threadIndex + ":" + threads + "{" +
                     "start=" + offset +
-                    ", end=" + cOffset +
+                    ", end=" + currOffset +
                     ", max=" + endOffset +
                     '}';
         }

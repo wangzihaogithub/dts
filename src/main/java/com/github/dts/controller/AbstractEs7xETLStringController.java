@@ -2,7 +2,7 @@ package com.github.dts.controller;
 
 import com.github.dts.canal.StartupServer;
 import com.github.dts.impl.elasticsearch7x.etl.StringEs7xETLService;
-import org.apache.commons.lang3.StringUtils;
+import com.github.dts.util.Util;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -45,7 +45,7 @@ public abstract class AbstractEs7xETLStringController {
             @RequestParam(required = false, defaultValue = "true") boolean onlyCurrentIndex,
             @RequestParam(required = false, defaultValue = "100") int joinUpdateSize,
             String[] onlyFieldName) {
-        Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(StringUtils::isNotBlank).collect(Collectors.toCollection(LinkedHashSet::new));
+        Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(Util::isNotBlank).collect(Collectors.toCollection(LinkedHashSet::new));
         return stringEs7xETLService.syncAll(esIndexName, offsetStart, offsetAdd,
                 append, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet);
     }
@@ -55,7 +55,7 @@ public abstract class AbstractEs7xETLStringController {
                            @RequestParam String esIndexName,
                            @RequestParam(required = false, defaultValue = "true") boolean onlyCurrentIndex,
                            String[] onlyFieldName) {
-        Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(StringUtils::isNotBlank).collect(Collectors.toCollection(LinkedHashSet::new));
+        Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(Util::isNotBlank).collect(Collectors.toCollection(LinkedHashSet::new));
         return stringEs7xETLService.syncById(id, esIndexName, onlyCurrentIndex, onlyFieldNameSet);
     }
 

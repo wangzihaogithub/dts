@@ -3,7 +3,6 @@ package com.github.dts.controller;
 import com.github.dts.canal.StartupServer;
 import com.github.dts.impl.elasticsearch7x.ES7xAdapter;
 import com.github.dts.util.*;
-import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -74,7 +73,7 @@ public abstract class AbstractEs7xETLDateController {
         long offsetStartDate = offsetStartParse.getTime();
         Long offsetEndDate = offsetEndParse == null ? null : offsetEndParse.getTime();
 
-        Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(StringUtils::isNotBlank).collect(Collectors.toCollection(LinkedHashSet::new));
+        Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(Util::isNotBlank).collect(Collectors.toCollection(LinkedHashSet::new));
         String clientIdentity = getES7xAdapter().getClientIdentity();
         if (discard) {
             new Thread(() -> {
