@@ -57,13 +57,7 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
             }
             case 1: {
                 T first = sqlList.iterator().next();
-                return Collections.singletonList(
-                        new MergeJdbcTemplateSQL<>(
-                                first.getExprSql(), first.getArgs(),
-                                first.getDataSourceKey(),
-                                null, null,
-                                new ArrayList<>(sqlList), first.getNeedGroupBy())
-                );
+                return Collections.singletonList(newNoMerge(new ArrayList<>(sqlList), first));
             }
             default: {
                 Set<T> sqlSet = sqlList instanceof Set ? (Set<T>) sqlList : new LinkedHashSet<>(sqlList);
@@ -73,33 +67,44 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
                 List<MergeJdbcTemplateSQL<T>> result = new ArrayList<>();
                 for (List<T> valueList : groupByExprSqlMap.values()) {
                     T first = valueList.iterator().next();
-                    List<List<T>> partition = Lists.partition(valueList, maxIdInCount);
-                    for (List<T> list : partition) {
-                        List<Object[]> argsList = list.stream().map(SQL::getArgs).collect(Collectors.toList());
-                        SqlParser.ChangeSQL changeSQL = SqlParser.changeMergeSelect(first.getExprSql(), argsList, first.getNeedGroupBy());
-                        if (changeSQL != null) {
-                            result.add(new MergeJdbcTemplateSQL<>(
-                                    changeSQL.getSql(), changeSQL.getArgs(),
-                                    first.getDataSourceKey(),
-                                    changeSQL.getUniqueColumnNames(), changeSQL.getAddColumnNameList(),
-                                    list,
-                                    first.getNeedGroupBy()));
-                        } else {
-                            for (T value : list) {
+                    if (valueList.size() == 1) {
+                        result.add(newNoMerge(valueList, first));
+                    } else {
+                        Map<String, T> distinct = new LinkedHashMap<>();
+                        for (T t : valueList) {
+                            distinct.put(argsToString(t.getArgs()), t);
+                        }
+                        List<List<T>> partitionList = Lists.partition(new ArrayList<>(distinct.values()), maxIdInCount);
+                        for (List<T> partition : partitionList) {
+                            List<Object[]> argsList = partition.stream().map(SQL::getArgs).collect(Collectors.toList());
+                            SqlParser.ChangeSQL changeSQL = SqlParser.changeMergeSelect(first.getExprSql(), argsList, first.getNeedGroupBy());
+                            if (changeSQL != null) {
                                 result.add(new MergeJdbcTemplateSQL<>(
-                                        value.getExprSql(), value.getArgs(),
-                                        value.getDataSourceKey(),
-                                        null, null,
-                                        list,
-                                        value.getNeedGroupBy()));
+                                        changeSQL.getSql(), changeSQL.getArgs(),
+                                        first.getDataSourceKey(),
+                                        changeSQL.getUniqueColumnNames(), changeSQL.getAddColumnNameList(),
+                                        partition,
+                                        first.getNeedGroupBy()));
+                            } else {
+                                for (T value : partition) {
+                                    result.add(newNoMerge(partition, value));
+                                }
                             }
                         }
                     }
-
                 }
                 return result;
             }
         }
+    }
+
+    private static <T extends JdbcTemplateSQL> MergeJdbcTemplateSQL<T> newNoMerge(List<T> mergeList, T value) {
+        return new MergeJdbcTemplateSQL<>(
+                value.getExprSql(), value.getArgs(),
+                value.getDataSourceKey(),
+                null, null,
+                mergeList,
+                value.getNeedGroupBy());
     }
 
     private static String argsToString(Object[] args) {

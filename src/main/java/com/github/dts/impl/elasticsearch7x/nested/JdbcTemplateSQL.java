@@ -48,16 +48,24 @@ public class JdbcTemplateSQL extends SQL {
         try {
             return executeQueryList(cacheMap, null, null);
         } catch (RecoverableDataAccessException e) {
-            List<Map<String, Object>> list = new ArrayList<>();
-            List<Map<String, Object>> rowList;
-            int pageNo = 1;
-            do {
-                rowList = executeQueryList(null, pageNo, pageSize);
-                list.addAll(rowList);
-                pageNo++;
-            } while (rowList.size() == pageSize);
-            return list;
+            try {
+                return executeQueryListChunk(pageSize);
+            } catch (RecoverableDataAccessException e1) {
+                return executeQueryListChunk(Math.max(pageSize / 20, 20));
+            }
         }
+    }
+
+    private List<Map<String, Object>> executeQueryListChunk(int pageSize) {
+        List<Map<String, Object>> list = new ArrayList<>();
+        List<Map<String, Object>> rowList;
+        int pageNo = 1;
+        do {
+            rowList = executeQueryList(null, pageNo, pageSize);
+            list.addAll(rowList);
+            pageNo++;
+        } while (rowList.size() == pageSize);
+        return list;
     }
 
     public String getDataSourceKey() {
