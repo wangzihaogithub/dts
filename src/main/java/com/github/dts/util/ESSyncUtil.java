@@ -176,7 +176,7 @@ public class ESSyncUtil {
     }
 
     public static void appendConditionByExpr(StringBuilder sql, Object value, String owner, String columnName, String and) {
-        if (owner != null) {
+        if (owner != null && !owner.isEmpty()) {
             sql.append(owner).append(".");
         }
         sql.append(columnName).append("=").append(value).append(' ');

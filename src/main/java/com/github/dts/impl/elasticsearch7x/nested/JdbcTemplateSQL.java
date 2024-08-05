@@ -4,6 +4,8 @@ import com.github.dts.util.CacheMap;
 import com.github.dts.util.ESSyncUtil;
 import com.github.dts.util.SchemaItem;
 import com.github.dts.util.SqlParser;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.RecoverableDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -11,6 +13,7 @@ import java.util.*;
 import java.util.function.Supplier;
 
 public class JdbcTemplateSQL extends SQL {
+    private static final Logger log = LoggerFactory.getLogger(JdbcTemplateSQL.class);
     private final String dataSourceKey;
     private final Collection<SchemaItem.ColumnItem> needGroupBy;
 
@@ -30,9 +33,13 @@ public class JdbcTemplateSQL extends SQL {
 
     public List<Map<String, Object>> executeQueryList(CacheMap cacheMap, Integer pageNo, Integer pageSize) {
         Supplier<List<Map<String, Object>>> supplier = () -> {
+            long ts = System.currentTimeMillis();
             String exprSql = getExprSql();
             String sql = pageNo == null && pageSize == null ? exprSql : SqlParser.changePage(exprSql, pageNo, pageSize);
-            return getJdbcTemplate().queryForList(sql, getArgs());
+            Object[] args = getArgs();
+            List<Map<String, Object>> list = getJdbcTemplate().queryForList(sql, args);
+            log.info("executeQueryList {}/ms {}", System.currentTimeMillis() - ts, SQL.toString(sql, args));
+            return list;
         };
         if (cacheMap == null) {
             return supplier.get();

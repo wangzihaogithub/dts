@@ -1,5 +1,6 @@
 package com.github.dts.impl.elasticsearch7x;
 
+import com.github.dts.impl.elasticsearch7x.basic.ESSyncConfigSQL;
 import com.github.dts.util.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,6 +39,7 @@ public class ES7xAdapter implements Adapter {
     private int refreshThreshold = 10;
     private int joinUpdateSize = 10;
     private int streamChunkSize = 1000;
+    private int basicMaxIdIn = 500;
 
     @Override
     public void init(CanalConfig.CanalAdapter canalAdapter, CanalConfig.OuterAdapterConfig configuration, Properties envProperties) {
@@ -49,7 +51,8 @@ public class ES7xAdapter implements Adapter {
         this.refreshThreshold = configuration.getEs7x().getRefreshThreshold();
         this.esConnection = new ES7xConnection(configuration.getEs7x());
         this.esTemplate = new ES7xTemplate(esConnection);
-        this.basicFieldWriter = new BasicFieldWriter(esTemplate, configuration.getEs7x().getBasicMaxIdIn());
+        this.basicMaxIdIn = configuration.getEs7x().getBasicMaxIdIn();
+        this.basicFieldWriter = new BasicFieldWriter(esTemplate);
         this.listenerExecutor = Util.newFixedThreadPool(
                 configuration.getEs7x().getListenerThreads(),
                 60_000L, "ES-listener", false);
@@ -74,9 +77,9 @@ public class ES7xAdapter implements Adapter {
     }
 
     public Map<String, ESSyncConfig> getEsSyncConfigByIndex(String index) {
-        Map<String, ESSyncConfig> map = new  LinkedHashMap<>();
+        Map<String, ESSyncConfig> map = new LinkedHashMap<>();
         for (Map.Entry<String, ESSyncConfig> entry : esSyncConfig.entrySet()) {
-            if(entry.getValue().getEsMapping().get_index().equals(index)){
+            if (entry.getValue().getEsMapping().get_index().equals(index)) {
                 map.put(entry.getKey(), entry.getValue());
             }
         }
@@ -84,9 +87,9 @@ public class ES7xAdapter implements Adapter {
     }
 
     public Map<String, ESSyncConfig> getEsSyncConfigByDestination(String destination) {
-        Map<String, ESSyncConfig> map = new  LinkedHashMap<>();
+        Map<String, ESSyncConfig> map = new LinkedHashMap<>();
         for (Map.Entry<String, ESSyncConfig> entry : esSyncConfig.entrySet()) {
-            if(entry.getValue().getDestination().equals(destination)){
+            if (entry.getValue().getDestination().equals(destination)) {
                 map.put(entry.getKey(), entry.getValue());
             }
         }
@@ -129,12 +132,14 @@ public class ES7xAdapter implements Adapter {
                     }
                 }
             }
+            List<ESSyncConfigSQL> configSQLList = new ArrayList<>();
             for (Map.Entry<Map<String, ESSyncConfig>, List<Dml>> entry : groupByMap.entrySet()) {
                 for (ESSyncConfig value : entry.getKey().values()) {
                     indices.add(value.getEsMapping().get_index());
                 }
-                basicFieldWriter.write(entry.getKey().values(), entry.getValue(), bulkRequestList);
+                configSQLList.addAll(basicFieldWriter.writeEsReturnSql(entry.getKey().values(), entry.getValue(), bulkRequestList));
             }
+            BasicFieldWriter.executeUpdate(configSQLList, basicMaxIdIn);
         } finally {
             basicFieldWriterCost = System.currentTimeMillis() - timestamp;
             cacheMap.cacheClear();
@@ -149,6 +154,10 @@ public class ES7xAdapter implements Adapter {
 
         timestamp = System.currentTimeMillis();
         DependentGroup dependentGroup = nestedFieldWriter.convertToDependentGroup(syncDmlList, onlyCurrentIndex);
+
+        List<CompletableFuture<?>> futures = asyncRunDependent(maxTimestamp, joinUpdateSize,
+                dependentGroup.getMainTableJoinDependentList(), dependentGroup.getSlaveTableDependentList());
+
         try {
             // nested type ： main table change
             List<Dependent> mainTableDependentList = dependentGroup.getMainTableDependentList();
@@ -164,10 +173,6 @@ public class ES7xAdapter implements Adapter {
             cacheMap.cacheClear();
             bulkRequestList.commit(esTemplate);
         }
-
-        List<CompletableFuture<?>> futures = asyncRunDependent(maxTimestamp, joinUpdateSize,
-                dependentGroup.getMainTableJoinDependentList(), dependentGroup.getSlaveTableDependentList());
-
 
         // call listeners
         if (!listenerList.isEmpty()) {

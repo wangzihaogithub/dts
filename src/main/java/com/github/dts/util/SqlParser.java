@@ -3,6 +3,7 @@ package com.github.dts.util;
 import com.alibaba.druid.sql.SQLUtils;
 import com.alibaba.druid.sql.ast.SQLExpr;
 import com.alibaba.druid.sql.ast.SQLLimit;
+import com.alibaba.druid.sql.ast.SQLObject;
 import com.alibaba.druid.sql.ast.SQLStatement;
 import com.alibaba.druid.sql.ast.expr.*;
 import com.alibaba.druid.sql.ast.statement.*;
@@ -11,6 +12,7 @@ import com.alibaba.druid.sql.dialect.mysql.parser.MySqlStatementParser;
 import com.alibaba.druid.sql.parser.ParserException;
 import com.alibaba.druid.sql.parser.SQLStatementParser;
 import com.alibaba.druid.sql.visitor.SQLASTVisitorAdapter;
+import com.alibaba.druid.sql.visitor.VisitorFeature;
 import com.github.dts.util.SchemaItem.ColumnItem;
 import com.github.dts.util.SchemaItem.FieldItem;
 import com.github.dts.util.SchemaItem.RelationFieldsPair;
@@ -28,8 +30,8 @@ import java.util.stream.Stream;
  * @version 1.0.0
  */
 public class SqlParser {
-    private static final SQLExpr TRUE_EXPR = SQLUtils.toMySqlExpr("true");
     public static final Map<String, String> CHANGE_SELECT_CACHE = new ConcurrentHashMap<>();
+    private static final SQLExpr TRUE_EXPR = SQLUtils.toMySqlExpr("true");
     private static final Map<String, Map<String, List<String>>> GET_COLUMN_LIST_CACHE = new ConcurrentHashMap<>();
     private static final Map<String, String> REMOVE_GROUP_BY_CACHE = new ConcurrentHashMap<>();
 
@@ -75,7 +77,7 @@ public class SqlParser {
             MySqlSelectQueryBlock sqlSelectQueryBlock = (MySqlSelectQueryBlock) statement.getSelect().getQuery();
 
             SchemaItem schemaItem = new SchemaItem();
-            schemaItem.setSql(SQLUtils.toMySqlString(sqlSelectQueryBlock));
+            schemaItem.setSql(toMysqlString(sqlSelectQueryBlock));
             SQLTableSource sqlTableSource = sqlSelectQueryBlock.getFrom();
             List<TableItem> tableItems = new ArrayList<>();
             SqlParser.visitSelectTable(schemaItem, sqlTableSource, tableItems, null);
@@ -115,7 +117,7 @@ public class SqlParser {
             }
             limit.setRowCount(pageSize);
             select.getSelect().getQueryBlock().setLimit(limit);
-            return statement.toString();
+            return toMysqlString(statement);
         } else {
             return sql;
         }
@@ -134,7 +136,7 @@ public class SqlParser {
                     return true;
                 }
             });
-            return statement.toString();
+            return toMysqlString(statement);
         } catch (Exception e) {
             return sql;
         }
@@ -234,6 +236,10 @@ public class SqlParser {
             });
             return map;
         });
+    }
+
+    private static String toMysqlString(SQLObject sqlObject) {
+        return SQLUtils.toMySqlString(sqlObject, new VisitorFeature[0]);
     }
 
     private static String normalize(String name) {
@@ -457,7 +463,7 @@ public class SqlParser {
                     selectList.add(new SQLSelectItem(new SQLPropertyExpr(owner, name)));
                 }
             }
-            return sqlStatement.toString();
+            return toMysqlString(sqlStatement);
         });
     }
 
@@ -480,46 +486,42 @@ public class SqlParser {
         return null;
     }
 
-    static class VarExprCollectResult {
-        List<SQLBinaryOpExpr> varExpr;
-        SQLBinaryOpExpr andExpr;
-    }
-
     private static VarExprCollectResult parseVarExpr(SQLBinaryOpExpr where, SQLBinaryOperator operator) {
         VarExprCollectResult result = new VarExprCollectResult();
         if (isVarExpr(where)) {
             result.andExpr = null;
             result.varExpr = Collections.singletonList(where.clone());
+            return result;
         } else if (where.getOperator() == operator) {
             result.andExpr = where.clone();
             result.varExpr = new ArrayList<>(1);
+            List<SQLBinaryOpExpr> temp = new ArrayList<>(3);
+            temp.add(result.andExpr);
+            while (!temp.isEmpty()) {
+                SQLBinaryOpExpr expr = temp.remove(0);
+                SQLExpr left = expr.getLeft();
+                SQLExpr right = expr.getRight();
+                if (left instanceof SQLBinaryOpExpr) {
+                    if (isVarExpr((SQLBinaryOpExpr) left)) {
+                        result.varExpr.add((SQLBinaryOpExpr) left);
+                        expr.setLeft(TRUE_EXPR.clone());
+                    } else {
+                        temp.add((SQLBinaryOpExpr) left);
+                    }
+                }
+                if (right instanceof SQLBinaryOpExpr) {
+                    if (isVarExpr((SQLBinaryOpExpr) right)) {
+                        result.varExpr.add((SQLBinaryOpExpr) right);
+                        expr.setRight(TRUE_EXPR.clone());
+                    } else {
+                        temp.add((SQLBinaryOpExpr) right);
+                    }
+                }
+            }
+            return result;
         } else {
             return null;
         }
-        List<SQLBinaryOpExpr> temp = new ArrayList<>(3);
-        temp.add(result.andExpr);
-        while (!temp.isEmpty()) {
-            SQLBinaryOpExpr expr = temp.remove(0);
-            SQLExpr left = expr.getLeft();
-            SQLExpr right = expr.getRight();
-            if (left instanceof SQLBinaryOpExpr) {
-                if (isVarExpr((SQLBinaryOpExpr) left)) {
-                    result.varExpr.add((SQLBinaryOpExpr) left);
-                    expr.setLeft(TRUE_EXPR.clone());
-                } else {
-                    temp.add((SQLBinaryOpExpr) left);
-                }
-            }
-            if (right instanceof SQLBinaryOpExpr) {
-                if (isVarExpr((SQLBinaryOpExpr) right)) {
-                    result.varExpr.add((SQLBinaryOpExpr) right);
-                    expr.setRight(TRUE_EXPR.clone());
-                } else {
-                    temp.add((SQLBinaryOpExpr) right);
-                }
-            }
-        }
-        return result;
     }
 
     private static boolean isVarExpr(SQLBinaryOpExpr expr) {
@@ -616,7 +618,7 @@ public class SqlParser {
         } else {
             queryBlock.setWhere(new SQLBinaryOpExpr(inListExpr, operator, andExpr));
         }
-        return new ChangeSQL(ESSyncUtil.stringCacheLRU(sqlStatement.toString()), newArgs, uniqueColumnNames, addColumnNameList);
+        return new ChangeSQL(ESSyncUtil.stringCacheLRU(toMysqlString(sqlStatement)), newArgs, uniqueColumnNames, addColumnNameList);
     }
 
     private static SQLSelectGroupByClause getSqlSelectGroupByClause(Collection<ColumnItem> needGroupBy) {
@@ -721,11 +723,15 @@ public class SqlParser {
                 SQLSelectGroupByClause groupBy = queryBlock.getGroupBy();
                 if (groupBy != null) {
                     queryBlock.setGroupBy(null);
-                    return sqlStatement.toString();
                 }
             }
-            return key;
+            return toMysqlString(sqlStatement);
         });
+    }
+
+    static class VarExprCollectResult {
+        List<SQLBinaryOpExpr> varExpr;
+        SQLBinaryOpExpr andExpr;
     }
 
     public static class BinaryOpExpr {

@@ -76,6 +76,27 @@ public class SQL {
         return new SQL(ESSyncUtil.stringCache(sqlBuffer.toString()), argsList.toArray(), argsMap);
     }
 
+    public static String toString(String exprSql, Object[] args) {
+        try {
+            String replace = exprSql.replace("?", "%s");
+            List<String> argsList = new ArrayList<>(args.length);
+            for (Object arg : args) {
+                String value;
+                if (arg instanceof String) {
+                    value = "'" + arg + "'";
+                } else if (arg instanceof Date) {
+                    value = "'" + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(arg) + "'";
+                } else {
+                    value = String.valueOf(arg);
+                }
+                argsList.add(value);
+            }
+            return String.format(replace, argsList.toArray());
+        } catch (Exception e) {
+            return exprSql;
+        }
+    }
+
     public Map<String, Object> getArgsMap() {
         return argsMap;
     }
@@ -99,28 +120,12 @@ public class SQL {
     @Override
     public int hashCode() {
         return Objects.hash(exprSql, Arrays.hashCode(args));
+
     }
 
     @Override
     public String toString() {
-        try {
-            String replace = exprSql.replace("?", "%s");
-            List<String> argsList = new ArrayList<>(args.length);
-            for (Object arg : args) {
-                String value;
-                if (arg instanceof String) {
-                    value = "'" + arg + "'";
-                } else if (arg instanceof Date) {
-                    value = "'" + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(arg) + "'";
-                } else {
-                    value = String.valueOf(arg);
-                }
-                argsList.add(value);
-            }
-            return String.format(replace, argsList.toArray());
-        } catch (Exception e) {
-            return exprSql;
-        }
+        return toString(exprSql, args);
     }
 
     /**

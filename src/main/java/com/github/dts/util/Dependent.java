@@ -35,6 +35,14 @@ public class Dependent {
         this.dml = dml;
     }
 
+    public boolean isJoinByParentSlaveTablePrimaryKey() {
+        if (isIndexMainTable()) {
+            return false;
+        } else {
+            return !schemaItem.isJoinByParentPrimaryKey();
+        }
+    }
+
     public List<SchemaItem.TableItem> getNestedSlaveTableList(String tableName) {
         List<SchemaItem.TableItem> list = new ArrayList<>();
         for (SchemaItem.TableItem tableItem : nestedSlaveTableList) {

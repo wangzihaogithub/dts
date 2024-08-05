@@ -23,14 +23,12 @@ public class BasicFieldWriter {
 
     private static final Logger logger = LoggerFactory.getLogger(BasicFieldWriter.class);
     private final ESTemplate esTemplate;
-    private final int maxIdInCount;
 
-    public BasicFieldWriter(ESTemplate esTemplate, int maxIdInCount) {
+    public BasicFieldWriter(ESTemplate esTemplate) {
         this.esTemplate = esTemplate;
-        this.maxIdInCount = maxIdInCount;
     }
 
-    private static void executeUpdate(List<ESSyncConfigSQL> sqlList, int maxIdInCount) {
+    public static void executeUpdate(List<ESSyncConfigSQL> sqlList, int maxIdInCount) {
         List<MergeJdbcTemplateSQL<ESSyncConfigSQL>> mergeList = MergeJdbcTemplateSQL.merge(sqlList, maxIdInCount);
         MergeJdbcTemplateSQL.executeQueryList(mergeList, null, ESSyncConfigSQL::run);
     }
@@ -39,12 +37,7 @@ public class BasicFieldWriter {
         return schemaItem.getMainTable().getTableName().equalsIgnoreCase(table);
     }
 
-    public void write(Collection<ESSyncConfig> configList, List<Dml> dmlList, ESTemplate.BulkRequestList bulkRequestList) {
-        List<ESSyncConfigSQL> sqlList = writeEsReturnSql(configList, dmlList, bulkRequestList);
-        executeUpdate(sqlList, maxIdInCount);
-    }
-
-    private List<ESSyncConfigSQL> writeEsReturnSql(Collection<ESSyncConfig> configList, List<Dml> dmlList, ESTemplate.BulkRequestList bulkRequestList) {
+    public List<ESSyncConfigSQL> writeEsReturnSql(Collection<ESSyncConfig> configList, List<Dml> dmlList, ESTemplate.BulkRequestList bulkRequestList) {
         List<ESSyncConfigSQL> sqlList = new ArrayList<>();
         for (ESSyncConfig config : configList) {
             for (Dml dml : dmlList) {

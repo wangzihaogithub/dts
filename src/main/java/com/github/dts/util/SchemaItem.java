@@ -99,6 +99,21 @@ public class SchemaItem {
         return groupByIdColumns;
     }
 
+    public List<ColumnItem> getColumnItemListByColumn(String column) {
+        List<ColumnItem> list = new ArrayList<>();
+        for (FieldItem fieldItem : selectFields.values()) {
+            Collection<ColumnItem> columnItems = fieldItem.getColumnItems();
+            if (columnItems.size() != 1) {
+                continue;
+            }
+            ColumnItem columnItem = columnItems.iterator().next();
+            if (columnItem.getColumnName().equalsIgnoreCase(column)) {
+                list.add(columnItem);
+            }
+        }
+        return list;
+    }
+
     private Set<ColumnItem> parseByObjectFieldIdColumns() {
         Set<ColumnItem> idColumns = new LinkedHashSet<>();
         TableItem mainTable = getMainTable();

@@ -116,9 +116,13 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
     }
 
     public static <T extends JdbcTemplateSQL> Map<T, List<Map<String, Object>>> toMap(List<MergeJdbcTemplateSQL<T>> mergeList) {
+        return toMap(mergeList, null);
+    }
+
+    public static <T extends JdbcTemplateSQL> Map<T, List<Map<String, Object>>> toMap(List<MergeJdbcTemplateSQL<T>> mergeList, CacheMap cacheMap) {
         Map<T, List<Map<String, Object>>> result = new HashMap<>();
         for (MergeJdbcTemplateSQL<T> templateSQL : mergeList) {
-            Map<T, List<Map<String, Object>>> map = templateSQL.toMap();
+            Map<T, List<Map<String, Object>>> map = templateSQL.dispatch(templateSQL.executeQueryList(cacheMap));
             for (Map.Entry<T, List<Map<String, Object>>> entry : map.entrySet()) {
                 T key = entry.getKey();
                 result.computeIfAbsent(key, k -> new ArrayList<>())
@@ -134,6 +138,10 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
 
     public Map<T, List<Map<String, Object>>> toMap() {
         return dispatch(executeQueryList(null));
+    }
+
+    public Map<T, List<Map<String, Object>>> toMap(CacheMap cacheMap) {
+        return dispatch(executeQueryList(cacheMap));
     }
 
     public void executeQueryStream(int chunkSize, Consumer<Chunk<T>> each) {

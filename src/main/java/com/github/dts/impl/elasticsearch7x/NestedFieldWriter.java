@@ -273,12 +273,10 @@ public class NestedFieldWriter {
                 } else {
                     columnName = null;
                 }
+            } else if (dependent.getSchemaItem().isJoinByParentPrimaryKey()) {
+                columnName = objectField.getParentDocumentId();
             } else {
-                if (dependent.getSchemaItem().isJoinByParentPrimaryKey()) {
-                    columnName = objectField.getParentDocumentId();
-                } else {
-                    columnName = objectField.getEsMapping().getSchemaItem().getIdField().getColumnName();
-                }
+                columnName = null;
             }
             return columnName;
         }
