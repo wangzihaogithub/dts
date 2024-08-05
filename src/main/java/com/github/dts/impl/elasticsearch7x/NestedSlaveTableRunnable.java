@@ -45,7 +45,7 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
                 }
 
                 List<MergeJdbcTemplateSQL<DependentSQL>> updateSqlList;
-                if (dependent.isJoinByParentSlaveTablePrimaryKey()) {
+                if (dependent.isJoinByParentSlaveTableForeignKey()) {
                     Set<DependentSQL> childSqlSet = convertDependentSQLJoinByParentSlaveTable(dependent.getNestedSlaveTableList(dml.getTable()), dependent, cacheMap);
                     if (childSqlSet.isEmpty()) {
                         continue;

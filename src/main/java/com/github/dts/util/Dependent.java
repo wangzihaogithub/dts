@@ -35,7 +35,7 @@ public class Dependent {
         this.dml = dml;
     }
 
-    public boolean isJoinByParentSlaveTablePrimaryKey() {
+    public boolean isJoinByParentSlaveTableForeignKey() {
         if (isIndexMainTable()) {
             return false;
         } else {
