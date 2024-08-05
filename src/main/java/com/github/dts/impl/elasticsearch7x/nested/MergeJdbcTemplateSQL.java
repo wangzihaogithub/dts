@@ -51,6 +51,10 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
     }
 
     public static <T extends JdbcTemplateSQL> List<MergeJdbcTemplateSQL<T>> merge(Collection<T> sqlList, int maxIdInCount) {
+        return merge(sqlList, maxIdInCount, true);
+    }
+
+    public static <T extends JdbcTemplateSQL> List<MergeJdbcTemplateSQL<T>> merge(Collection<T> sqlList, int maxIdInCount, boolean groupBy) {
         switch (sqlList.size()) {
             case 0: {
                 return Collections.emptyList();
@@ -76,15 +80,16 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
                         }
                         List<List<T>> partitionList = Lists.partition(new ArrayList<>(distinct.values()), maxIdInCount);
                         for (List<T> partition : partitionList) {
+                            Collection<SchemaItem.ColumnItem> needGroupBy = groupBy ? first.getNeedGroupBy() : null;
                             List<Object[]> argsList = partition.stream().map(SQL::getArgs).collect(Collectors.toList());
-                            SqlParser.ChangeSQL changeSQL = SqlParser.changeMergeSelect(first.getExprSql(), argsList, first.getNeedGroupBy());
+                            SqlParser.ChangeSQL changeSQL = SqlParser.changeMergeSelect(first.getExprSql(), argsList, needGroupBy);
                             if (changeSQL != null) {
                                 result.add(new MergeJdbcTemplateSQL<>(
                                         changeSQL.getSql(), changeSQL.getArgs(),
                                         first.getDataSourceKey(),
                                         changeSQL.getUniqueColumnNames(), changeSQL.getAddColumnNameList(),
                                         partition,
-                                        first.getNeedGroupBy()));
+                                        needGroupBy));
                             } else {
                                 for (T value : partition) {
                                     result.add(newNoMerge(partition, value));
@@ -104,7 +109,7 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
                 value.getDataSourceKey(),
                 null, null,
                 mergeList,
-                value.getNeedGroupBy());
+                null);
     }
 
     private static String argsToString(Object[] args) {

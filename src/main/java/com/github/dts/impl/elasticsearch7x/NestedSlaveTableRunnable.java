@@ -29,6 +29,7 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
 
     @Override
     public void run() {
+        int chunkSize = 1000;
         ESTemplate.BulkRequestList bulkRequestList = es7xTemplate.newBulkRequestList(BulkPriorityEnum.LOW);
         try {
             for (Dependent dependent : updateDmlList) {
@@ -46,35 +47,37 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
 
                 List<MergeJdbcTemplateSQL<DependentSQL>> updateSqlList;
                 if (dependent.isJoinByParentSlaveTableForeignKey()) {
-                    Set<DependentSQL> childSqlSet = convertDependentSQLJoinByParentSlaveTable(dependent.getNestedSlaveTableList(dml.getTable()), dependent, cacheMap);
+                    Set<DependentSQL> childSqlSet = convertDependentSQLJoinByParentSlaveTable(dependent.getNestedSlaveTableList(dml.getTable()), dependent, cacheMap, chunkSize);
                     if (childSqlSet.isEmpty()) {
                         continue;
                     }
-                    Set<DependentSQL> parentSqlList = convertDependentSQL(dependent.getNestedSlaveTableList(dml.getTable()), dependent, cacheMap);
+                    Set<DependentSQL> parentSqlList = convertDependentSQL(dependent.getNestedSlaveTableList(dml.getTable()), dependent, cacheMap, chunkSize);
                     if (parentSqlList.isEmpty()) {
                         continue;
                     }
-                    updateSqlList = MergeJdbcTemplateSQL.merge(parentSqlList, 1000);
+                    updateSqlList = MergeJdbcTemplateSQL.merge(parentSqlList, chunkSize);
                     Map<DependentSQL, List<Map<String, Object>>> parentMap = MergeJdbcTemplateSQL.toMap(updateSqlList, cacheMap);
                     Map<Dependent, List<Map<String, Object>>> parentGetterMap = new IdentityHashMap<>();
                     parentMap.forEach((k, v) -> parentGetterMap.put(k.getDependent(), v));
 
                     SchemaItem schemaItem = dependent.getSchemaItem();
 
-                    List<MergeJdbcTemplateSQL<DependentSQL>> childMergeSqlList = MergeJdbcTemplateSQL.merge(childSqlSet, 1000);
-                    MergeJdbcTemplateSQL.executeQueryList(childMergeSqlList, cacheMap, (sql, rowList) -> {
-                        List<Map<String, Object>> parentData = parentGetterMap.get(sql.getDependent());
-                        for (Map<String, Object> row : rowList) {
-                            Object pk = row.values().iterator().next();
-                            NestedFieldWriter.executeEsTemplateUpdate(bulkRequestList, es7xTemplate, pk, schemaItem, parentData);
-                        }
-                    });
+                    List<MergeJdbcTemplateSQL<DependentSQL>> childMergeSqlList = MergeJdbcTemplateSQL.merge(childSqlSet, chunkSize, false);
+                    for (MergeJdbcTemplateSQL<DependentSQL> templateSQL : childMergeSqlList) {
+                        templateSQL.executeQueryStream(chunkSize, chunk -> {
+                            List<Map<String, Object>> parentData = parentGetterMap.get(chunk.sql.getDependent());
+                            for (Map<String, Object> row : chunk.rowList) {
+                                Object pk = row.values().iterator().next();
+                                NestedFieldWriter.executeEsTemplateUpdate(bulkRequestList, es7xTemplate, pk, schemaItem, parentData);
+                            }
+                        });
+                    }
                 } else {
-                    Set<DependentSQL> nestedMainSqlList = convertDependentSQL(dependent.getNestedSlaveTableList(dml.getTable()), dependent, cacheMap);
+                    Set<DependentSQL> nestedMainSqlList = convertDependentSQL(dependent.getNestedSlaveTableList(dml.getTable()), dependent, cacheMap, chunkSize);
                     if (nestedMainSqlList.isEmpty()) {
                         continue;
                     }
-                    updateSqlList = MergeJdbcTemplateSQL.merge(nestedMainSqlList, 1000);
+                    updateSqlList = MergeJdbcTemplateSQL.merge(nestedMainSqlList, chunkSize);
                     NestedFieldWriter.executeMergeUpdateES(updateSqlList, bulkRequestList, cacheMap, es7xTemplate, null, 3);
                 }
                 bulkRequestList.commit(es7xTemplate);
@@ -98,7 +101,7 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
         }
     }
 
-    private Set<DependentSQL> convertDependentSQL(List<SchemaItem.TableItem> nestedSlaveTableList, Dependent dependent, CacheMap cacheMap) {
+    private Set<DependentSQL> convertDependentSQL(List<SchemaItem.TableItem> nestedSlaveTableList, Dependent dependent, CacheMap cacheMap, int chunkSize) {
         Set<DependentSQL> byChildrenSqlSet = new LinkedHashSet<>();
         for (SchemaItem.TableItem tableItem : nestedSlaveTableList) {
             SQL nestedChildrenSql = convertNestedSlaveTableSQL(tableItem, dependent);
@@ -107,7 +110,7 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
 
         String fullSql = dependent.getSchemaItem().getObjectField().getFullSql(false);
         Set<DependentSQL> byMainSqlList = new LinkedHashSet<>();
-        MergeJdbcTemplateSQL.executeQueryList(MergeJdbcTemplateSQL.merge(byChildrenSqlSet, 1000), cacheMap, (sql, changeRowList) -> {
+        MergeJdbcTemplateSQL.executeQueryList(MergeJdbcTemplateSQL.merge(byChildrenSqlSet, chunkSize), cacheMap, (sql, changeRowList) -> {
             for (Map<String, Object> changeRow : changeRowList) {
                 byMainSqlList.add(new DependentSQL(SQL.convertToSql(fullSql, changeRow), dependent, false, dependent.getSchemaItem().getGroupByIdColumns()));
             }
@@ -115,7 +118,8 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
         return byMainSqlList;
     }
 
-    private Set<DependentSQL> convertDependentSQLJoinByParentSlaveTable(List<SchemaItem.TableItem> nestedSlaveTableList, Dependent dependent, CacheMap cacheMap) {
+    private Set<DependentSQL> convertDependentSQLJoinByParentSlaveTable(List<SchemaItem.TableItem> nestedSlaveTableList, Dependent dependent,
+                                                                        CacheMap cacheMap, int chunkSize) {
         Set<DependentSQL> byChildrenSqlSet = new LinkedHashSet<>();
         for (SchemaItem.TableItem tableItem : nestedSlaveTableList) {
             SQL nestedChildrenSql = convertNestedSlaveTableSQL(tableItem, dependent);
@@ -124,7 +128,7 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
 
         String fullSql = getJoinByParentSlaveTableSql(dependent);
         Set<DependentSQL> byMainSqlList = new LinkedHashSet<>();
-        MergeJdbcTemplateSQL.executeQueryList(MergeJdbcTemplateSQL.merge(byChildrenSqlSet, 1000), cacheMap, (sql, changeRowList) -> {
+        MergeJdbcTemplateSQL.executeQueryList(MergeJdbcTemplateSQL.merge(byChildrenSqlSet, chunkSize), cacheMap, (sql, changeRowList) -> {
             for (Map<String, Object> changeRow : changeRowList) {
                 byMainSqlList.add(new DependentSQL(SQL.convertToSql(fullSql, changeRow), dependent, false, dependent.getSchemaItem().getGroupByIdColumns()));
             }
@@ -148,7 +152,7 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
         SchemaItem indexMainTable = dependent.getIndexMainTable().getSchemaItem();
         SchemaItem.FieldItem idField = indexMainTable.getIdField();
 
-        String changedSelect = SqlParser.changeSelect(indexMainTable.getSql(),
+        String changedSelect = SqlParser.changeSelect(indexMainTable.sql(),
                 Collections.singletonMap(idField.getOwner(), Collections.singletonList(idField.getColumnName())),
                 true);
         return changedSelect + " WHERE " + condition + " ";
@@ -169,11 +173,11 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
         int len = condition.length();
         condition.delete(len - and.length(), len);
 
-        String sql1 = dependent.getSchemaItem().getSql() + " WHERE " + condition + " ";
+        String sql1 = dependent.getSchemaItem().sql() + " WHERE " + condition + " ";
 
         Map<String, List<String>> columnList = getOnChildChangeWhereSqlColumnList(dependent);
         String sql2 = SqlParser.changeSelect(sql1, columnList, true);
-        return SQL.convertToSql(sql2, dml.getData().get(dependent.getIndex()));
+        return SQL.convertToSql(sql2, dependent.getMergeDataMap());
     }
 
 }

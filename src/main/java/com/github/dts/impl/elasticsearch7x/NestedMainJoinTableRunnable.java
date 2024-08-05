@@ -54,7 +54,7 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
         int len = condition.length();
         condition.delete(len - and.length(), len);
 
-        String sql1 = tableItem.getSchemaItem().getSql() + " WHERE " + condition + " ";
+        String sql1 = tableItem.getSchemaItem().sql() + " WHERE " + condition + " ";
 
         Map<String, List<String>> columnList = Collections.singletonMap(tableItem.getAlias(), dml.getPkNames());
         String sql2 = SqlParser.changeSelect(sql1, columnList, false);

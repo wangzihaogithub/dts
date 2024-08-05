@@ -195,6 +195,10 @@ public class SchemaItem {
         return sql;
     }
 
+    public String sql(){
+        return SqlParser.removeGroupBy(sql);
+    }
+
     public void setSql(String sql) {
         this.sql = sql;
     }
