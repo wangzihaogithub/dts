@@ -122,7 +122,7 @@ public class ES7xAdapter implements Adapter {
         long timestamp = System.currentTimeMillis();
         long basicFieldWriterCost;
         try {
-            Map<Map<String, ESSyncConfig>, List<Dml>> groupByMap = new IdentityHashMap<>();
+            Map<Map<String, ESSyncConfig>, List<Dml>> groupByMap = new IdentityHashMap<>(dbTableEsSyncConfig.size());
             for (Dml dml : syncDmlList) {
                 for (String s : dml.getDestination()) {
                     String key = ESSyncUtil.getEsSyncConfigKey(s, dml.getDatabase(), dml.getTable());
@@ -134,10 +134,13 @@ public class ES7xAdapter implements Adapter {
             }
             List<ESSyncConfigSQL> configSQLList = new ArrayList<>();
             for (Map.Entry<Map<String, ESSyncConfig>, List<Dml>> entry : groupByMap.entrySet()) {
-                for (ESSyncConfig value : entry.getKey().values()) {
-                    indices.add(value.getEsMapping().get_index());
+                List<ESSyncConfigSQL> item = basicFieldWriter.writeEsReturnSql(entry.getKey().values(), entry.getValue(), bulkRequestList);
+                configSQLList.addAll(item);
+                if (!item.isEmpty() && !bulkRequestList.isEmpty()) {
+                    for (ESSyncConfig value : entry.getKey().values()) {
+                        indices.add(value.getEsMapping().get_index());
+                    }
                 }
-                configSQLList.addAll(basicFieldWriter.writeEsReturnSql(entry.getKey().values(), entry.getValue(), bulkRequestList));
             }
             BasicFieldWriter.executeUpdate(configSQLList, basicMaxIdIn);
         } finally {
@@ -148,7 +151,6 @@ public class ES7xAdapter implements Adapter {
             // refresh
             if (refresh) {
                 esTemplate.refresh(indices);
-                indices.clear();
             }
         }
 

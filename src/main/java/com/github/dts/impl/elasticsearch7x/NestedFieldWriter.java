@@ -87,10 +87,12 @@ public class NestedFieldWriter {
         switch (objectField.getType()) {
             case ARRAY_SQL: {
                 List<Map<String, Object>> rowListCopy = new ArrayList<>();
-                for (Map<String, Object> row : rowList) {
-                    Map<String, Object> rowCopy = new LinkedHashMap<>(row);
-                    esTemplate.convertValueType(esMapping, objectField.getFieldName(), rowCopy);
-                    rowListCopy.add(rowCopy);
+                if (rowList != null) {
+                    for (Map<String, Object> row : rowList) {
+                        Map<String, Object> rowCopy = new LinkedHashMap<>(row);
+                        esTemplate.convertValueType(esMapping, objectField.getFieldName(), rowCopy);
+                        rowListCopy.add(rowCopy);
+                    }
                 }
                 //更新ES文档 (执行完会统一提交, 这里不用commit)
                 esTemplate.update(esMapping, objectField.getFieldName(), pkValue, Collections.singletonMap(
@@ -197,7 +199,7 @@ public class NestedFieldWriter {
     }
 
 
-    private static Set<DependentSQL> convertToSql(List<Dependent> mainTableDependentList, boolean autoUpdateChildren) {
+    private static Set<DependentSQL> convertToSql(List<Dependent> mainTableDependentList) {
         Set<DependentSQL> sqlList = new LinkedHashSet<>();
         for (Dependent dependent : mainTableDependentList) {
             ESSyncConfig.ObjectField objectField = dependent.getSchemaItem().getObjectField();
@@ -208,7 +210,7 @@ public class NestedFieldWriter {
             String fullSql = objectField.getFullSql(dependent.isIndexMainTable());
             SQL sql = SQL.convertToSql(fullSql, mergeDataMap);
 
-            sqlList.add(new DependentSQL(sql, dependent, autoUpdateChildren, objectField.getSchemaItem().getGroupByIdColumns()));
+            sqlList.add(new DependentSQL(sql, dependent, objectField.getSchemaItem().getGroupByIdColumns()));
         }
         return sqlList;
     }
@@ -238,20 +240,18 @@ public class NestedFieldWriter {
     public void writeMainTable(List<Dependent> mainTableDependentList,
                                ESTemplate.BulkRequestList bulkRequestList,
                                boolean autoUpdateChildren) {
-        Set<DependentSQL> sqlList = convertToSql(mainTableDependentList, autoUpdateChildren);
+        Set<DependentSQL> sqlList = convertToSql(mainTableDependentList);
         List<MergeJdbcTemplateSQL<DependentSQL>> mergeSqlList = MergeJdbcTemplateSQL.merge(sqlList, 1000);
         executeMergeUpdateES(mergeSqlList, bulkRequestList, cacheMap, esTemplate, mainTableListenerExecutor, threads);
     }
 
     public static class DependentSQL extends JdbcTemplateSQL {
         private final Dependent dependent;
-        private final boolean autoUpdateChildren;
 
-        DependentSQL(SQL sql, Dependent dependent, boolean autoUpdateChildren, Collection<SchemaItem.ColumnItem> needGroupBy) {
+        DependentSQL(SQL sql, Dependent dependent, Collection<SchemaItem.ColumnItem> needGroupBy) {
             super(sql.getExprSql(), sql.getArgs(), sql.getArgsMap(),
                     dependent.getSchemaItem().getEsMapping().getConfig().getDataSourceKey(), needGroupBy);
             this.dependent = dependent;
-            this.autoUpdateChildren = autoUpdateChildren;
         }
 
         public Dependent getDependent() {
@@ -268,11 +268,7 @@ public class NestedFieldWriter {
             ESSyncConfig.ObjectField objectField = dependent.getSchemaItem().getObjectField();
             String columnName;
             if (dependent.isIndexMainTable()) {
-                if (autoUpdateChildren) {
-                    columnName = objectField.getEsMapping().getSchemaItem().getIdField().getColumnName();
-                } else {
-                    columnName = null;
-                }
+                columnName = objectField.getEsMapping().getSchemaItem().getIdField().getColumnName();
             } else if (dependent.getSchemaItem().isJoinByParentPrimaryKey()) {
                 columnName = objectField.getParentDocumentId();
             } else {

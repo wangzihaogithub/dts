@@ -31,7 +31,7 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
 
     private static DependentSQL convertParentSql(Dependent dependent) {
         String fullSql = dependent.getSchemaItem().getObjectField().getFullSql(false);
-        return new DependentSQL(SQL.convertToSql(fullSql, dependent.getMergeDataMap()), dependent, false, dependent.getSchemaItem().getGroupByIdColumns());
+        return new DependentSQL(SQL.convertToSql(fullSql, dependent.getMergeDataMap()), dependent, dependent.getSchemaItem().getGroupByIdColumns());
     }
 
     private static DependentSQL convertChildrenSQL(Dependent dependent) {
@@ -60,7 +60,7 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
         String sql2 = SqlParser.changeSelect(sql1, columnList, false);
 
         SQL sql = SQL.convertToSql(sql2, dependent.getMergeDataMap());
-        return new DependentSQL(sql, dependent, false, null);
+        return new DependentSQL(sql, dependent, null);
     }
 
     @Override
@@ -84,7 +84,7 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
 
             Map<DependentSQL, List<Map<String, Object>>> parentMap = MergeJdbcTemplateSQL.toMap(mergeNestedMainSqlList);
             for (MergeJdbcTemplateSQL<DependentSQL> children : childrenMergeSqlList) {
-                Map<Dependent, List<Map<String, Object>>> parentGetterMap = new IdentityHashMap<>();
+                Map<Dependent, List<Map<String, Object>>> parentGetterMap = new IdentityHashMap<>(parentMap.size());
                 parentMap.forEach((k, v) -> parentGetterMap.put(k.getDependent(), v));
 
                 children.executeQueryStream(streamChunkSize, (chunk) -> {

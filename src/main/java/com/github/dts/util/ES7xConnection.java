@@ -107,6 +107,9 @@ public class ES7xConnection {
     }
 
     public CompletableFuture<ESBulkRequest.EsRefreshResponse> refreshAsync(String... indices) {
+        if (indices.length == 0) {
+            return CompletableFuture.completedFuture(null);
+        }
         return refreshAsyncCache.computeIfAbsent(String.join(",", indices), key -> {
             CompletableFuture<ESBulkRequest.EsRefreshResponse> future = new CompletableFuture<>();
             RefreshRequest request = new RefreshRequest(indices);

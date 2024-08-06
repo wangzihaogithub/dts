@@ -35,10 +35,15 @@ public class JdbcTemplateSQL extends SQL {
         Supplier<List<Map<String, Object>>> supplier = () -> {
             long ts = System.currentTimeMillis();
             String exprSql = getExprSql();
-            String sql = pageNo == null && pageSize == null ? exprSql : SqlParser.changePage(exprSql, pageNo, pageSize);
+            boolean page = pageNo != null || pageSize != null;
+            String sql = page ? SqlParser.changePage(exprSql, pageNo, pageSize) : exprSql;
             Object[] args = getArgs();
             List<Map<String, Object>> list = getJdbcTemplate().queryForList(sql, args);
-            log.info("executeQueryList {}/ms {}", System.currentTimeMillis() - ts, SQL.toString(sql, args));
+            if (page) {
+                log.info("executeQueryPage({},{}) {}/ms {}", pageNo, pageSize, System.currentTimeMillis() - ts, SQL.toString(sql, args));
+            } else {
+                log.info("executeQueryList {}/ms {}", System.currentTimeMillis() - ts, SQL.toString(sql, args));
+            }
             return list;
         };
         if (cacheMap == null) {

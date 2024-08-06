@@ -112,7 +112,7 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
                 null);
     }
 
-    private static String argsToString(Object[] args) {
+    public static String argsToString(Object[] args) {
         StringJoiner joiner = new StringJoiner("_");
         for (Object arg : args) {
             joiner.add(String.valueOf(arg));
