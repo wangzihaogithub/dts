@@ -260,6 +260,8 @@ public class ES7xConnection {
                         }
                     } else if (status == RestStatus.CONFLICT) {
                         logger.warn("conflict {}", itemResponse.getFailureMessage());
+                    } else if (status == RestStatus.TOO_MANY_REQUESTS) {
+                        throw new RuntimeException(errorMsg + "[" + "[" + itemResponse.getOpType() + "]. " + itemResponse.getFailure().getCause().getClass() + ": " + itemResponse.getFailure() + "]");
                     } else {
                         if (errorRespList == null) {
                             errorRespList = new ArrayList<>();

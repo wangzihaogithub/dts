@@ -52,8 +52,8 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
                             NestedFieldWriter.executeEsTemplateUpdate(bulkRequestList, es7xTemplate, pk, schemaItem, parentData);
                         }
                     });
-                    bulkRequestList.commit(es7xTemplate);
                 }
+                bulkRequestList.commit(es7xTemplate);
             } else {
                 updateSqlList = MergeJdbcTemplateSQL.merge(joinBySlaveTable.nestedMainSqlList, chunkSize);
                 NestedFieldWriter.executeMergeUpdateES(updateSqlList, bulkRequestList, cacheMap, es7xTemplate, null, 3);

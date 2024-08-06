@@ -40,9 +40,9 @@ public class JdbcTemplateSQL extends SQL {
             Object[] args = getArgs();
             List<Map<String, Object>> list = getJdbcTemplate().queryForList(sql, args);
             if (page) {
-                log.info("executeQueryPage({},{}) {}/ms {}", pageNo, pageSize, System.currentTimeMillis() - ts, SQL.toString(sql, args));
+                log.info("executeQueryPage({},{}) {}/ms, listSize={}, {}", pageNo, pageSize, System.currentTimeMillis() - ts, list.size(), SQL.toString(sql, args));
             } else {
-                log.info("executeQueryList {}/ms {}", System.currentTimeMillis() - ts, SQL.toString(sql, args));
+                log.info("executeQueryList {}/ms, listSize={},{}", System.currentTimeMillis() - ts, list.size(), SQL.toString(sql, args));
             }
             return list;
         };
