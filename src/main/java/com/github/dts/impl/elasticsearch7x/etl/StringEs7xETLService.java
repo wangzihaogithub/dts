@@ -197,6 +197,7 @@ public class StringEs7xETLService {
                             }
                             esTemplate.commit();
                             searchAfter = searchResponse.getLastSortValues();
+                            log.info("deleteEsTrim searchAfter = {}", searchAfter);
                         } while (true);
                         sendTrimDone(messageService, timestamp, hitListSize, deleteSize, deleteIdList);
                     }
@@ -278,6 +279,7 @@ public class StringEs7xETLService {
                             }
                             esTemplate.commit();
                             searchAfter = searchResponse.getLastSortValues();
+                            log.info("updateEsDiff searchAfter = {}", searchAfter);
                         } while (true);
                         sendDiffDone(messageService, timestamp, hitListSize, deleteSize, deleteIdList, updateSize, updateIdList, diffFields, adapter, config);
                     }
