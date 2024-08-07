@@ -29,6 +29,18 @@ public abstract class AbstractEs7xETLIntController {
         this.intES7xETLService = new IntES7xETLService(getClass().getSimpleName(), startupServer);
     }
 
+    @RequestMapping("/updateEsNestedDiff")
+    public int updateEsNestedDiff(@RequestParam String esIndexName,
+                                  @RequestParam(required = false, defaultValue = "500") int offsetAdd,
+                                  // 比较字段：必须是嵌套字段：空=全部，
+                                  Long startId,
+                                  Long endId,
+                                  String[] diffFields,
+                                  @RequestParam(required = false, defaultValue = "500") int maxSendMessageSize) {
+        return intES7xETLService.updateEsNestedDiff(esIndexName, startId, endId, offsetAdd,
+                diffFields == null ? null : new LinkedHashSet<>(Arrays.asList(diffFields)), maxSendMessageSize);
+    }
+
     @RequestMapping("/updateEsDiff")
     public int updateEsDiff(@RequestParam String esIndexName,
                             @RequestParam(required = false, defaultValue = "500") int offsetAdd,

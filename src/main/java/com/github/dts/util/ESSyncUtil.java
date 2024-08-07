@@ -404,8 +404,8 @@ public class ESSyncUtil {
     public static Map<String, Double> parseGeoPointToMap(String val) {
         String[] point = val.split(",");
         Map<String, Double> location = new HashMap<>(2);
-        location.put("lat", Double.valueOf(point[0].trim()));
-        location.put("lon", Double.valueOf(point[1].trim()));
+        location.put("lat", Double.parseDouble(point[0].trim()));
+        location.put("lon", Double.parseDouble(point[1].trim()));
         return location;
     }
 
@@ -578,26 +578,26 @@ public class ESSyncUtil {
                 return es != null;
             }
             case ARRAY: {
-                if(es == null && mysql == null){
+                if (es == null && mysql == null) {
                     return true;
                 }
-                if(es == null || mysql == null){
+                if (es == null || mysql == null) {
                     return false;
                 }
                 Collection<?> mysqlParse = (Collection) objectField.parse(mysql, objectField.getEsMapping());
                 Collection<?> esParse;
-                if(es instanceof Collection){
+                if (es instanceof Collection) {
                     esParse = (Collection) es;
-                }else {
+                } else {
                     esParse = Arrays.asList(es.toString().split(","));
                 }
-                if(mysqlParse.size() != esParse.size()){
+                if (mysqlParse.size() != esParse.size()) {
                     return false;
                 }
                 Set<String> mysqlParseString = mysqlParse.stream().map(String::valueOf).collect(Collectors.toSet());
                 Set<String> esParseString = esParse.stream().map(String::valueOf).collect(Collectors.toSet());
                 for (String esString : esParseString) {
-                    if(!mysqlParseString.contains(esString)){
+                    if (!mysqlParseString.contains(esString)) {
                         return false;
                     }
                 }
@@ -610,9 +610,90 @@ public class ESSyncUtil {
                     return false;
                 }
             }
-            default:{
+            default: {
                 return Objects.equals(mysql, es);
             }
+        }
+    }
+
+    public static List<Map<String, Object>> convertValueTypeCopyList(List<Map<String, Object>> rowList,
+                                                                     ESTemplate esTemplate,
+                                                                     ESMapping esMapping,
+                                                                     String fileName) {
+        List<Map<String, Object>> rowListCopy = new ArrayList<>();
+        if (rowList != null) {
+            for (Map<String, Object> row : rowList) {
+                Map<String, Object> rowCopy = new LinkedHashMap<>(row);
+                esTemplate.convertValueType(esMapping, fileName, rowCopy);
+                rowListCopy.add(rowCopy);
+            }
+        }
+        return rowListCopy;
+    }
+
+    public static Map<String, Object> convertValueTypeCopyMap(List<Map<String, Object>> rowList,
+                                                              ESTemplate esTemplate,
+                                                              ESMapping esMapping,
+                                                              String fileName) {
+        Map<String, Object> rowCopy;
+        if (rowList != null && !rowList.isEmpty()) {
+            rowCopy = new LinkedHashMap<>(rowList.get(0));
+            esTemplate.convertValueType(esMapping, fileName, rowCopy);
+        } else {
+            rowCopy = null;
+        }
+        return rowCopy;
+    }
+
+    public static boolean equalsNestedRowData(List<Map<String, Object>> mysqlRowData, Object esRowData, ESSyncConfig.ObjectField objectField) {
+        if (isEmpty(esRowData)) {
+            if (mysqlRowData == null || mysqlRowData.isEmpty()) {
+                return true;
+            } else {
+                Map<String, Object> map = mysqlRowData.get(0);
+                return map.isEmpty();
+            }
+        } else if (mysqlRowData == null || mysqlRowData.isEmpty()) {
+            return isEmpty(esRowData);
+        } else if (objectField.getType().isSqlType()) {
+            if (esRowData instanceof Map) {
+                Map es = ((Map<?, ?>) esRowData);
+                Map<String, Object> mysql = mysqlRowData.get(0);
+                for (String field : mysql.keySet()) {
+                    Object mysqlValue = mysql.get(field);
+                    Object esValue = es.get(field);
+                    if (!equalsRowData(mysqlValue, esValue)) {
+                        return false;
+                    }
+                }
+                return true;
+            } else if (esRowData instanceof Collection) {
+                List<?> esList = esRowData instanceof List ? (List<?>) esRowData : new ArrayList<>((Collection<?>) esRowData);
+                if (esList.size() != mysqlRowData.size()) {
+                    return false;
+                }
+                for (int i = 0, size = mysqlRowData.size(); i < size; i++) {
+                    Map<String, Object> mysql = mysqlRowData.get(i);
+                    Map<String, Object> es = (Map<String, Object>) esList.get(i);
+                    for (String field : mysql.keySet()) {
+                        Object mysqlValue = mysql.get(field);
+                        Object esValue = es.get(field);
+                        ESSyncConfig.ObjectField fieldObjectField = objectField.getEsMapping().getObjectField(objectField.getFieldName(), field);
+                        if (fieldObjectField != null) {
+                            if (!equalsRowData(mysqlValue, esValue, fieldObjectField)) {
+                                return false;
+                            }
+                        } else if (!equalsRowData(mysqlValue, esValue)) {
+                            return false;
+                        }
+                    }
+                }
+                return true;
+            } else {
+                return false;
+            }
+        } else {
+            throw new IllegalArgumentException("unsupported object type: " + objectField.getType());
         }
     }
 
@@ -622,6 +703,9 @@ public class ESSyncUtil {
         }
         for (String diffField : diffFields) {
             ESSyncConfig.ObjectField objectField = esMapping.getObjectField(null, diffField);
+            if (objectField != null && objectField.getType().isSqlType()) {
+                continue;
+            }
             Object mysql = mysqlRowData.get(diffField);
             Object es = esRowData.get(diffField);
             if (objectField != null) {
@@ -651,6 +735,14 @@ public class ESSyncUtil {
             } catch (Exception e) {
                 equals = false;
             }
+        } else if (es instanceof Collection) {
+            String mysqlString = mysql.toString();
+            for (Object esItem : (Collection) es) {
+                if (esItem != null && !mysqlString.contains(esItem.toString())) {
+                    return false;
+                }
+            }
+            return true;
         } else if (mysql instanceof Date || es instanceof Date) {
             equals = equalsEsDate(mysql, es);
         } else if (es instanceof Map) {

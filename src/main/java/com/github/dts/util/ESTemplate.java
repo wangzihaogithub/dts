@@ -162,5 +162,13 @@ public interface ESTemplate extends AutoCloseable {
         public Object[] getSortValues() {
             return sortValues;
         }
+
+        @Override
+        public String toString() {
+            return "Hit{" +
+                    "id='" + id + '\'' +
+                    ",size=" + size() +
+                    '}';
+        }
     }
 }

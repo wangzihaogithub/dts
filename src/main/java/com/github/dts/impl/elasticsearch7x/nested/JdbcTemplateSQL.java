@@ -87,4 +87,18 @@ public class JdbcTemplateSQL extends SQL {
     public JdbcTemplate getJdbcTemplate() {
         return ESSyncUtil.getJdbcTemplateByKey(getDataSourceKey());
     }
+
+    @Override
+    public boolean equals(Object o) {
+        if (o != null && getClass() == o.getClass()) {
+            return super.equals(o);
+        } else {
+            return false;
+        }
+    }
+
+    @Override
+    public int hashCode() {
+        return System.identityHashCode(this);
+    }
 }

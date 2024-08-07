@@ -11,6 +11,7 @@ import org.springframework.dao.RecoverableDataAccessException;
 import java.util.*;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplateSQL {
@@ -55,6 +56,7 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
     }
 
     public static <T extends JdbcTemplateSQL> List<MergeJdbcTemplateSQL<T>> merge(Collection<T> sqlList, int maxIdInCount, boolean groupBy) {
+        // !!这里保证入参的sqlList和返回的数量保持一样
         switch (sqlList.size()) {
             case 0: {
                 return Collections.emptyList();
@@ -64,8 +66,7 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
                 return Collections.singletonList(newNoMerge(new ArrayList<>(sqlList), first));
             }
             default: {
-                Set<T> sqlSet = sqlList instanceof Set ? (Set<T>) sqlList : new LinkedHashSet<>(sqlList);
-                Map<String, List<T>> groupByExprSqlMap = sqlSet.stream()
+                Map<String, List<T>> groupByExprSqlMap = sqlList.stream()
                         .collect(Collectors.groupingBy(e -> e.getExprSql() + "_" + e.getDataSourceKey() + "_" + e.getNeedGroupBy(), LinkedHashMap::new, Collectors.toList()));
 
                 List<MergeJdbcTemplateSQL<T>> result = new ArrayList<>();
@@ -74,15 +75,14 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
                     if (valueList.size() == 1) {
                         result.add(newNoMerge(valueList, first));
                     } else {
-                        Map<String, T> distinct = new LinkedHashMap<>();
-                        for (T t : valueList) {
-                            distinct.put(argsToString(t.getArgs()), t);
-                        }
-                        List<List<T>> partitionList = Lists.partition(new ArrayList<>(distinct.values()), maxIdInCount);
+                        List<List<T>> partitionList = Lists.partition(valueList, maxIdInCount);
                         for (List<T> partition : partitionList) {
                             Collection<SchemaItem.ColumnItem> needGroupBy = groupBy ? first.getNeedGroupBy() : null;
-                            List<Object[]> argsList = partition.stream().map(SQL::getArgs).collect(Collectors.toList());
-                            SqlParser.ChangeSQL changeSQL = SqlParser.changeMergeSelect(first.getExprSql(), argsList, needGroupBy);
+                            Map<String, Object[]> distinctArgList = new LinkedHashMap<>();
+                            for (T e : partition) {
+                                distinctArgList.put(argsToString(e.getArgs()), e.getArgs());
+                            }
+                            SqlParser.ChangeSQL changeSQL = SqlParser.changeMergeSelect(first.getExprSql(), distinctArgList.values(), needGroupBy);
                             if (changeSQL != null) {
                                 result.add(new MergeJdbcTemplateSQL<>(
                                         changeSQL.getSql(), changeSQL.getArgs(),
@@ -120,17 +120,16 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
         return joiner.toString();
     }
 
-    public static <T extends JdbcTemplateSQL> Map<T, List<Map<String, Object>>> toMap(List<MergeJdbcTemplateSQL<T>> mergeList) {
-        return toMap(mergeList, null);
+    public static <T extends JdbcTemplateSQL, K> Map<K, List<Map<String, Object>>> toMap(List<MergeJdbcTemplateSQL<T>> mergeList, Function<T, K> key) {
+        return toMap(mergeList, key, null);
     }
 
-    public static <T extends JdbcTemplateSQL> Map<T, List<Map<String, Object>>> toMap(List<MergeJdbcTemplateSQL<T>> mergeList, CacheMap cacheMap) {
-        Map<T, List<Map<String, Object>>> result = new HashMap<>();
+    public static <T extends JdbcTemplateSQL, K> Map<K, List<Map<String, Object>>> toMap(List<MergeJdbcTemplateSQL<T>> mergeList, Function<T, K> key, CacheMap cacheMap) {
+        Map<K, List<Map<String, Object>>> result = new HashMap<>();
         for (MergeJdbcTemplateSQL<T> templateSQL : mergeList) {
             Map<T, List<Map<String, Object>>> map = templateSQL.dispatch(templateSQL.executeQueryList(cacheMap));
             for (Map.Entry<T, List<Map<String, Object>>> entry : map.entrySet()) {
-                T key = entry.getKey();
-                result.computeIfAbsent(key, k -> new ArrayList<>())
+                result.computeIfAbsent(key.apply(entry.getKey()), k -> new ArrayList<>())
                         .addAll(entry.getValue());
             }
         }

@@ -467,7 +467,7 @@ public class SqlParser {
         });
     }
 
-    public static ChangeSQL changeMergeSelect(String sql, List<Object[]> args, Collection<ColumnItem> needGroupBy) {
+    public static ChangeSQL changeMergeSelect(String sql, Collection<Object[]> args, Collection<ColumnItem> needGroupBy) {
         SQLStatement sqlStatement = SQLUtils.parseSingleMysqlStatement(sql);
         if (sqlStatement instanceof SQLSelectStatement) {
             SQLSelect select = ((SQLSelectStatement) sqlStatement).getSelect();
@@ -541,7 +541,7 @@ public class SqlParser {
         return false;
     }
 
-    private static ChangeSQL changeMergeSelect(List<Object[]> args, Collection<ColumnItem> needGroupBy,
+    private static ChangeSQL changeMergeSelect(Collection<Object[]> args, Collection<ColumnItem> needGroupBy,
                                                SQLStatement sqlStatement, SQLSelectQueryBlock queryBlock,
                                                SQLBinaryOpExpr whereBinaryOp, SQLBinaryOpExpr rightExpr,
                                                SQLBinaryOperator rightOperator) {
@@ -579,7 +579,7 @@ public class SqlParser {
         }
     }
 
-    private static ChangeSQL mergeEqualitySql(List<Object[]> args,
+    private static ChangeSQL mergeEqualitySql(Collection<Object[]> args,
                                               SQLStatement sqlStatement,
                                               SQLSelectQueryBlock queryBlock,
                                               SQLVariantRefExpr right, SQLExpr leftExpr,

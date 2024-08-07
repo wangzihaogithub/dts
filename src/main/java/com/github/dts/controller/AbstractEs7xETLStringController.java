@@ -36,6 +36,17 @@ public abstract class AbstractEs7xETLStringController {
         this.stringEs7xETLService = new StringEs7xETLService(getClass().getSimpleName(), startupServer);
     }
 
+    @RequestMapping("/updateEsNestedDiff")
+    public int updateEsNestedDiff(@RequestParam String esIndexName,
+                                  @RequestParam(required = false, defaultValue = "500") int offsetAdd,
+                                  String startId,
+                                  // 比较字段：必须是嵌套字段：空=全部，
+                                  String[] diffFields,
+                                  @RequestParam(required = false, defaultValue = "500") int maxSendMessageSize) {
+        return stringEs7xETLService.updateEsNestedDiff(esIndexName, startId, offsetAdd,
+                diffFields == null ? null : new LinkedHashSet<>(Arrays.asList(diffFields)), maxSendMessageSize);
+    }
+
     @RequestMapping("/updateEsDiff")
     public int updateEsDiff(@RequestParam String esIndexName,
                             @RequestParam(required = false, defaultValue = "500") int offsetAdd,

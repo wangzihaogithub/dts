@@ -82,11 +82,8 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
             List<MergeJdbcTemplateSQL<DependentSQL>> childrenMergeSqlList = MergeJdbcTemplateSQL.merge(childrenSqlList, maxIdInCount);
             ESTemplate.BulkRequestList bulkRequestList = es7xTemplate.newBulkRequestList(BulkPriorityEnum.LOW);
 
-            Map<DependentSQL, List<Map<String, Object>>> parentMap = MergeJdbcTemplateSQL.toMap(mergeNestedMainSqlList);
+            Map<Dependent, List<Map<String, Object>>> parentGetterMap = MergeJdbcTemplateSQL.toMap(mergeNestedMainSqlList, DependentSQL::getDependent);
             for (MergeJdbcTemplateSQL<DependentSQL> children : childrenMergeSqlList) {
-                Map<Dependent, List<Map<String, Object>>> parentGetterMap = new IdentityHashMap<>(parentMap.size());
-                parentMap.forEach((k, v) -> parentGetterMap.put(k.getDependent(), v));
-
                 children.executeQueryStream(streamChunkSize, (chunk) -> {
                     childrenCounter.addAndGet(chunk.rowList.size());
                     SchemaItem schemaItem = chunk.sql.getDependent().getSchemaItem();
@@ -98,8 +95,8 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
                         Object pkValue = row.values().iterator().next();
                         NestedFieldWriter.executeEsTemplateUpdate(bulkRequestList, es7xTemplate, pkValue, schemaItem, parentList);
                     }
-                    bulkRequestList.commit(es7xTemplate);
                 });
+                bulkRequestList.commit(es7xTemplate);
             }
 
             log.info("NestedMainJoinTable={}ms, rowCount={}, ts={}, dependentList={}, changeSql={}",
