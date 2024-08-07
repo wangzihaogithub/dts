@@ -51,7 +51,9 @@ public interface ESTemplate extends AutoCloseable {
 
     ESBulkRequest.ESBulkResponse deleteByRange(ESMapping mapping, String fieldName, Object minValue, Object maxValue, Integer limit);
 
-    ESSearchResponse searchAfter(ESMapping mapping, Object[] searchAfter, Integer limit);
+    ESSearchResponse searchAfter(ESMapping mapping, String[] includes, String[] excludes, Object[] searchAfter, Integer limit);
+
+    ESSearchResponse searchAfterId(ESMapping mapping, Object[] searchAfter, Integer limit);
 
     /**
      * 通过主键删除数据
@@ -138,7 +140,7 @@ public interface ESTemplate extends AutoCloseable {
             if (hitList.isEmpty()) {
                 return null;
             }
-            ESTemplate.Hit hit = hitList.get(hitList.size() - 1);
+            Hit hit = hitList.get(hitList.size() - 1);
             return hit.getSortValues();
         }
     }

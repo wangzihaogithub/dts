@@ -14,6 +14,7 @@ import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -28,8 +29,8 @@ public class IntES7xETLService {
     private static final Logger log = LoggerFactory.getLogger(IntES7xETLService.class);
     protected final StartupServer startupServer;
     private final ExecutorService executorService;
-    private boolean stop = false;
     private final String name;
+    private boolean stop = false;
 
     public IntES7xETLService(String name, StartupServer startupServer) {
         this.name = name;
@@ -49,13 +50,17 @@ public class IntES7xETLService {
         return syncById(id, esIndexName, true, null);
     }
 
-    public int deleteTrim(String esIndexName) {
-        return deleteTrim(esIndexName, 500, 1000);
+    public int updateEsDiff(String esIndexName) {
+        return updateEsDiff(esIndexName, 500, null, 500);
     }
 
-    public int deleteTrim(String esIndexName,
-                          int offsetAdd,
-                          int maxSendMessageDeleteIdSize) {
+    public int deleteEsTrim(String esIndexName) {
+        return deleteEsTrim(esIndexName, 500, 1000);
+    }
+
+    public int deleteEsTrim(String esIndexName,
+                            int offsetAdd,
+                            int maxSendMessageDeleteIdSize) {
         List<ES7xAdapter> adapterList = startupServer.getAdapter(ES7xAdapter.class);
         int r = 0;
         for (ES7xAdapter adapter : adapterList) {
@@ -86,7 +91,7 @@ public class IntES7xETLService {
 
                         Object[] searchAfter = null;
                         do {
-                            ESTemplate.ESSearchResponse searchResponse = esTemplate.searchAfter(esMapping, searchAfter, offsetAdd);
+                            ESTemplate.ESSearchResponse searchResponse = esTemplate.searchAfterId(esMapping, searchAfter, offsetAdd);
                             List<ESTemplate.Hit> hitList = searchResponse.getHitList();
                             if (hitList.isEmpty()) {
                                 break;
@@ -112,6 +117,86 @@ public class IntES7xETLService {
                     }
                 } catch (Exception e) {
                     sendTrimError(messageService, e, timestamp, hitListSize, deleteSize, deleteIdList, adapter, lastConfig);
+                }
+            }
+        });
+        return r;
+    }
+
+    public int updateEsDiff(String esIndexName,
+                            int offsetAdd,
+                            Set<String> diffFields,
+                            int maxSendMessageSize) {
+        List<ES7xAdapter> adapterList = startupServer.getAdapter(ES7xAdapter.class);
+        int r = 0;
+        for (ES7xAdapter adapter : adapterList) {
+            r += adapter.getEsSyncConfigByIndex(esIndexName).size();
+        }
+        if (r == 0) {
+            return r;
+        }
+
+        executorService.execute(() -> {
+            AbstractMessageService messageService = startupServer.getMessageService();
+            for (ES7xAdapter adapter : adapterList) {
+                long hitListSize = 0;
+                long deleteSize = 0;
+                long updateSize = 0;
+                List<String> deleteIdList = new ArrayList<>();
+                List<String> updateIdList = new ArrayList<>();
+                Timestamp timestamp = new Timestamp(System.currentTimeMillis());
+                ESSyncConfig lastConfig = null;
+                try {
+                    Map<String, ESSyncConfig> configMap = adapter.getEsSyncConfigByIndex(esIndexName);
+                    for (ESSyncConfig config : configMap.values()) {
+                        lastConfig = config;
+                        ESSyncConfig.ESMapping esMapping = config.getEsMapping();
+                        JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(config.getDataSourceKey());
+                        String pkFieldName = config.getEsMapping().getSchemaItem().getIdField().getFieldName();
+                        String pkFieldExpr = config.getEsMapping().getSchemaItem().getIdField().getExpr();
+                        String[] selectFields = esMapping.getSchemaItem().getSelectFields().keySet().toArray(new String[0]);
+
+                        ES7xTemplate esTemplate = adapter.getEsTemplate();
+
+                        Object[] searchAfter = null;
+                        do {
+                            ESTemplate.ESSearchResponse searchResponse = esTemplate.searchAfter(esMapping, selectFields, null, searchAfter, offsetAdd);
+                            List<ESTemplate.Hit> hitList = searchResponse.getHitList();
+                            if (hitList.isEmpty()) {
+                                break;
+                            }
+                            hitListSize += hitList.size();
+
+                            String ids = hitList.stream().map(ESTemplate.Hit::getId).collect(Collectors.joining(","));
+                            String sql = String.format("%s where %s in (%s) group by %s", esMapping.getSql(), pkFieldExpr, ids, pkFieldExpr);
+                            Map<String, Map<String, Object>> dbMap = jdbcTemplate.queryForList(sql).stream()
+                                    .collect(Collectors.toMap(e -> String.valueOf(e.get(pkFieldName)), Function.identity()));
+                            for (ESTemplate.Hit hit : hitList) {
+                                String id = hit.getId();
+                                Map<String, Object> db = dbMap.get(id);
+                                if (db != null) {
+                                    if (!ESSyncUtil.equalsRowData(db, hit, diffFields, esMapping)) {
+                                        updateSize++;
+                                        if (updateIdList.size() < maxSendMessageSize) {
+                                            updateIdList.add(id);
+                                        }
+                                        esTemplate.update(esMapping, id, hit, null);
+                                    }
+                                } else {
+                                    esTemplate.delete(esMapping, id, null, null);
+                                    deleteSize++;
+                                    if (deleteIdList.size() < maxSendMessageSize) {
+                                        deleteIdList.add(id);
+                                    }
+                                }
+                            }
+                            esTemplate.commit();
+                            searchAfter = searchResponse.getLastSortValues();
+                        } while (true);
+                        sendDiffDone(messageService, timestamp, hitListSize, deleteSize, deleteIdList, updateSize, updateIdList, diffFields, adapter, config);
+                    }
+                } catch (Exception e) {
+                    sendDiffError(messageService, e, timestamp, hitListSize, deleteSize, deleteIdList, updateSize, updateIdList, diffFields, adapter, lastConfig);
                 }
             }
         });
@@ -352,6 +437,50 @@ public class IntES7xETLService {
         messageService.send(title, content);
     }
 
+    protected void sendDiffDone(AbstractMessageService messageService, Date startTime,
+                                long dmlSize, long deleteSize, List<String> deleteIdList,
+                                long updateSize, List<String> updateIdList,
+                                Set<String> diffFields,
+                                ES7xAdapter adapter, ESSyncConfig config) {
+        String title = "ES搜索全量校验Diff数据-结束";
+        String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
+                + " \n\n   ---  "
+                + ",\n\n 对象 = " + getName()
+                + ",\n\n 开始时间 = " + startTime
+                + ",\n\n 结束时间 = " + new Timestamp(System.currentTimeMillis())
+                + ",\n\n 比较字段(不含nested) = " + (diffFields == null ? "全部" : diffFields)
+                + ",\n\n 校验条数 = " + dmlSize
+                + ",\n\n 删除条数 = " + deleteSize
+                + ",\n\n 更新条数 = " + updateSize
+                + ",\n\n 更新ID = " + updateIdList
+                + ",\n\n 删除ID = " + deleteIdList;
+        messageService.send(title, content);
+    }
+
+    protected void sendDiffError(AbstractMessageService messageService, Throwable throwable,
+                                 Date timestamp, long dmlSize, long deleteSize, List<String> deleteIdList,
+                                 long updateSize, List<String> updateIdList,
+                                 Set<String> diffFields,
+                                 ES7xAdapter adapter, ESSyncConfig config) {
+        String title = "ES搜索全量校验Diff数据-异常";
+        StringWriter writer = new StringWriter();
+        throwable.printStackTrace(new PrintWriter(writer));
+
+        String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
+                + " \n\n   ---  "
+                + ",\n\n 对象 = " + getName()
+                + ",\n\n 开始时间 = " + timestamp
+                + ",\n\n 比较字段(不含nested) = " + (diffFields == null ? "全部" : diffFields)
+                + ",\n\n 校验条数 = " + dmlSize
+                + ",\n\n 异常 = " + throwable
+                + ",\n\n 删除条数 = " + deleteSize
+                + ",\n\n 更新条数 = " + updateSize
+                + ",\n\n 更新ID = " + updateIdList
+                + ",\n\n 删除ID = " + deleteIdList
+                + ",\n\n 明细 = " + writer;
+        messageService.send(title, content);
+    }
+
     protected List<Dml> convertDmlList(JdbcTemplate jdbcTemplate, String catalog, Long minId, int limit, String tableName, String idColumnName, ESSyncConfig config) {
         List<Map<String, Object>> jobList = selectList(jdbcTemplate, minId, limit, tableName, idColumnName);
         List<Dml> dmlList = new ArrayList<>();
@@ -398,6 +527,10 @@ public class IntES7xETLService {
         return maxId == Long.MIN_VALUE ? null : maxId;
     }
 
+    public String getName() {
+        return name;
+    }
+
     public static abstract class SyncRunnable implements Runnable {
         private static final List<SyncRunnable> RUNNABLE_LIST = Collections.synchronizedList(new ArrayList<>());
         protected final int threadIndex;
@@ -408,12 +541,12 @@ public class IntES7xETLService {
         private final long offsetStart;
         private final IntES7xETLService service;
         private final String name;
-        protected long currOffset;
-        private boolean done;
         private final Set<String> onlyFieldNameSet;
         private final ES7xAdapter adapter;
         private final ESSyncConfig config;
         private final boolean onlyCurrentIndex;
+        protected long currOffset;
+        private boolean done;
 
         public SyncRunnable(String name, IntES7xETLService service,
                             int threadIndex, long offsetStart, long maxId, int threads,
@@ -531,9 +664,5 @@ public class IntES7xETLService {
                     ", max=" + endOffset +
                     '}';
         }
-    }
-
-    public String getName() {
-        return name;
     }
 }

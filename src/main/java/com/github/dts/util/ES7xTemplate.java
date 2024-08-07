@@ -77,7 +77,7 @@ public class ES7xTemplate implements ESTemplate {
     public void insert(ESMapping mapping, Object pkVal, Map<String, Object> esFieldData, BulkRequestList bulkRequestList) {
         setterIndexUpdatedTime(mapping, esFieldData);
 
-        esFieldData = ESSyncUtil.convertType(esFieldData, getEsType(mapping));
+        esFieldData = convertType(esFieldData, mapping);
         if (mapping.get_id() != null) {
             String parentVal = (String) esFieldData.remove("$parent_routing");
             ESBulkRequest.ESUpdateRequest updateRequest = new ES7xConnection.ES7xUpdateRequest(mapping.get_index(),
@@ -126,9 +126,9 @@ public class ES7xTemplate implements ESTemplate {
         Map<String, Object> esFieldDataConvert;
         if (parentFieldName == null) {
             esFieldDataTmp.putAll(esFieldData);
-            esFieldDataConvert = ESSyncUtil.convertType(esFieldDataTmp, getEsType(mapping));
+            esFieldDataConvert = convertType(esFieldDataTmp, mapping);
         } else {
-            esFieldDataConvert = ESSyncUtil.convertType(esFieldDataTmp, getEsType(mapping));
+            esFieldDataConvert = convertType(esFieldDataTmp, mapping);
             if (esFieldDataConvert != null) {
                 esFieldDataConvert = new LinkedHashMap<>(esFieldDataConvert);
                 esFieldDataConvert.putAll(esFieldData);
@@ -162,7 +162,7 @@ public class ES7xTemplate implements ESTemplate {
             return;
         }
         setterIndexUpdatedTime(mapping, esFieldData);
-        esFieldData = ESSyncUtil.convertType(esFieldData, getEsType(mapping));
+        esFieldData = convertType(esFieldData, mapping);
         BoolQueryBuilder queryBuilder = QueryBuilders.boolQuery();
         esFieldDataWhere.forEach((fieldName, value) -> queryBuilder.must(QueryBuilders.termsQuery(fieldName, value)));
         Map<String, Object> esFieldDataTmp = new LinkedHashMap<>(esFieldData);
@@ -207,7 +207,7 @@ public class ES7xTemplate implements ESTemplate {
         if (pkValue == null || "".equals(pkValue)) {
             return;
         }
-        params = ESSyncUtil.convertType(params, getEsType(mapping));
+        params = convertType(params, mapping);
         Script script = new Script(scriptType, lang, idOrCode, params);
         ESBulkRequest.ESUpdateRequest esUpdateRequest = new ES7xConnection.ES7xUpdateRequest(mapping.get_index(),
                 pkValue.toString()).setScript(script);
@@ -235,7 +235,7 @@ public class ES7xTemplate implements ESTemplate {
             ESMapping mapping = config.getEsMapping();
             setterIndexUpdatedTime(mapping, esFieldData);
 
-            Map<String, Object> esFieldDataTmp = ESSyncUtil.convertType(esFieldData, getEsType(mapping));
+            Map<String, Object> esFieldDataTmp = convertType(esFieldData, mapping);
 
             BoolQueryBuilder queryBuilder = QueryBuilders.boolQuery();
             paramsTmp.forEach((fieldName, value) -> queryBuilder.must(QueryBuilders.termsQuery(fieldName, value)));
@@ -351,13 +351,18 @@ public class ES7xTemplate implements ESTemplate {
     }
 
     @Override
-    public ESSearchResponse searchAfter(ESMapping mapping, Object[] searchAfter, Integer limit) {
+    public ESSearchResponse searchAfterId(ESMapping mapping, Object[] searchAfter, Integer limit) {
+        return searchAfter(mapping, new String[]{mapping.get_id()}, null, searchAfter, limit);
+    }
+
+    @Override
+    public ESSearchResponse searchAfter(ESMapping mapping, String[] includes, String[] excludes, Object[] searchAfter, Integer limit) {
         ES7xConnection.ESSearchRequest esSearchRequest = new ES7xConnection.ESSearchRequest(mapping.get_index());
         if (searchAfter != null) {
             esSearchRequest.searchAfter(searchAfter);
         }
-        esSearchRequest.fetchSource(mapping.get_id());
-        esSearchRequest.sort(mapping.get_id(),"ASC");
+        esSearchRequest.fetchSource(includes, excludes);
+        esSearchRequest.sort(mapping.get_id(), "ASC");
         if (limit != null) {
             esSearchRequest.size(limit);
         }
@@ -389,7 +394,7 @@ public class ES7xTemplate implements ESTemplate {
             if (esFieldData == null || esFieldData.isEmpty()) {
                 return;
             }
-            esFieldData = ESSyncUtil.convertType(esFieldData, getEsType(mapping));
+            esFieldData = convertType(esFieldData, mapping);
             ES7xConnection.ESSearchRequest esSearchRequest = new ES7xConnection.ESSearchRequest(mapping.get_index())
                     .setQuery(QueryBuilders.termQuery(mapping.getPk(), pkVal))
                     .size(10000);
@@ -584,10 +589,9 @@ public class ES7xTemplate implements ESTemplate {
         // 如果是对象类型
         ESSyncConfig.ObjectField objectField = mapping.getObjectField(parentFieldName, fieldName);
         if (objectField != null) {
-            return objectField.parse(value, mapping, parentFieldName, fieldName);
+            return objectField.parse(value, mapping);
         } else {
-            ESFieldTypesCache esType = getEsType(mapping);
-            return ESSyncUtil.typeConvert(value, fieldName, esType, parentFieldName);
+            return ESSyncUtil.typeConvert(value, fieldName, getEsType(mapping), parentFieldName);
         }
     }
 
@@ -731,6 +735,10 @@ public class ES7xTemplate implements ESTemplate {
                 esFieldData.put(relationField, relations);
             });
         }
+    }
+
+    private Map<String, Object> convertType(Map<String, Object> mysqlData, ESMapping mapping) {
+        return ESSyncUtil.convertType(mysqlData, getEsType(mapping));
     }
 
     private ESFieldTypesCache getEsType(ESMapping mapping) {

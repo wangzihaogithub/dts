@@ -355,12 +355,10 @@ public class ESSyncConfig {
          *
          * @param val             val
          * @param mapping         mapping
-         * @param fieldName       fieldName
-         * @param parentFieldName parentFieldName
          * @return ES对象
          * @see ESSyncServiceListener#onSyncAfter(List, ES7xAdapter, ESTemplate.BulkRequestList)
          */
-        public Object parse(Object val, ESMapping mapping, String parentFieldName, String fieldName) {
+        public Object parse(Object val, ESMapping mapping) {
             if (val == null) {
                 return null;
             }
@@ -392,6 +390,16 @@ public class ESSyncConfig {
                 case STATIC_METHOD: {
                     if (staticMethodAccessor == null) {
                         staticMethodAccessor = new StaticMethodAccessor<>(method, ESStaticMethodParam.class);
+                    }
+                    String[] split1 = fieldName.split("\\$");
+                    String parentFieldName;
+                    String fieldName;
+                    if(split1.length == 1){
+                        fieldName = split1[0];
+                        parentFieldName= null;
+                    }else {
+                        parentFieldName= split1[0];
+                        fieldName = split1[1];
                     }
                     return staticMethodAccessor.apply(new ESStaticMethodParam(val, mapping, fieldName, parentFieldName));
                 }

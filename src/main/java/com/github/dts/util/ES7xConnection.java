@@ -454,6 +454,11 @@ public class ES7xConnection {
             return this;
         }
 
+        public ESSearchRequest fetchSource(String[] includes, String[] excludes) {
+            searchRequest.source().fetchSource(includes, excludes);
+            return this;
+        }
+
         public ESSearchRequest fetchSource(String... includes) {
             searchRequest.source().fetchSource(includes, null);
             return this;

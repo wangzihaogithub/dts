@@ -36,6 +36,23 @@ public abstract class AbstractEs7xETLStringController {
         this.stringEs7xETLService = new StringEs7xETLService(getClass().getSimpleName(), startupServer);
     }
 
+    @RequestMapping("/updateEsDiff")
+    public int updateEsDiff(@RequestParam String esIndexName,
+                            @RequestParam(required = false, defaultValue = "500") int offsetAdd,
+                            // 比较字段：不含嵌套字段：空=全部，
+                            String[] diffFields,
+                            @RequestParam(required = false, defaultValue = "500") int maxSendMessageSize) {
+        return stringEs7xETLService.updateEsDiff(esIndexName, offsetAdd,
+                diffFields == null ? null : new LinkedHashSet<>(Arrays.asList(diffFields)), maxSendMessageSize);
+    }
+
+    @RequestMapping("/deleteEsTrim")
+    public int deleteEsTrim(@RequestParam String esIndexName,
+                            @RequestParam(required = false, defaultValue = "500") int offsetAdd,
+                            @RequestParam(required = false, defaultValue = "1000") int maxSendMessageDeleteIdSize) {
+        return stringEs7xETLService.deleteEsTrim(esIndexName, offsetAdd, maxSendMessageDeleteIdSize);
+    }
+
     @RequestMapping("/syncAll")
     public Integer syncAll(
             @RequestParam String esIndexName,
@@ -57,13 +74,6 @@ public abstract class AbstractEs7xETLStringController {
                            String[] onlyFieldName) {
         Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(Util::isNotBlank).collect(Collectors.toCollection(LinkedHashSet::new));
         return stringEs7xETLService.syncById(id, esIndexName, onlyCurrentIndex, onlyFieldNameSet);
-    }
-
-    @RequestMapping("/deleteTrim")
-    public Integer deleteTrim(@RequestParam String esIndexName,
-                              @RequestParam(required = false, defaultValue = "500") int offsetAdd,
-                              @RequestParam(required = false, defaultValue = "1000") int maxSendMessageDeleteIdSize) {
-        return stringEs7xETLService.deleteTrim(esIndexName, offsetAdd, maxSendMessageDeleteIdSize);
     }
 
     @RequestMapping("/stop")

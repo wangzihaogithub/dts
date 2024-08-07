@@ -21,6 +21,7 @@ import java.sql.Blob;
 import java.sql.SQLException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
  * ES 同步工具同类
@@ -367,12 +368,7 @@ public class ESSyncUtil {
                 log.error("es type is geo_point, source value not contains ',' separator {} {} = {}", parentFieldName, fileName, val);
                 return val;
             }
-
-            String[] point = ((String) val).split(",");
-            Map<String, Double> location = new HashMap<>();
-            location.put("lat", Double.valueOf(point[0].trim()));
-            location.put("lon", Double.valueOf(point[1].trim()));
-            return location;
+            return parseGeoPointToMap((String) val);
         } else if ("array".equals(esType)) {
             if ("".equals(val.toString().trim())) {
                 res = new ArrayList<>();
@@ -403,6 +399,25 @@ public class ESSyncUtil {
         }
 
         return res;
+    }
+
+    public static Map<String, Double> parseGeoPointToMap(String val) {
+        String[] point = val.split(",");
+        Map<String, Double> location = new HashMap<>(2);
+        location.put("lat", Double.valueOf(point[0].trim()));
+        location.put("lon", Double.valueOf(point[1].trim()));
+        return location;
+    }
+
+    public static boolean equalsGeoPoint(Map map1, Map map2) {
+        Object lat = map1.get("lat");
+        Object lat2 = map2.get("lat");
+        if (!Objects.equals(String.valueOf(lat), String.valueOf(lat2))) {
+            return false;
+        }
+        Object lon = map1.get("lon");
+        Object lon2 = map2.get("lon");
+        return Objects.equals(String.valueOf(lon), String.valueOf(lon2));
     }
 
     private static byte[] blobToBytes(Blob blob) {
@@ -527,6 +542,128 @@ public class ESSyncUtil {
         return false;
     }
 
+    private static boolean equalsEsDate(Object mysqlDate, Object esDate) {
+        Date dateEs;
+        Date dateMysql;
+        if (esDate instanceof Date) {
+            dateEs = (Date) esDate;
+        } else {
+            dateEs = DateUtil.parseDate(esDate.toString());
+        }
+        if (mysqlDate instanceof Date) {
+            dateMysql = (Date) mysqlDate;
+        } else {
+            dateMysql = DateUtil.parseDate(mysqlDate.toString());
+        }
+
+        DateTime dateMysqlDateTime = new DateTime(dateMysql);
+        DateTime dateEsDateTime = new DateTime(dateEs);
+        String format;
+        if (dateEsDateTime.getHourOfDay() == 0 && dateEsDateTime.getMinuteOfHour() == 0 && dateEsDateTime.getSecondOfMinute() == 0
+                && dateEsDateTime.getMillisOfSecond() == 0) {
+            format = "yyyy-MM-dd";
+        } else {
+            format = "yyyy-MM-dd HH:mm:ss";
+        }
+        return dateEsDateTime.toString(format).equals(dateMysqlDateTime.toString(format));
+    }
+
+    public static boolean equalsRowData(Object mysql, Object es, ESSyncConfig.ObjectField objectField) {
+        ESSyncConfig.ObjectField.Type type = objectField.getType();
+        switch (type) {
+            case OBJECT_SQL: {
+                return es != null;
+            }
+            case ARRAY_SQL: {
+                return es != null;
+            }
+            case ARRAY: {
+                if(es == null && mysql == null){
+                    return true;
+                }
+                if(es == null || mysql == null){
+                    return false;
+                }
+                Collection<?> mysqlParse = (Collection) objectField.parse(mysql, objectField.getEsMapping());
+                Collection<?> esParse;
+                if(es instanceof Collection){
+                    esParse = (Collection) es;
+                }else {
+                    esParse = Arrays.asList(es.toString().split(","));
+                }
+                if(mysqlParse.size() != esParse.size()){
+                    return false;
+                }
+                Set<String> mysqlParseString = mysqlParse.stream().map(String::valueOf).collect(Collectors.toSet());
+                Set<String> esParseString = esParse.stream().map(String::valueOf).collect(Collectors.toSet());
+                for (String esString : esParseString) {
+                    if(!mysqlParseString.contains(esString)){
+                        return false;
+                    }
+                }
+                return true;
+            }
+            case BOOLEAN: {
+                try {
+                    return Objects.equals(castToBoolean(mysql), castToBoolean(es));
+                } catch (Exception e) {
+                    return false;
+                }
+            }
+            default:{
+                return Objects.equals(mysql, es);
+            }
+        }
+    }
+
+    public static boolean equalsRowData(Map<String, Object> mysqlRowData, Map<String, Object> esRowData, Set<String> diffFields, ESMapping esMapping) {
+        if (diffFields == null || diffFields.isEmpty()) {
+            diffFields = mysqlRowData.keySet();
+        }
+        for (String diffField : diffFields) {
+            ESSyncConfig.ObjectField objectField = esMapping.getObjectField(null, diffField);
+            Object mysql = mysqlRowData.get(diffField);
+            Object es = esRowData.get(diffField);
+            if (objectField != null) {
+                if (!equalsRowData(mysql, es, objectField)) {
+                    return false;
+                }
+            } else {
+                if (!equalsRowData(mysql, es)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private static boolean equalsRowData(Object mysql, Object es) {
+        boolean emptyMysql = ESSyncUtil.isEmpty(mysql);
+        boolean emptyEs = ESSyncUtil.isEmpty(es);
+        boolean equals;
+        if (emptyMysql != emptyEs) {
+            equals = false;
+        } else if (emptyMysql) {
+            equals = true;
+        } else if (mysql instanceof Boolean || es instanceof Boolean) {
+            try {
+                equals = Objects.equals(castToBoolean(mysql), castToBoolean(es));
+            } catch (Exception e) {
+                equals = false;
+            }
+        } else if (mysql instanceof Date || es instanceof Date) {
+            equals = equalsEsDate(mysql, es);
+        } else if (es instanceof Map) {
+            Map<String, Double> mysqlGeo = ESSyncUtil.parseGeoPointToMap(mysql.toString());
+            equals = ESSyncUtil.equalsGeoPoint(mysqlGeo, (Map) es);
+        } else if (es instanceof Integer || es instanceof Long) {
+            equals = Long.parseLong(mysql.toString()) == ((Number) es).longValue();
+        } else {
+            equals = String.valueOf(mysql).equals(String.valueOf(es));
+        }
+        return equals;
+    }
+
     private static Object parseDate(String k, String parentFieldName, DateTime dateTime, Map<String, Object> esFieldType) {
         if (esFieldType instanceof ESFieldTypesCache) {
             Set<String> esFormatSet;
@@ -561,12 +698,12 @@ public class ESSyncUtil {
         }
     }
 
-    public static Map<String, Object> convertType(Map<String, Object> esFieldData, Map<String, Object> esFieldType) {
-        if (esFieldData == null || esFieldData.isEmpty()) {
-            return esFieldData;
+    public static Map<String, Object> convertType(Map<String, Object> mysqlData, Map<String, Object> esFieldType) {
+        if (mysqlData == null || mysqlData.isEmpty()) {
+            return mysqlData;
         }
         Map<String, Object> result = new HashMap<>();
-        for (Map.Entry<String, Object> entry : esFieldData.entrySet()) {
+        for (Map.Entry<String, Object> entry : mysqlData.entrySet()) {
             String k = entry.getKey();
             Object val = entry.getValue();
             if (val != null) {

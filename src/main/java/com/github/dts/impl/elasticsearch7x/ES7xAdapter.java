@@ -277,7 +277,7 @@ public class ES7xAdapter implements Adapter {
         this.listenerList.addAll(listenerList);
     }
 
-    public ESTemplate getEsTemplate() {
+    public ES7xTemplate getEsTemplate() {
         return esTemplate;
     }
 
