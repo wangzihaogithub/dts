@@ -233,7 +233,7 @@ public class ES7xAdapter implements Adapter {
         if (!slaveTableList.isEmpty()) {
             NestedSlaveTableRunnable runnable = new NestedSlaveTableRunnable(
                     slaveTableList, esTemplate,
-                    cacheMap.getMaxValueSize(), maxTimestamp);
+                    cacheMap.getMaxValueSize(), maxTimestamp, streamChunkSize);
             futures.add(runnable);
             slaveTableExecutor.execute(runnable);
         }

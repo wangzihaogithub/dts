@@ -1,6 +1,7 @@
 package com.github.dts.util;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * 表依赖关系
@@ -90,7 +91,9 @@ public class Dependent {
 
     @Override
     public String toString() {
-        return dml.getType() + "." + dml.getTable() + "(" + schemaItem + ")";
+        List<Map<String, Object>> old = dml.getOld();
+        String oldString = old == null ? "" : old.stream().map(Map::keySet).collect(Collectors.toList()).toString();
+        return dml.getType() + "(" + oldString + ")." + dml.getTable() + "(" + schemaItem + ")";
     }
 
     @Override

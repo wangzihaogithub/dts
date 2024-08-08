@@ -92,7 +92,7 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
                                         needGroupBy));
                             } else {
                                 for (T value : partition) {
-                                    result.add(newNoMerge(partition, value));
+                                    result.add(newNoMerge(Collections.singletonList(value), value));
                                 }
                             }
                         }
@@ -136,6 +136,14 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
         return result;
     }
 
+    private static String lastKey(Map<String, List<Map<String, Object>>> getterMap) {
+        String last = null;
+        for (String s : getterMap.keySet()) {
+            last = s;
+        }
+        return last;
+    }
+
     public boolean isMerge() {
         return uniqueColumnNames != null;
     }
@@ -148,43 +156,76 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
         return dispatch(executeQueryList(cacheMap));
     }
 
-    public void executeQueryStream(int chunkSize, Consumer<Chunk<T>> each) {
-        Chunk<T> chunk = new Chunk<>();
+    public <K> void executeQueryStream(int chunkSize, Function<T, K> key, Consumer<Chunk<K>> each) {
+        Chunk<K> chunk = new Chunk<>();
         boolean merge = isMerge();
 
-        Set<T> visited;
-        IdentityHashMap<Object[], String> argsToStringCache;
+        Set<K> visited;
+        IdentityHashMap<Object[], String> argsToStringCache = new IdentityHashMap<>();
         if (merge) {
             visited = Collections.newSetFromMap(new IdentityHashMap<>());
-            argsToStringCache = new IdentityHashMap<>();
         } else {
             visited = null;
-            argsToStringCache = null;
         }
-
+        Map<K, Set<String>> keyUniqueColumnKeyMap = new HashMap<>(mergeList.size());
+        Set<K> keySet = new LinkedHashSet<>(mergeList.size());
+        Map<T, K> keyCache = new IdentityHashMap<>(mergeList.size());
+        for (T t : mergeList) {
+            K k = key.apply(t);
+            keyCache.put(t, k);
+            keySet.add(k);
+            keyUniqueColumnKeyMap.computeIfAbsent(k, (o) -> new LinkedHashSet<>())
+                    .add(argsToStringCache.computeIfAbsent(t.getArgs(), MergeJdbcTemplateSQL::argsToString));
+        }
+        List<Map<String, Object>> lastRow = Collections.emptyList();
+        String lastKey = null;
         List<Map<String, Object>> list;
         int pageNo = 1;
         do {
             list = executeQueryList(null, pageNo, chunkSize);
             if (merge) {
                 Map<String, List<Map<String, Object>>> getterMap = list.stream()
-                        .collect(Collectors.groupingBy(e -> argsToString(getUniqueColumnValues(e))));
-                for (T dependentSQL : mergeList) {
-                    String uniqueColumnKey = argsToStringCache.computeIfAbsent(dependentSQL.getArgs(), MergeJdbcTemplateSQL::argsToString);
-                    List<Map<String, Object>> rowList = getterMap.get(uniqueColumnKey);
-                    if (rowList == null) {
-                        continue;
-                    }
-                    removeAddColumnValueList(rowList);
+                        .collect(Collectors.groupingBy(e -> argsToString(getUniqueColumnValues(e)), LinkedHashMap::new, Collectors.toList()));
 
-                    visited.add(dependentSQL);
-                    chunk.reset(dependentSQL, pageNo, chunkSize, rowList);
-                    each.accept(chunk);
+                // 解决拆包黏包问题
+                if (lastKey != null) {
+                    List<Map<String, Object>> beforeLastRow = getterMap.get(lastKey);
+                    if (beforeLastRow == null) {
+                        getterMap.put(lastKey, lastRow);
+                    } else {
+                        beforeLastRow.addAll(lastRow);
+                    }
+                }
+                if (list.size() == chunkSize) {
+                    lastKey = lastKey(getterMap);
+                    lastRow = getterMap.remove(lastKey);
+                } else {
+                    lastKey = null;
+                    lastRow = Collections.emptyList();
+                }
+                // 解决拆包黏包问题
+
+                for (K k : keySet) {
+                    Set<String> keyUniqueColumnKeySet = keyUniqueColumnKeyMap.get(k);
+                    for (String uniqueColumnKey : keyUniqueColumnKeySet) {
+                        List<Map<String, Object>> rowList = getterMap.get(uniqueColumnKey);
+                        if (rowList == null) {
+                            continue;
+                        }
+                        removeAddColumnValueList(rowList);
+
+                        visited.add(k);
+                        chunk.reset(k, pageNo, chunkSize, rowList, uniqueColumnKey);
+                        each.accept(chunk);
+                    }
                 }
             } else {
-                for (T dependentSQL : mergeList) {
-                    chunk.reset(dependentSQL, pageNo, chunkSize, list);
-                    each.accept(chunk);
+                for (K k : keySet) {
+                    Set<String> keyUniqueColumnKeySet = keyUniqueColumnKeyMap.get(k);
+                    for (String keyUniqueColumnKey : keyUniqueColumnKeySet) {
+                        chunk.reset(k, pageNo, chunkSize, list, keyUniqueColumnKey);
+                        each.accept(chunk);
+                    }
                 }
             }
             pageNo++;
@@ -192,8 +233,10 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
 
         if (visited != null) {
             for (T dependentSQL : mergeList) {
-                if (!visited.contains(dependentSQL)) {
-                    chunk.reset(dependentSQL, 1, chunkSize, Collections.emptyList());
+                K k = keyCache.get(dependentSQL);
+                if (!visited.contains(k)) {
+                    String keyUniqueColumnKey = argsToStringCache.computeIfAbsent(dependentSQL.getArgs(), MergeJdbcTemplateSQL::argsToString);
+                    chunk.reset(k, 1, chunkSize, Collections.emptyList(), keyUniqueColumnKey);
                     each.accept(chunk);
                 }
             }
@@ -240,16 +283,18 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
     }
 
     public static class Chunk<T> {
-        public T sql;
+        public T source;
         public int pageNo;
         public int pageSize;
         public List<Map<String, Object>> rowList;
+        public String uniqueColumnKey;
 
-        public void reset(T sql, int pageNo, int pageSize, List<Map<String, Object>> rowList) {
-            this.sql = sql;
+        public void reset(T sql, int pageNo, int pageSize, List<Map<String, Object>> rowList, String uniqueColumnKey) {
+            this.source = sql;
             this.pageNo = pageNo;
             this.pageSize = pageSize;
             this.rowList = rowList;
+            this.uniqueColumnKey = uniqueColumnKey;
         }
 
         public boolean hasNext() {

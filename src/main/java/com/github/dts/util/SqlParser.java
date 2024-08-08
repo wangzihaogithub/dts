@@ -113,7 +113,7 @@ public class SqlParser {
             SQLSelectStatement select = (SQLSelectStatement) statement;
             SQLLimit limit = new SQLLimit();
             if (pageNo != null) {
-                limit.setOffset(Math.max(0, (pageNo - 1) * pageNo));
+                limit.setOffset(Math.max(0, (pageNo - 1) * pageSize));
             }
             limit.setRowCount(pageSize);
             select.getSelect().getQueryBlock().setLimit(limit);

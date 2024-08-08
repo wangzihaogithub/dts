@@ -84,10 +84,10 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
 
             Map<Dependent, List<Map<String, Object>>> parentGetterMap = MergeJdbcTemplateSQL.toMap(mergeNestedMainSqlList, DependentSQL::getDependent);
             for (MergeJdbcTemplateSQL<DependentSQL> children : childrenMergeSqlList) {
-                children.executeQueryStream(streamChunkSize, (chunk) -> {
+                children.executeQueryStream(streamChunkSize, DependentSQL::getDependent,(chunk) -> {
                     childrenCounter.addAndGet(chunk.rowList.size());
-                    SchemaItem schemaItem = chunk.sql.getDependent().getSchemaItem();
-                    List<Map<String, Object>> parentList = parentGetterMap.get(chunk.sql.getDependent());
+                    SchemaItem schemaItem = chunk.source.getSchemaItem();
+                    List<Map<String, Object>> parentList = parentGetterMap.get(chunk.source);
                     for (Map<String, Object> row : chunk.rowList) {
                         if (row.isEmpty()) {
                             continue;

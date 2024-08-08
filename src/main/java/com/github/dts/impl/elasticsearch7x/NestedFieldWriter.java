@@ -36,37 +36,6 @@ public class NestedFieldWriter {
                 60_000L, "ESNestedMainWriter", true, false);
     }
 
-    public static void executeMergeUpdateES(List<MergeJdbcTemplateSQL<DependentSQL>> mergeSqlList,
-                                            ESTemplate.BulkRequestList bulkRequestList,
-                                            CacheMap cacheMap,
-                                            ESTemplate es7xTemplate,
-                                            ExecutorService executorService,
-                                            int threads) {
-        if (mergeSqlList.isEmpty()) {
-            return;
-        }
-        if (executorService == null) {
-            executeEsTemplateUpdate(mergeSqlList, bulkRequestList, cacheMap, es7xTemplate);
-        } else {
-            List<List<MergeJdbcTemplateSQL<DependentSQL>>> partition = Lists.partition(new ArrayList<>(mergeSqlList),
-                    Math.max(5, (mergeSqlList.size() + 1) / threads));
-            if (partition.size() == 1) {
-                executeEsTemplateUpdate(mergeSqlList, bulkRequestList, cacheMap, es7xTemplate);
-            } else {
-                List<Future> futures = partition.stream()
-                        .map(e -> executorService.submit(() -> executeEsTemplateUpdate(e, bulkRequestList, cacheMap, es7xTemplate)))
-                        .collect(Collectors.toList());
-                for (Future future : futures) {
-                    try {
-                        future.get();
-                    } catch (Exception e) {
-                        Util.sneakyThrows(e);
-                    }
-                }
-            }
-        }
-    }
-
     public static void executeEsTemplateUpdate(ESTemplate.BulkRequestList bulkRequestList,
                                                ESTemplate esTemplate,
                                                DependentSQL sql,
@@ -227,9 +196,31 @@ public class NestedFieldWriter {
     public void writeMainTable(List<Dependent> mainTableDependentList,
                                ESTemplate.BulkRequestList bulkRequestList,
                                boolean autoUpdateChildren) {
+        if (mainTableDependentList.isEmpty()) {
+            return;
+        }
         Set<DependentSQL> sqlList = convertToSql(mainTableDependentList);
         List<MergeJdbcTemplateSQL<DependentSQL>> mergeSqlList = MergeJdbcTemplateSQL.merge(sqlList, 1000);
-        executeMergeUpdateES(mergeSqlList, bulkRequestList, cacheMap, esTemplate, mainTableListenerExecutor, threads);
+        if (mainTableListenerExecutor == null) {
+            executeEsTemplateUpdate(mergeSqlList, bulkRequestList, cacheMap, esTemplate);
+        } else {
+            List<List<MergeJdbcTemplateSQL<DependentSQL>>> partition = Lists.partition(new ArrayList<>(mergeSqlList),
+                    Math.max(5, (mergeSqlList.size() + 1) / threads));
+            if (partition.size() == 1) {
+                executeEsTemplateUpdate(mergeSqlList, bulkRequestList, cacheMap, esTemplate);
+            } else {
+                List<Future> futures = partition.stream()
+                        .map(e -> mainTableListenerExecutor.submit(() -> executeEsTemplateUpdate(e, bulkRequestList, cacheMap, esTemplate)))
+                        .collect(Collectors.toList());
+                for (Future future : futures) {
+                    try {
+                        future.get();
+                    } catch (Exception e) {
+                        Util.sneakyThrows(e);
+                    }
+                }
+            }
+        }
     }
 
     public static class DependentSQL extends JdbcTemplateSQL {

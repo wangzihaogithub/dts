@@ -19,32 +19,36 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
     private final Timestamp timestamp;
     private final JoinByParentSlaveTableForeignKey joinForeignKey = new JoinByParentSlaveTableForeignKey();
     private final JoinBySlaveTable joinBySlaveTable = new JoinBySlaveTable();
+    private final int chunkSize;
 
     NestedSlaveTableRunnable(List<Dependent> updateDmlList,
                              ES7xTemplate es7xTemplate,
-                             int cacheMaxSize, Timestamp timestamp) {
+                             int cacheMaxSize, Timestamp timestamp, int chunkSize) {
         this.timestamp = timestamp == null ? new Timestamp(System.currentTimeMillis()) : timestamp;
         this.updateDmlList = updateDmlList;
         this.es7xTemplate = es7xTemplate;
+        this.chunkSize = chunkSize;
         this.cacheMap = new CacheMap(cacheMaxSize);
     }
 
     @Override
     public void run() {
-        int chunkSize = 1000;
         parseSql(chunkSize);
         try {
             ESTemplate.BulkRequestList bulkRequestList = es7xTemplate.newBulkRequestList(BulkPriorityEnum.LOW);
-            List<MergeJdbcTemplateSQL<DependentSQL>> updateSqlList;
-            if (!joinForeignKey.parentSqlList.isEmpty()) {
-                updateSqlList = MergeJdbcTemplateSQL.merge(joinForeignKey.parentSqlList, chunkSize);
-                Map<String, List<Map<String, Object>>> parentGetterMap = MergeJdbcTemplateSQL.toMap(updateSqlList, e->MergeJdbcTemplateSQL.argsToString(e.getArgs()),cacheMap);
+            if (!joinBySlaveTable.nestedMainSqlList.isEmpty()) {
+                List<MergeJdbcTemplateSQL<DependentSQL>> merge = MergeJdbcTemplateSQL.merge(joinBySlaveTable.nestedMainSqlList, chunkSize);
+                MergeJdbcTemplateSQL.executeQueryList(merge, cacheMap, (sql, list) -> NestedFieldWriter.executeEsTemplateUpdate(bulkRequestList, es7xTemplate, sql, list));
+            }
 
+            if (!joinForeignKey.parentSqlList.isEmpty()) {
+                List<MergeJdbcTemplateSQL<DependentSQL>> merge = MergeJdbcTemplateSQL.merge(joinForeignKey.parentSqlList, chunkSize);
+                Map<String, List<Map<String, Object>>> parentGetterMap = MergeJdbcTemplateSQL.toMap(merge, e -> MergeJdbcTemplateSQL.argsToString(e.getArgs()), cacheMap);
                 List<MergeJdbcTemplateSQL<DependentSQL>> childMergeSqlList = MergeJdbcTemplateSQL.merge(joinForeignKey.childSqlSet, chunkSize, false);
                 for (MergeJdbcTemplateSQL<DependentSQL> templateSQL : childMergeSqlList) {
-                    templateSQL.executeQueryStream(chunkSize, chunk -> {
-                        List<Map<String, Object>> parentData = parentGetterMap.get(MergeJdbcTemplateSQL.argsToString(chunk.sql.getArgs()));
-                        SchemaItem schemaItem = chunk.sql.getDependent().getSchemaItem();
+                    templateSQL.executeQueryStream(chunkSize, DependentSQL::getDependent, chunk -> {
+                        List<Map<String, Object>> parentData = parentGetterMap.get(chunk.uniqueColumnKey);
+                        SchemaItem schemaItem = chunk.source.getSchemaItem();
                         for (Map<String, Object> row : chunk.rowList) {
                             Object pk = row.values().iterator().next();
                             NestedFieldWriter.executeEsTemplateUpdate(bulkRequestList, es7xTemplate, pk, schemaItem, parentData);
@@ -52,17 +56,14 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
                     });
                     bulkRequestList.commit(es7xTemplate);
                 }
-            } else {
-                updateSqlList = MergeJdbcTemplateSQL.merge(joinBySlaveTable.nestedMainSqlList, chunkSize);
-                NestedFieldWriter.executeMergeUpdateES(updateSqlList, bulkRequestList, cacheMap, es7xTemplate, null, 3);
             }
 
             bulkRequestList.commit(es7xTemplate);
-            log.info("NestedMainJoinTable={}ms, rowCount={}, dml={}, ts={}, changeSql={}",
+            log.info("NestedMainJoinTable={}ms, rowCount={}, dml={}, ts={}",
                     System.currentTimeMillis() - timestamp.getTime(),
                     updateDmlList,
                     updateDmlList.size(),
-                    timestamp, updateSqlList);
+                    timestamp);
             complete(null);
         } catch (Exception e) {
             log.info("NestedMainJoinTable={}ms, rowCount={}, dml={}, ts={}, error={}",
@@ -141,7 +142,7 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
         Set<DependentSQL> byMainSqlList = new LinkedHashSet<>();
         MergeJdbcTemplateSQL.executeQueryList(MergeJdbcTemplateSQL.merge(byChildrenSqlSet, chunkSize), cacheMap, (sql, changeRowList) -> {
             for (Map<String, Object> changeRow : changeRowList) {
-                byMainSqlList.add(new DependentSQL(SQL.convertToSql(fullSql, changeRow), dependent,  dependent.getSchemaItem().getGroupByIdColumns()));
+                byMainSqlList.add(new DependentSQL(SQL.convertToSql(fullSql, changeRow), dependent, dependent.getSchemaItem().getGroupByIdColumns()));
             }
         });
         return byMainSqlList;

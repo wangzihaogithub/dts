@@ -165,10 +165,7 @@ public interface ESTemplate extends AutoCloseable {
 
         @Override
         public String toString() {
-            return "Hit{" +
-                    "id='" + id + '\'' +
-                    ",size=" + size() +
-                    '}';
+            return id;
         }
     }
 }
