@@ -49,7 +49,7 @@ public abstract class AbstractEs7xETLStringController {
 
     @RequestMapping("/updateEsDiff")
     public int updateEsDiff(@RequestParam String esIndexName,
-                            @RequestParam(required = false, defaultValue = "500") int offsetAdd,
+                            @RequestParam(required = false, defaultValue = "1000") int offsetAdd,
                             // 比较字段：不含嵌套字段：空=全部，
                             String[] diffFields,
                             @RequestParam(required = false, defaultValue = "500") int maxSendMessageSize) {
@@ -59,7 +59,7 @@ public abstract class AbstractEs7xETLStringController {
 
     @RequestMapping("/deleteEsTrim")
     public int deleteEsTrim(@RequestParam String esIndexName,
-                            @RequestParam(required = false, defaultValue = "500") int offsetAdd,
+                            @RequestParam(required = false, defaultValue = "1000") int offsetAdd,
                             @RequestParam(required = false, defaultValue = "1000") int maxSendMessageDeleteIdSize) {
         return stringEs7xETLService.deleteEsTrim(esIndexName, offsetAdd, maxSendMessageDeleteIdSize);
     }
@@ -68,7 +68,7 @@ public abstract class AbstractEs7xETLStringController {
     public Integer syncAll(
             @RequestParam String esIndexName,
             @RequestParam(required = false, defaultValue = "0") String offsetStart,
-            @RequestParam(required = false, defaultValue = "500") int offsetAdd,
+            @RequestParam(required = false, defaultValue = "1000") int offsetAdd,
             @RequestParam(required = false, defaultValue = "true") boolean append,
             @RequestParam(required = false, defaultValue = "true") boolean onlyCurrentIndex,
             @RequestParam(required = false, defaultValue = "100") int joinUpdateSize,

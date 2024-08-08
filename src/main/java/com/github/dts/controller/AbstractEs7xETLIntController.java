@@ -31,7 +31,7 @@ public abstract class AbstractEs7xETLIntController {
 
     @RequestMapping("/updateEsNestedDiff")
     public int updateEsNestedDiff(@RequestParam String esIndexName,
-                                  @RequestParam(required = false, defaultValue = "500") int offsetAdd,
+                                  @RequestParam(required = false, defaultValue = "1000") int offsetAdd,
                                   // 比较字段：必须是嵌套字段：空=全部，
                                   Long startId,
                                   Long endId,
@@ -43,19 +43,23 @@ public abstract class AbstractEs7xETLIntController {
 
     @RequestMapping("/updateEsDiff")
     public int updateEsDiff(@RequestParam String esIndexName,
-                            @RequestParam(required = false, defaultValue = "500") int offsetAdd,
+                            @RequestParam(required = false, defaultValue = "1000") int offsetAdd,
+                            Long startId,
+                            Long endId,
                             // 比较字段：不含嵌套字段：空=全部，
                             String[] diffFields,
                             @RequestParam(required = false, defaultValue = "500") int maxSendMessageSize) {
-        return intES7xETLService.updateEsDiff(esIndexName, offsetAdd,
+        return intES7xETLService.updateEsDiff(esIndexName, startId, endId, offsetAdd,
                 diffFields == null ? null : new LinkedHashSet<>(Arrays.asList(diffFields)), maxSendMessageSize);
     }
 
     @RequestMapping("/deleteEsTrim")
     public int deleteEsTrim(@RequestParam String esIndexName,
-                            @RequestParam(required = false, defaultValue = "500") int offsetAdd,
+                            Long startId,
+                            Long endId,
+                            @RequestParam(required = false, defaultValue = "1000") int offsetAdd,
                             @RequestParam(required = false, defaultValue = "1000") int maxSendMessageDeleteIdSize) {
-        return intES7xETLService.deleteEsTrim(esIndexName, offsetAdd, maxSendMessageDeleteIdSize);
+        return intES7xETLService.deleteEsTrim(esIndexName, startId, endId, offsetAdd, maxSendMessageDeleteIdSize);
     }
 
     @RequestMapping("/syncAll")

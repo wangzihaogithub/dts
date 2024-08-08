@@ -44,8 +44,12 @@ public class StringEs7xETLService {
     private boolean stop = false;
 
     public StringEs7xETLService(String name, StartupServer startupServer) {
+        this(name, startupServer, 1000);
+    }
+
+    public StringEs7xETLService(String name, StartupServer startupServer, int threads) {
         this.name = name;
-        this.executorService = Util.newFixedThreadPool(1000, 5000L,
+        this.executorService = Util.newFixedThreadPool(threads, 5000L,
                 name, true);
         this.startupServer = startupServer;
     }
@@ -61,11 +65,11 @@ public class StringEs7xETLService {
     }
 
     public int updateEsDiff(String esIndexName) {
-        return updateEsDiff(esIndexName, 500, null, 500);
+        return updateEsDiff(esIndexName, 1000, null, 500);
     }
 
     public int deleteEsTrim(String esIndexName) {
-        return deleteEsTrim(esIndexName, 500, 100);
+        return deleteEsTrim(esIndexName, 1000, 100);
     }
 
     public int syncAll(
@@ -197,7 +201,7 @@ public class StringEs7xETLService {
                             }
                             esTemplate.commit();
                             searchAfter = searchResponse.getLastSortValues();
-                            log.info("deleteEsTrim searchAfter = {}", searchAfter);
+                            log.info("deleteEsTrim hits={}, searchAfter = {}", hitListSize, searchAfter);
                         } while (true);
                         sendTrimDone(messageService, timestamp, hitListSize, deleteSize, deleteIdList);
                     }
@@ -279,7 +283,7 @@ public class StringEs7xETLService {
                             }
                             esTemplate.commit();
                             searchAfter = searchResponse.getLastSortValues();
-                            log.info("updateEsDiff searchAfter = {}", searchAfter);
+                            log.info("updateEsDiff hits={}, searchAfter = {}", hitListSize, searchAfter);
                         } while (true);
                         sendDiffDone(messageService, timestamp, hitListSize, deleteSize, deleteIdList, updateSize, updateIdList, diffFields, adapter, config);
                     }
@@ -495,7 +499,7 @@ public class StringEs7xETLService {
                                 }
                             }
                             searchAfter = searchResponse.getLastSortValues();
-                            log.info("updateEsNestedDiff searchAfter = {}", searchAfter);
+                            log.info("updateEsNestedDiff hits={}, searchAfter = {}", hitListSize, searchAfter);
                         } while (!Thread.currentThread().isInterrupted());
                         esTemplate.commit();
                         sendNestedDiffDone(messageService, timestamp, hitListSize, updateSize, updateIdList, diffFieldsFinal, adapter, config);

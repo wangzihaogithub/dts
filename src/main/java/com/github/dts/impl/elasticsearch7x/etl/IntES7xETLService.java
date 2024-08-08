@@ -38,9 +38,13 @@ public class IntES7xETLService {
     private boolean stop = false;
 
     public IntES7xETLService(String name, StartupServer startupServer) {
+        this(name, startupServer, 1000);
+    }
+
+    public IntES7xETLService(String name, StartupServer startupServer, int threads) {
         this.name = name;
         this.startupServer = startupServer;
-        this.executorService = Util.newFixedThreadPool(1000, 5000L,
+        this.executorService = Util.newFixedThreadPool(threads, 5000L,
                 name, true);
     }
 
@@ -56,14 +60,16 @@ public class IntES7xETLService {
     }
 
     public int updateEsDiff(String esIndexName) {
-        return updateEsDiff(esIndexName, 500, null, 500);
+        return updateEsDiff(esIndexName, null, null, 1000, null, 500);
     }
 
     public int deleteEsTrim(String esIndexName) {
-        return deleteEsTrim(esIndexName, 500, 1000);
+        return deleteEsTrim(esIndexName, null, null, 1000, 1000);
     }
 
     public int deleteEsTrim(String esIndexName,
+                            Long startId,
+                            Long endId,
                             int offsetAdd,
                             int maxSendMessageDeleteIdSize) {
         List<ES7xAdapter> adapterList = startupServer.getAdapter(ES7xAdapter.class);
@@ -83,6 +89,7 @@ public class IntES7xETLService {
                 List<String> deleteIdList = new ArrayList<>();
                 Timestamp timestamp = new Timestamp(System.currentTimeMillis());
                 ESSyncConfig lastConfig = null;
+                String lastId = null;
                 try {
                     Map<String, ESSyncConfig> configMap = adapter.getEsSyncConfigByIndex(esIndexName);
                     for (ESSyncConfig config : configMap.values()) {
@@ -94,8 +101,14 @@ public class IntES7xETLService {
 
                         ESTemplate esTemplate = adapter.getEsTemplate();
 
-                        Object[] searchAfter = null;
+                        Object[] searchAfter = startId == null ? null : new Object[]{startId - 1L};
                         do {
+                            if (endId != null
+                                    && searchAfter != null && searchAfter.length > 0
+                                    && searchAfter[0] != null
+                                    && Long.parseLong(searchAfter[0].toString()) >= endId) {
+                                break;
+                            }
                             ESTemplate.ESSearchResponse searchResponse = esTemplate.searchAfterId(esMapping, searchAfter, offsetAdd);
                             List<ESTemplate.Hit> hitList = searchResponse.getHitList();
                             if (hitList.isEmpty()) {
@@ -107,6 +120,7 @@ public class IntES7xETLService {
                             Set<String> dbIds = new HashSet<>(jdbcTemplate.queryForList(sql, String.class));
                             for (ESTemplate.Hit hit : hitList) {
                                 String id = hit.getId();
+                                lastId = id;
                                 if (!dbIds.contains(id)) {
                                     esTemplate.delete(esMapping, id, null, null);
                                     deleteSize++;
@@ -117,12 +131,12 @@ public class IntES7xETLService {
                             }
                             esTemplate.commit();
                             searchAfter = searchResponse.getLastSortValues();
-                            log.info("deleteEsTrim searchAfter = {}", searchAfter);
+                            log.info("deleteEsTrim hits={}, searchAfter = {}", hitListSize, searchAfter);
                         } while (true);
                         sendTrimDone(messageService, timestamp, hitListSize, deleteSize, deleteIdList, adapter, config);
                     }
                 } catch (Exception e) {
-                    sendTrimError(messageService, e, timestamp, hitListSize, deleteSize, deleteIdList, adapter, lastConfig);
+                    sendTrimError(messageService, e, timestamp, hitListSize, deleteSize, deleteIdList, adapter, lastConfig, lastId);
                 }
             }
         });
@@ -130,6 +144,8 @@ public class IntES7xETLService {
     }
 
     public int updateEsDiff(String esIndexName,
+                            Long startId,
+                            Long endId,
                             int offsetAdd,
                             Set<String> diffFields,
                             int maxSendMessageSize) {
@@ -145,6 +161,7 @@ public class IntES7xETLService {
         executorService.execute(() -> {
             AbstractMessageService messageService = startupServer.getMessageService();
             for (ES7xAdapter adapter : adapterList) {
+                String lastId = null;
                 long hitListSize = 0;
                 long deleteSize = 0;
                 long updateSize = 0;
@@ -164,8 +181,14 @@ public class IntES7xETLService {
 
                         ES7xTemplate esTemplate = adapter.getEsTemplate();
 
-                        Object[] searchAfter = null;
+                        Object[] searchAfter = startId == null ? null : new Object[]{startId - 1L};
                         do {
+                            if (endId != null
+                                    && searchAfter != null && searchAfter.length > 0
+                                    && searchAfter[0] != null
+                                    && Long.parseLong(searchAfter[0].toString()) >= endId) {
+                                break;
+                            }
                             ESTemplate.ESSearchResponse searchResponse = esTemplate.searchAfter(esMapping, selectFields, null, searchAfter, offsetAdd);
                             List<ESTemplate.Hit> hitList = searchResponse.getHitList();
                             if (hitList.isEmpty()) {
@@ -179,6 +202,7 @@ public class IntES7xETLService {
                                     .collect(Collectors.toMap(e -> String.valueOf(e.get(pkFieldName)), Function.identity()));
                             for (ESTemplate.Hit hit : hitList) {
                                 String id = hit.getId();
+                                lastId = id;
                                 Map<String, Object> db = dbMap.get(id);
                                 if (db != null) {
                                     if (!ESSyncUtil.equalsRowData(db, hit, diffFields, esMapping)) {
@@ -198,12 +222,12 @@ public class IntES7xETLService {
                             }
                             esTemplate.commit();
                             searchAfter = searchResponse.getLastSortValues();
-                            log.info("updateEsDiff searchAfter = {}", searchAfter);
+                            log.info("updateEsDiff hits={}, searchAfter = {}", hitListSize, searchAfter);
                         } while (true);
                         sendDiffDone(messageService, timestamp, hitListSize, deleteSize, deleteIdList, updateSize, updateIdList, diffFields, adapter, config);
                     }
                 } catch (Exception e) {
-                    sendDiffError(messageService, e, timestamp, hitListSize, deleteSize, deleteIdList, updateSize, updateIdList, diffFields, adapter, lastConfig);
+                    sendDiffError(messageService, e, timestamp, hitListSize, deleteSize, deleteIdList, updateSize, updateIdList, diffFields, adapter, lastConfig, lastId);
                 }
             }
         });
@@ -211,7 +235,7 @@ public class IntES7xETLService {
     }
 
     public int updateEsNestedDiff(String esIndexName) {
-        return updateEsNestedDiff(esIndexName, null, null, 500, null, 1000);
+        return updateEsNestedDiff(esIndexName, null, null, 1000, null, 1000);
     }
 
     public int updateEsNestedDiff(String esIndexName,
@@ -371,7 +395,7 @@ public class IntES7xETLService {
                                 }
                             }
                             searchAfter = searchResponse.getLastSortValues();
-                            log.info("updateEsNestedDiff searchAfter = {}", searchAfter);
+                            log.info("updateEsNestedDiff hits={}, searchAfter = {}", hitListSize, searchAfter);
                         } while (!Thread.currentThread().isInterrupted());
                         esTemplate.commit();
                         sendNestedDiffDone(messageService, timestamp, hitListSize, updateSize, updateIdList, diffFieldsFinal, adapter, config);
@@ -604,7 +628,7 @@ public class IntES7xETLService {
 
     protected void sendTrimError(AbstractMessageService messageService, Throwable throwable,
                                  Date timestamp, long dmlSize, long deleteSize, List<String> deleteIdList,
-                                 ES7xAdapter adapter, ESSyncConfig config) {
+                                 ES7xAdapter adapter, ESSyncConfig config, String lastId) {
         String title = "ES搜索全量校验Trim数据-异常";
         StringWriter writer = new StringWriter();
         throwable.printStackTrace(new PrintWriter(writer));
@@ -614,6 +638,7 @@ public class IntES7xETLService {
                 + ",\n\n 对象 = " + getName()
                 + ",\n\n 开始时间 = " + timestamp
                 + ",\n\n 校验条数 = " + dmlSize
+                + ",\n\n 最近的ID = " + lastId
                 + ",\n\n 删除条数 = " + deleteSize
                 + ",\n\n 删除ID = " + deleteIdList
                 + ",\n\n 异常 = " + throwable
@@ -645,7 +670,7 @@ public class IntES7xETLService {
                                  Date timestamp, long dmlSize, long deleteSize, List<String> deleteIdList,
                                  long updateSize, List<String> updateIdList,
                                  Set<String> diffFields,
-                                 ES7xAdapter adapter, ESSyncConfig config) {
+                                 ES7xAdapter adapter, ESSyncConfig config, String lastId) {
         String title = "ES搜索全量校验Diff数据-异常";
         StringWriter writer = new StringWriter();
         throwable.printStackTrace(new PrintWriter(writer));
@@ -656,6 +681,7 @@ public class IntES7xETLService {
                 + ",\n\n 开始时间 = " + timestamp
                 + ",\n\n 比较字段(不含nested) = " + (diffFields == null ? "全部" : diffFields)
                 + ",\n\n 校验条数 = " + dmlSize
+                + ",\n\n 最近的ID = " + lastId
                 + ",\n\n 异常 = " + throwable
                 + ",\n\n 删除条数 = " + deleteSize
                 + ",\n\n 更新条数 = " + updateSize
