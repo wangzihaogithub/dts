@@ -60,10 +60,9 @@ public interface ESTemplate extends AutoCloseable {
      *
      * @param mapping         配置对象
      * @param pkVal           主键值
-     * @param esFieldData     数据Map
      * @param bulkRequestList bulkRequestList
      */
-    void delete(ESMapping mapping, Object pkVal, Map<String, Object> esFieldData, BulkRequestList bulkRequestList);
+    void delete(ESMapping mapping, Object pkVal, BulkRequestList bulkRequestList);
 
     /**
      * 提交批次

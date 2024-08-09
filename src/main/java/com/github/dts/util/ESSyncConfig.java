@@ -105,7 +105,6 @@ public class ESSyncConfig {
         // 对象字段, 例: objFields:
         // - _labels: array:;
         private Map<String, ObjectField> objFields = new LinkedHashMap<>();
-        private List<String> skips = new ArrayList<>();
         private int commitBatch = 1000;
         private String etlCondition;
         private boolean syncByTimestamp = false;                // 是否按时间戳定时同步
@@ -240,14 +239,6 @@ public class ESSyncConfig {
             }
         }
 
-        public List<String> getSkips() {
-            return skips;
-        }
-
-        public void setSkips(List<String> skips) {
-            this.skips = skips;
-        }
-
         public String getSql() {
             return sql;
         }
@@ -331,8 +322,8 @@ public class ESSyncConfig {
          * 该方法只实现 ARRAY与OBJECT
          * ARRAY_SQL与OBJECT_SQL的实现 - {@link NestedFieldWriter}
          *
-         * @param val             val
-         * @param mapping         mapping
+         * @param val     val
+         * @param mapping mapping
          * @return ES对象
          * @see ESSyncServiceListener#onSyncAfter(List, ES7xAdapter, ESTemplate.BulkRequestList)
          */
@@ -372,11 +363,11 @@ public class ESSyncConfig {
                     String[] split1 = fieldName.split("\\$");
                     String parentFieldName;
                     String fieldName;
-                    if(split1.length == 1){
+                    if (split1.length == 1) {
                         fieldName = split1[0];
-                        parentFieldName= null;
-                    }else {
-                        parentFieldName= split1[0];
+                        parentFieldName = null;
+                    } else {
+                        parentFieldName = split1[0];
                         fieldName = split1[1];
                     }
                     return staticMethodAccessor.apply(new ESStaticMethodParam(val, mapping, fieldName, parentFieldName));

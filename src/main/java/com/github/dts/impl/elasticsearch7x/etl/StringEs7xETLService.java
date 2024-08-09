@@ -192,7 +192,7 @@ public class StringEs7xETLService {
                             for (ESTemplate.Hit hit : hitList) {
                                 String id = hit.getId();
                                 if (!dbIds.contains(id)) {
-                                    esTemplate.delete(esMapping, id, null, null);
+                                    esTemplate.delete(esMapping, id, null);
                                     deleteSize++;
                                     if (deleteIdList.size() < maxSendMessageDeleteIdSize) {
                                         deleteIdList.add(id);
@@ -274,7 +274,7 @@ public class StringEs7xETLService {
                                         esTemplate.update(esMapping, id, hit, null);
                                     }
                                 } else {
-                                    esTemplate.delete(esMapping, id, null, null);
+                                    esTemplate.delete(esMapping, id, null);
                                     deleteSize++;
                                     if (deleteIdList.size() < maxSendMessageSize) {
                                         deleteIdList.add(id);

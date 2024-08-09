@@ -154,9 +154,6 @@ public class ES7xTemplate implements ESTemplate {
 
             Map<String, Object> esFieldDataTmp = convertType(esFieldData, mapping);
 
-            BoolQueryBuilder queryBuilder = QueryBuilders.boolQuery();
-            paramsTmp.forEach((fieldName, value) -> queryBuilder.must(QueryBuilders.termsQuery(fieldName, value)));
-
             // 查询sql批量更新
             DataSource ds = CanalConfig.DatasourceConfig.getDataSource(config.getDataSourceKey());
             StringBuilder sql = new StringBuilder("SELECT * FROM (" + mapping.getSql() + ") _v WHERE ");
@@ -298,7 +295,7 @@ public class ES7xTemplate implements ESTemplate {
      * @param pkVal   主键值
      */
     @Override
-    public void delete(ESMapping mapping, Object pkVal, Map<String, Object> esFieldData, BulkRequestList bulkRequestList) {
+    public void delete(ESMapping mapping, Object pkVal, BulkRequestList bulkRequestList) {
         if (pkVal == null || "".equals(pkVal)) {
             return;
         }
@@ -422,20 +419,16 @@ public class ES7xTemplate implements ESTemplate {
     public Object getESDataFromRS(ESMapping mapping, Map<String, Object> row,
                                   Map<String, Object> esFieldData, Map<String, Object> data) {
         SchemaItem schemaItem = mapping.getSchemaItem();
-        FieldItem idField = schemaItem.getIdField();
-        Object resultIdVal = getValFromRS(mapping, row, idField.getFieldName(),
-                idField.getColumnName(), data);
+        Object resultIdVal = getIdValFromRS(mapping, row);
         for (FieldItem fieldItem : schemaItem.getSelectFields().values()) {
             String fieldName = fieldItem.getFieldName();
 
             Object value = getValFromValue(mapping, row.get(fieldName), fieldName);
 
-            if (!mapping.getSkips().contains(fieldName)) {
-                if (!mapping.isWriteNull() && value == null) {
-                    continue;
-                }
-                esFieldData.put(fieldName, value);
+            if (!mapping.isWriteNull() && value == null) {
+                continue;
             }
+            esFieldData.put(fieldName, value);
         }
         return resultIdVal;
     }
@@ -443,8 +436,11 @@ public class ES7xTemplate implements ESTemplate {
     @Override
     public Object getIdValFromRS(ESMapping mapping, Map<String, Object> row) {
         FieldItem idField = mapping.getSchemaItem().getIdField();
-        return getValFromRS(mapping, row, idField.getFieldName(),
-                idField.getColumnName(), null);
+        Object id = row.get(idField.getColumnName());
+        if (id == null) {
+            id = row.get(idField.getFieldName());
+        }
+        return id;
     }
 
     @Override
@@ -453,15 +449,12 @@ public class ES7xTemplate implements ESTemplate {
                                   Map<String, Object> esFieldData,
                                   Map<String, Object> data) {
         SchemaItem schemaItem = mapping.getSchemaItem();
-        FieldItem idField = schemaItem.getIdField();
-        Object resultIdVal = getValFromRS(mapping, row, idField.getFieldName(),
-                idField.getColumnName(), data);
+        Object resultIdVal = getIdValFromRS(mapping, row);
         for (FieldItem fieldItem : schemaItem.getSelectFields().values()) {
             String fieldName = fieldItem.getFieldName();
             String columnName = fieldItem.getColumnName();
 
-            if (fieldItem.containsColumnName(dmlOld.keySet())
-                    && !mapping.getSkips().contains(fieldName)) {
+            if (fieldItem.containsColumnName(dmlOld.keySet())) {
                 Object newValue = fieldItem.getValue(data);
                 Object oldValue = fieldItem.getValue(dmlOld);
                 if (!mapping.isWriteNull() && newValue == null && oldValue == null) {
@@ -521,8 +514,7 @@ public class ES7xTemplate implements ESTemplate {
     public Object getESDataFromDmlData(ESMapping mapping, Map<String, Object> dmlData,
                                        Map<String, Object> esFieldData) {
         SchemaItem schemaItem = mapping.getSchemaItem();
-        String idFieldName = mapping.get_id() == null ? mapping.getPk() : mapping.get_id();
-        Object resultIdVal = null;
+        Object resultIdVal = getIdValFromRS(mapping, dmlData);
         for (FieldItem fieldItem : schemaItem.getSelectFields().values()) {
             if (fieldItem.getColumnItems().isEmpty()) {
                 continue;
@@ -532,16 +524,10 @@ public class ES7xTemplate implements ESTemplate {
 
             Object value = getValFromData(mapping, dmlData, fieldName, columnName);
 
-            if (fieldItem.equalsField(idFieldName)) {
-                resultIdVal = value;
+            if (!mapping.isWriteNull() && value == null) {
+                continue;
             }
-
-            if (!mapping.getSkips().contains(fieldName)) {
-                if (!mapping.isWriteNull() && value == null) {
-                    continue;
-                }
-                esFieldData.put(fieldName, value);
-            }
+            esFieldData.put(fieldName, value);
         }
 
         return resultIdVal;
@@ -557,14 +543,12 @@ public class ES7xTemplate implements ESTemplate {
      * @return 返回 id 值
      */
     @Override
-    public Object getESDataFromDmlData(ESMapping
-                                               mapping, Map<String, Object> dmlData, Map<String, Object> dmlOld,
+    public Object getESDataFromDmlData(ESMapping mapping, Map<String, Object> dmlData, Map<String, Object> dmlOld,
                                        Map<String, Object> esFieldData, String tableName) {
         SchemaItem schemaItem = mapping.getSchemaItem();
         List<String> aliases = schemaItem.getTableItemAliases(tableName);
 
-        String idFieldName = mapping.get_id() == null ? mapping.getPk() : mapping.get_id();
-        Object resultIdVal = null;
+        Object resultIdVal = getIdValFromRS(mapping, dmlData);
         for (FieldItem fieldItem : schemaItem.getSelectFields().values()) {
             if (fieldItem.getColumnItems().isEmpty()) {
                 continue;
@@ -572,9 +556,6 @@ public class ES7xTemplate implements ESTemplate {
             String columnName = fieldItem.getColumnName();
             String fieldName = fieldItem.getFieldName();
 
-            if (fieldItem.equalsField(idFieldName)) {
-                resultIdVal = getValFromData(mapping, dmlData, fieldName, columnName);
-            }
 
             /*
              * 修复canal的bug.
@@ -587,8 +568,7 @@ public class ES7xTemplate implements ESTemplate {
              * 王子豪 2019年6月4日 17:39:31
              */
             if (fieldItem.containsOwner(aliases)
-                    && fieldItem.containsColumnName(dmlOld.keySet())
-                    && !mapping.getSkips().contains(fieldName)) {
+                    && fieldItem.containsColumnName(dmlOld.keySet())) {
                 Object newValue = fieldItem.getValue(dmlData);
                 Object oldValue = fieldItem.getValue(dmlOld);
                 if (!mapping.isWriteNull() && newValue == null && oldValue == null) {

@@ -306,33 +306,8 @@ public class BasicFieldWriter {
 
             // ------是主表------
             if (isMainTable(schemaItem, dml.getTable())) {
-                if (mapping.get_id() != null) {
-                    FieldItem idFieldItem = schemaItem.getIdFieldItem(mapping);
-                    // 主键为简单字段
-                    if (!idFieldItem.isMethod() && !idFieldItem.isBinaryOp()) {
-                        Object idVal = esTemplate.getValFromData(mapping, data, idFieldItem.getFieldName(), idFieldItem.getColumnName());
-                        esTemplate.delete(mapping, idVal, null, bulkRequestList);
-                    } else {
-                        // ------主键带函数, 查询sql获取主键删除------
-                        // FIXME 删除时反查sql为空记录, 无法获获取 id field 值
-                        DeleteESSyncConfigSQL sql = mainTableDelete(config, dml, data, bulkRequestList);
-                        list.add(sql);
-                    }
-                } else {
-                    FieldItem pkFieldItem = schemaItem.getIdFieldItem(mapping);
-                    if (!pkFieldItem.isMethod() && !pkFieldItem.isBinaryOp()) {
-                        Map<String, Object> esFieldData = new LinkedHashMap<>();
-                        Object pkVal = esTemplate.getESDataFromDmlData(mapping, data, esFieldData);
-
-                        esFieldData.remove(pkFieldItem.getFieldName());
-                        esFieldData.keySet().forEach(key -> esFieldData.put(key, null));
-                        esTemplate.delete(mapping, pkVal, esFieldData, bulkRequestList);
-                    } else {
-                        // ------主键带函数, 查询sql获取主键删除------
-                        DeleteESSyncConfigSQL sql = mainTableDelete(config, dml, data, bulkRequestList);
-                        list.add(sql);
-                    }
-                }
+                Object pkVal = esTemplate.getIdValFromRS(mapping, data);
+                esTemplate.delete(mapping, pkVal, bulkRequestList);
             }
 
             // 从表的操作
@@ -449,12 +424,6 @@ public class BasicFieldWriter {
 
         SQL sql = ESSyncUtil.convertSqlByMapping(mapping, data);
         return new InsertESSyncConfigSQL(sql, config, dml, data, bulkRequestList, esTemplate);
-    }
-
-    private DeleteESSyncConfigSQL mainTableDelete(ESSyncConfig config, Dml dml, Map<String, Object> data, ESTemplate.BulkRequestList bulkRequestList) {
-        ESMapping mapping = config.getEsMapping();
-        SQL sql = ESSyncUtil.convertSqlByMapping(mapping, data);
-        return new DeleteESSyncConfigSQL(sql, config, dml, data, bulkRequestList, esTemplate);
     }
 
     /**

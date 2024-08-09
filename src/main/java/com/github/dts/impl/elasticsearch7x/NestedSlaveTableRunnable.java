@@ -200,8 +200,7 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
     }
 
     private Map<String, List<String>> getOnChildChangeWhereSqlColumnList(Dependent dependent) {
-        Map<String, List<String>> columnList = SqlParser.getColumnList(dependent.getSchemaItem().getObjectField().getOnChildChangeWhereSql());
-        return columnList;
+        return SqlParser.getColumnList(dependent.getSchemaItem().getObjectField().getOnChildChangeWhereSql());
     }
 
     private SQL convertNestedSlaveTableSQL(SchemaItem.TableItem tableItem, Dependent dependent) {

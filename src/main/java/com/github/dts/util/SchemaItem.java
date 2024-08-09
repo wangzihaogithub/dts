@@ -660,9 +660,9 @@ public class SchemaItem {
 
         public Object getValue(Map<String, Object> data) {
             String columnName = getColumnName();
-            String fieldName = getFieldName();
             Object o = getColumnValue(data, columnName);
             if (o == null) {
+                String fieldName = getFieldName();
                 o = data.get(fieldName);
             }
             return o;

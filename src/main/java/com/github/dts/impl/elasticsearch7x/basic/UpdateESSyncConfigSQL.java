@@ -13,8 +13,6 @@ import java.util.List;
 import java.util.Map;
 
 public class UpdateESSyncConfigSQL extends ESSyncConfigSQL {
-    private static final Logger log = LoggerFactory.getLogger(UpdateESSyncConfigSQL.class);
-
     public UpdateESSyncConfigSQL(SQL sql, ESSyncConfig config, Dml dml,
                                  Map<String, Object> data, Map<String, Object> old,
                                  ESTemplate.BulkRequestList bulkRequestList, ESTemplate esTemplate) {
@@ -33,9 +31,6 @@ public class UpdateESSyncConfigSQL extends ESSyncConfigSQL {
         for (Map<String, Object> row : rowList) {
             Map<String, Object> esFieldData = new LinkedHashMap<>();
             Object idVal = esTemplate.getESDataFromRS(mapping, row, old, esFieldData, data);
-            if (idVal == null) {
-                log.info("空 ==============》 {} {}", this, getDml());
-            }
             esTemplate.update(mapping, idVal, esFieldData, bulkRequestList);
         }
     }
