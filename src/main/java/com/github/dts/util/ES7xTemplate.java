@@ -2,13 +2,12 @@ package com.github.dts.util;
 
 import com.github.dts.util.ESSyncConfig.ESMapping;
 import com.github.dts.util.SchemaItem.FieldItem;
+import com.google.common.collect.Lists;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.cluster.metadata.MappingMetaData;
 import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.index.query.RangeQueryBuilder;
-import org.elasticsearch.script.Script;
-import org.elasticsearch.script.ScriptType;
 import org.elasticsearch.search.SearchHit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -78,26 +77,9 @@ public class ES7xTemplate implements ESTemplate {
         setterIndexUpdatedTime(mapping, esFieldData);
 
         esFieldData = convertType(esFieldData, mapping);
-        if (mapping.get_id() != null) {
-            String parentVal = (String) esFieldData.remove("$parent_routing");
-            ESBulkRequest.ESUpdateRequest updateRequest = new ES7xConnection.ES7xUpdateRequest(mapping.get_index(),
-                    pkVal.toString()).setDoc(esFieldData).setDocAsUpsert(true);
-            if (Util.isNotEmpty(parentVal)) {
-                updateRequest.setRouting(parentVal);
-            }
-            addRequest(updateRequest, bulkRequestList);
-        } else {
-            ES7xConnection.ESSearchRequest esSearchRequest = new ES7xConnection.ESSearchRequest(mapping.get_index())
-                    .setQuery(QueryBuilders.termQuery(mapping.getPk(), pkVal))
-                    .size(10000);
-            SearchResponse response = esSearchRequest.getResponse(this.esConnection);
-
-            for (SearchHit hit : response.getHits()) {
-                ESBulkRequest.ESUpdateRequest esUpdateRequest = new ES7xConnection.ES7xUpdateRequest(mapping.get_index(),
-                        hit.getId()).setDoc(esFieldData);
-                addRequest(esUpdateRequest, bulkRequestList);
-            }
-        }
+        ESBulkRequest.ESUpdateRequest updateRequest = new ES7xConnection.ES7xUpdateRequest(mapping.get_index(),
+                pkVal.toString()).setDoc(esFieldData).setDocAsUpsert(true);
+        addRequest(updateRequest, bulkRequestList);
     }
 
     /**
@@ -144,74 +126,9 @@ public class ES7xTemplate implements ESTemplate {
         }
     }
 
-    /**
-     * update by query
-     * 2019年5月27日 16:35:37 王子豪
-     *
-     * @param mapping          配置对象
-     * @param esFieldDataWhere ES更新条件
-     * @param esFieldData      数据Map
-     */
-    @Override
-    public void updateByQuery(ESMapping
-                                      mapping, Map<String, Object> esFieldDataWhere, Map<String, Object> esFieldData, BulkRequestList bulkRequestList) {
-        if (esFieldDataWhere.isEmpty()) {
-            return;
-        }
-        if (esFieldData.isEmpty()) {
-            return;
-        }
-        setterIndexUpdatedTime(mapping, esFieldData);
-        esFieldData = convertType(esFieldData, mapping);
-        BoolQueryBuilder queryBuilder = QueryBuilders.boolQuery();
-        esFieldDataWhere.forEach((fieldName, value) -> queryBuilder.must(QueryBuilders.termsQuery(fieldName, value)));
-        Map<String, Object> esFieldDataTmp = new LinkedHashMap<>(esFieldData);
-
-        ES7xConnection.ESSearchRequest esSearchRequest = new ES7xConnection.ESSearchRequest(mapping.get_index())
-                .setQuery(queryBuilder)
-                .size(10000);
-        SearchResponse response = esSearchRequest.getResponse(this.esConnection);
-        for (SearchHit hit : response.getHits()) {
-            append4Update(mapping, hit.getId(), esFieldDataTmp, bulkRequestList);
-        }
-    }
-
     @Override
     public BulkRequestList newBulkRequestList(BulkPriorityEnum priorityEnum) {
         return new BulkRequestListImpl(priorityEnum);
-    }
-
-    /**
-     * 脚本更新
-     *
-     * @param mapping  索引
-     * @param idOrCode 脚本
-     * @param isUpsert 如果数据不存在是否新增
-     * @param pkValue  主键
-     */
-    @Override
-    public void updateByScript(ESMapping mapping, String idOrCode, boolean isUpsert, Object pkValue,
-                               int scriptTypeId, String lang, Map<String, Object> params, BulkRequestList bulkRequestList) {
-        if (idOrCode == null) {
-            return;
-        }
-        if (lang == null) {
-            lang = "painless";
-        }
-        ScriptType scriptType;
-        if (scriptTypeId == ScriptType.INLINE.getId()) {
-            scriptType = ScriptType.INLINE;
-        } else {
-            scriptType = ScriptType.STORED;
-        }
-        if (pkValue == null || "".equals(pkValue)) {
-            return;
-        }
-        params = convertType(params, mapping);
-        Script script = new Script(scriptType, lang, idOrCode, params);
-        ESBulkRequest.ESUpdateRequest esUpdateRequest = new ES7xConnection.ES7xUpdateRequest(mapping.get_index(),
-                pkValue.toString()).setScript(script);
-        addRequest(esUpdateRequest, bulkRequestList);
     }
 
     /**
@@ -377,34 +294,17 @@ public class ES7xTemplate implements ESTemplate {
     /**
      * 通过主键删除数据
      *
-     * @param mapping     配置对象
-     * @param pkVal       主键值
-     * @param esFieldData 数据Map
+     * @param mapping 配置对象
+     * @param pkVal   主键值
      */
     @Override
     public void delete(ESMapping mapping, Object pkVal, Map<String, Object> esFieldData, BulkRequestList bulkRequestList) {
         if (pkVal == null || "".equals(pkVal)) {
             return;
         }
-        if (mapping.get_id() != null) {
-            ES7xConnection.ES7xDeleteRequest esDeleteRequest = new ES7xConnection.ES7xDeleteRequest(mapping.get_index(),
-                    pkVal.toString());
-            addRequest(esDeleteRequest, bulkRequestList);
-        } else {
-            if (esFieldData == null || esFieldData.isEmpty()) {
-                return;
-            }
-            esFieldData = convertType(esFieldData, mapping);
-            ES7xConnection.ESSearchRequest esSearchRequest = new ES7xConnection.ESSearchRequest(mapping.get_index())
-                    .setQuery(QueryBuilders.termQuery(mapping.getPk(), pkVal))
-                    .size(10000);
-            SearchResponse response = esSearchRequest.getResponse(this.esConnection);
-            for (SearchHit hit : response.getHits()) {
-                ES7xConnection.ES7xUpdateRequest esUpdateRequest = new ES7xConnection.ES7xUpdateRequest(mapping.get_index(),
-                        hit.getId()).setDoc(esFieldData);
-                addRequest(esUpdateRequest, bulkRequestList);
-            }
-        }
+        ES7xConnection.ES7xDeleteRequest esDeleteRequest = new ES7xConnection.ES7xDeleteRequest(mapping.get_index(),
+                pkVal.toString());
+        addRequest(esDeleteRequest, bulkRequestList);
     }
 
     /**
@@ -453,24 +353,45 @@ public class ES7xTemplate implements ESTemplate {
         if (esFieldData == null || esFieldData.isEmpty()) {
             return;
         }
-        if (mapping.get_id() != null) {
-            String parentVal = (String) esFieldData.remove("$parent_routing");
+        if (pkVal instanceof Collection) {
+            int size = ((Collection<?>) pkVal).size();
+            if (size == 0) {
+                return;
+            }
+            List<String[]> p;
+            int updateByQueryChunkSize = esConnection.getUpdateByQueryChunkSize();
+            if (size > updateByQueryChunkSize) {
+                List<List<Object>> partition = Lists.partition(new ArrayList<>((Collection<Object>) pkVal), updateByQueryChunkSize);
+                p = new ArrayList<>(partition.size());
+                for (List<Object> objects : partition) {
+                    String[] pkArr = new String[objects.size()];
+                    int i = 0;
+                    for (Object pk : objects) {
+                        pkArr[i++] = String.valueOf(pk);
+                    }
+                    p.add(pkArr);
+                }
+            } else {
+                String[] pkArr = new String[size];
+                int i = 0;
+                for (Object pk : (Collection) pkVal) {
+                    pkArr[i++] = String.valueOf(pk);
+                }
+                p = Collections.singletonList(pkArr);
+            }
+            for (String[] pkArr : p) {
+                for (Map.Entry<String, Object> entry : esFieldData.entrySet()) {
+                    String fieldName = entry.getKey();
+                    if (mapping.isUpdateByQuerySkipIndexUpdatedTime() && esFieldData.size() > 1 && fieldName.equals(mapping.getIndexUpdatedTime())) {
+                        continue;
+                    }
+                    addRequest(ES7xConnection.ES7xUpdateByQueryRequest.byIds(mapping.get_index(), pkArr, fieldName, entry.getValue()), bulkRequestList);
+                }
+            }
+        } else {
             ES7xConnection.ES7xUpdateRequest esUpdateRequest = new ES7xConnection.ES7xUpdateRequest(mapping.get_index(),
                     pkVal.toString()).setDoc(esFieldData).setDocAsUpsert(mapping.isUpsert());
-            if (Util.isNotEmpty(parentVal)) {
-                esUpdateRequest.setRouting(parentVal);
-            }
             addRequest(esUpdateRequest, bulkRequestList);
-        } else {
-            ES7xConnection.ESSearchRequest esSearchRequest = new ES7xConnection.ESSearchRequest(mapping.get_index())
-                    .setQuery(QueryBuilders.termQuery(mapping.getPk(), pkVal))
-                    .size(10000);
-            SearchResponse response = esSearchRequest.getResponse(this.esConnection);
-            for (SearchHit hit : response.getHits()) {
-                ESBulkRequest.ESUpdateRequest esUpdateRequest = new ES7xConnection.ES7xUpdateRequest(mapping.get_index(),
-                        hit.getId()).setDoc(esFieldData);
-                addRequest(esUpdateRequest, bulkRequestList);
-            }
         }
     }
 
@@ -516,10 +437,6 @@ public class ES7xTemplate implements ESTemplate {
                 esFieldData.put(fieldName, value);
             }
         }
-
-        // 添加父子文档关联信息
-        putRelationDataFromRS(mapping, schemaItem, row, esFieldData, data);
-
         return resultIdVal;
     }
 
@@ -555,9 +472,6 @@ public class ES7xTemplate implements ESTemplate {
                                 columnName, data));
             }
         }
-
-        // 添加父子文档关联信息
-        putRelationDataFromRS(mapping, schemaItem, row, esFieldData, data);
 
         return resultIdVal;
     }
@@ -630,8 +544,6 @@ public class ES7xTemplate implements ESTemplate {
             }
         }
 
-        // 添加父子文档关联信息
-        putRelationData(mapping, schemaItem, dmlData, esFieldData);
         return resultIdVal;
     }
 
@@ -687,54 +599,7 @@ public class ES7xTemplate implements ESTemplate {
             }
         }
 
-        // 添加父子文档关联信息
-        putRelationData(mapping, schemaItem, dmlOld, esFieldData);
         return resultIdVal;
-    }
-
-    private void putRelationDataFromRS(ESMapping mapping, SchemaItem schemaItem, Map<String, Object> row,
-                                       Map<String, Object> esFieldData,
-                                       Map<String, Object> data) {
-        // 添加父子文档关联信息
-        if (mapping.getRelations().isEmpty()) {
-            return;
-        }
-        mapping.getRelations().forEach((relationField, relationMapping) -> {
-            Map<String, Object> relations = new HashMap<>();
-            relations.put("name", relationMapping.getName());
-            if (Util.isNotEmpty(relationMapping.getParent())) {
-                FieldItem parentFieldItem = schemaItem.getSelectFields().get(relationMapping.getParent());
-                Object parentVal = getValFromRS(mapping, row, parentFieldItem.getFieldName(), parentFieldItem.getColumnName(),
-                        data);
-
-                if (parentVal != null) {
-                    relations.put("parent", parentVal.toString());
-                    esFieldData.put("$parent_routing", parentVal.toString());
-
-                }
-            }
-            esFieldData.put(relationField, relations);
-        });
-    }
-
-    private void putRelationData(ESMapping mapping, SchemaItem schemaItem, Map<String, Object> dmlData,
-                                 Map<String, Object> esFieldData) {
-        // 添加父子文档关联信息
-        if (!mapping.getRelations().isEmpty()) {
-            mapping.getRelations().forEach((relationField, relationMapping) -> {
-                Map<String, Object> relations = new HashMap<>();
-                relations.put("name", relationMapping.getName());
-                if (Util.isNotEmpty(relationMapping.getParent())) {
-                    FieldItem parentFieldItem = schemaItem.getSelectFields().get(relationMapping.getParent());
-                    Object parentVal = getValFromData(mapping, dmlData, parentFieldItem.getFieldName(), parentFieldItem.getColumnName());
-                    if (parentVal != null) {
-                        relations.put("parent", parentVal.toString());
-                        esFieldData.put("$parent_routing", parentVal.toString());
-                    }
-                }
-                esFieldData.put(relationField, relations);
-            });
-        }
     }
 
     private Map<String, Object> convertType(Map<String, Object> mysqlData, ESMapping mapping) {
@@ -786,6 +651,25 @@ public class ES7xTemplate implements ESTemplate {
         }
     }
 
+    private void addRequest(ESBulkRequest.ESUpdateByQueryRequest indexRequest, BulkRequestList bulkRequestList) {
+//        synchronized (esBulkRequest) {
+        if (bulkRequestList != null) {
+            bulkRequestList.add(indexRequest);
+            if (isMaxBatchSize(bulkRequestList.size())) {
+                int bulk = bulk(bulkRequestList);
+                if (bulk > 0) {
+                    commit();
+                }
+            }
+        } else {
+            esBulkRequest.add(indexRequest);
+            if (isMaxBatchSize(esBulkRequest.numberOfActions())) {
+                commit();
+            }
+        }
+//        }
+    }
+
     private void addRequest(ESBulkRequest.ESIndexRequest indexRequest, BulkRequestList bulkRequestList) {
 //        synchronized (esBulkRequest) {
         if (bulkRequestList != null) {
@@ -827,6 +711,7 @@ public class ES7xTemplate implements ESTemplate {
     public class BulkRequestListImpl implements BulkRequestList {
         private final List<ESBulkRequest.ESRequest> requests = new ArrayList<>();
         private final BulkPriorityEnum priorityEnum;
+        private int size = 0;
 
         public BulkRequestListImpl(BulkPriorityEnum priorityEnum) {
             this.priorityEnum = priorityEnum;
@@ -836,8 +721,13 @@ public class ES7xTemplate implements ESTemplate {
         public void add(ESBulkRequest.ESRequest request) {
             synchronized (requests) {
                 requests.add(request);
+                if (request instanceof ES7xConnection.ES7xUpdateByQueryRequest) {
+                    size += ((ES7xConnection.ES7xUpdateByQueryRequest) request).size();
+                } else {
+                    size++;
+                }
             }
-            if (isMaxBatchSize(requests.size())) {
+            if (isMaxBatchSize(size)) {
                 int bulk = bulk(this);
                 if (bulk > 0) {
                     ES7xTemplate.this.commit();
@@ -848,6 +738,7 @@ public class ES7xTemplate implements ESTemplate {
         List<ESBulkRequest.ESRequest> drainTo() {
             synchronized (requests) {
                 ArrayList<ESBulkRequest.ESRequest> esRequests = new ArrayList<>(requests);
+                size = 0;
                 requests.clear();
                 return esRequests;
             }
@@ -855,12 +746,12 @@ public class ES7xTemplate implements ESTemplate {
 
         @Override
         public boolean isEmpty() {
-            return requests.isEmpty();
+            return size == 0;
         }
 
         @Override
         public int size() {
-            return requests.size();
+            return size;
         }
 
         @Override

@@ -112,10 +112,6 @@ public interface ESTemplate extends AutoCloseable {
     Object getESDataFromDmlData(ESMapping mapping, Map<String, Object> dmlData, Map<String, Object> dmlOld,
                                 Map<String, Object> esFieldData, String tableName);
 
-    void updateByScript(ESMapping mapping, String idOrCode, boolean isUpsert, Object pkValue, int scriptTypeId, String lang, Map<String, Object> params, BulkRequestList bulkRequestList);
-
-    void updateByQuery(ESMapping mapping, Map<String, Object> esFieldDataWhere, Map<String, Object> esFieldData, BulkRequestList bulkRequestList);
-
     BulkRequestList newBulkRequestList(BulkPriorityEnum priorityEnum);
 
     interface BulkRequestList {

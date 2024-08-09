@@ -15,25 +15,52 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
     private static final Logger log = LoggerFactory.getLogger(NestedSlaveTableRunnable.class);
     private final List<Dependent> updateDmlList;
     private final ES7xTemplate es7xTemplate;
-    private final CacheMap cacheMap;
     private final Timestamp timestamp;
     private final JoinByParentSlaveTableForeignKey joinForeignKey = new JoinByParentSlaveTableForeignKey();
     private final JoinBySlaveTable joinBySlaveTable = new JoinBySlaveTable();
+    private final int cacheMaxSize;
     private final int chunkSize;
+    private final int streamChunkSize;
+    private final NestedSlaveTableRunnable oldRun;
+    private final NestedSlaveTableRunnable newRun;
 
     NestedSlaveTableRunnable(List<Dependent> updateDmlList,
                              ES7xTemplate es7xTemplate,
-                             int cacheMaxSize, Timestamp timestamp, int chunkSize) {
+                             int cacheMaxSize, Timestamp timestamp, int chunkSize, int streamChunkSize) {
+        this(updateDmlList, es7xTemplate, cacheMaxSize, timestamp, chunkSize, streamChunkSize, null, null);
+    }
+
+    NestedSlaveTableRunnable(List<Dependent> updateDmlList,
+                             ES7xTemplate es7xTemplate,
+                             int cacheMaxSize, Timestamp timestamp, int chunkSize, int streamChunkSize,
+                             NestedSlaveTableRunnable oldRun, NestedSlaveTableRunnable newRun) {
         this.timestamp = timestamp == null ? new Timestamp(System.currentTimeMillis()) : timestamp;
         this.updateDmlList = updateDmlList;
         this.es7xTemplate = es7xTemplate;
         this.chunkSize = chunkSize;
-        this.cacheMap = new CacheMap(cacheMaxSize);
+        this.streamChunkSize = streamChunkSize;
+        this.cacheMaxSize = cacheMaxSize;
+        this.oldRun = oldRun;
+        this.newRun = newRun;
+    }
+
+    static NestedSlaveTableRunnable merge(NestedSlaveTableRunnable oldRun, NestedSlaveTableRunnable newRun) {
+        List<Dependent> dmlList = new ArrayList<>(oldRun.updateDmlList.size() + newRun.updateDmlList.size());
+        dmlList.addAll(oldRun.updateDmlList);
+        dmlList.addAll(newRun.updateDmlList);
+        return new NestedSlaveTableRunnable(dmlList, oldRun.es7xTemplate,
+                oldRun.cacheMaxSize, oldRun.timestamp, oldRun.chunkSize, oldRun.streamChunkSize,
+                oldRun, newRun);
+    }
+
+    static String id(Dependent id, String key) {
+        return id.dmlKey() + "_" + key;
     }
 
     @Override
     public void run() {
-        parseSql(chunkSize);
+        CacheMap cacheMap = new CacheMap(chunkSize);
+        parseSql(chunkSize, cacheMap);
         try {
             ESTemplate.BulkRequestList bulkRequestList = es7xTemplate.newBulkRequestList(BulkPriorityEnum.LOW);
             if (!joinBySlaveTable.nestedMainSqlList.isEmpty()) {
@@ -43,15 +70,17 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
 
             if (!joinForeignKey.parentSqlList.isEmpty()) {
                 List<MergeJdbcTemplateSQL<DependentSQL>> merge = MergeJdbcTemplateSQL.merge(joinForeignKey.parentSqlList, chunkSize);
-                Map<String, List<Map<String, Object>>> parentGetterMap = MergeJdbcTemplateSQL.toMap(merge, e -> MergeJdbcTemplateSQL.argsToString(e.getArgs()), cacheMap);
+                Map<String, List<Map<String, Object>>> parentGetterMap = MergeJdbcTemplateSQL.toMap(merge, e -> id(e.getDependent(), MergeJdbcTemplateSQL.argsToString(e.getArgs())), cacheMap);
                 List<MergeJdbcTemplateSQL<DependentSQL>> childMergeSqlList = MergeJdbcTemplateSQL.merge(joinForeignKey.childSqlSet, chunkSize, false);
+                Set<String> visited = new HashSet<>(parentGetterMap.size());
                 for (MergeJdbcTemplateSQL<DependentSQL> templateSQL : childMergeSqlList) {
-                    templateSQL.executeQueryStream(chunkSize, DependentSQL::getDependent, chunk -> {
-                        List<Map<String, Object>> parentData = parentGetterMap.get(chunk.uniqueColumnKey);
-                        SchemaItem schemaItem = chunk.source.getSchemaItem();
-                        for (Map<String, Object> row : chunk.rowList) {
-                            Object pk = row.values().iterator().next();
-                            NestedFieldWriter.executeEsTemplateUpdate(bulkRequestList, es7xTemplate, pk, schemaItem, parentData);
+                    templateSQL.executeQueryStream(streamChunkSize, DependentSQL::getDependent, chunk -> {
+                        String dmlUniqueColumnKey = id(chunk.source, chunk.uniqueColumnKey);
+                        List<Object> pkList = chunk.rowListFirst(visited, dmlUniqueColumnKey);
+                        if (!pkList.isEmpty()) {
+                            List<Map<String, Object>> parentData = parentGetterMap.get(dmlUniqueColumnKey);
+                            SchemaItem schemaItem = chunk.source.getSchemaItem();
+                            NestedFieldWriter.executeEsTemplateUpdate(bulkRequestList, es7xTemplate, pkList, schemaItem, parentData);
                         }
                     });
                     bulkRequestList.commit(es7xTemplate);
@@ -78,7 +107,7 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
         }
     }
 
-    private void parseSql(int chunkSize) {
+    private void parseSql(int chunkSize, CacheMap cacheMap) {
         for (Dependent dependent : updateDmlList) {
             Dml dml = dependent.getDml();
             if (ESSyncUtil.isEmpty(dml.getPkNames())) {
@@ -192,6 +221,28 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
         return SQL.convertToSql(sql2, dependent.getMergeDataMap());
     }
 
+    @Override
+    public boolean complete(Void value) {
+        if (oldRun != null) {
+            oldRun.complete(value);
+        }
+        if (newRun != null) {
+            newRun.complete(value);
+        }
+        return super.complete(value);
+    }
+
+    @Override
+    public boolean completeExceptionally(Throwable ex) {
+        if (oldRun != null) {
+            oldRun.completeExceptionally(ex);
+        }
+        if (newRun != null) {
+            newRun.completeExceptionally(ex);
+        }
+        return super.completeExceptionally(ex);
+    }
+
     private static class JoinByParentSlaveTableForeignKey {
         Set<DependentSQL> childSqlSet = new LinkedHashSet<>();
         Set<DependentSQL> parentSqlList = new LinkedHashSet<>();
@@ -200,5 +251,4 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
     private static class JoinBySlaveTable {
         Set<DependentSQL> nestedMainSqlList = new LinkedHashSet<>();
     }
-
 }

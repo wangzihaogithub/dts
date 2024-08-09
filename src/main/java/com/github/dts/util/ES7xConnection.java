@@ -25,8 +25,12 @@ import org.elasticsearch.client.indices.GetMappingsRequest;
 import org.elasticsearch.client.indices.GetMappingsResponse;
 import org.elasticsearch.cluster.metadata.MappingMetaData;
 import org.elasticsearch.index.query.QueryBuilder;
+import org.elasticsearch.index.query.QueryBuilders;
+import org.elasticsearch.index.reindex.BulkByScrollResponse;
+import org.elasticsearch.index.reindex.UpdateByQueryRequest;
 import org.elasticsearch.rest.RestStatus;
 import org.elasticsearch.script.Script;
+import org.elasticsearch.script.ScriptType;
 import org.elasticsearch.search.sort.SortOrder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,6 +59,7 @@ public class ES7xConnection {
     private final int bulkRetryCount;
     private final int minAvailableSpaceHighBulkRequests;
     private final Map<String, CompletableFuture<ESBulkRequest.EsRefreshResponse>> refreshAsyncCache = new ConcurrentHashMap<>();
+    private int updateByQueryChunkSize = 1000;
 
     public ES7xConnection(CanalConfig.OuterAdapterConfig.Es7x es7x) {
         String[] elasticsearchUri = es7x.getAddress();
@@ -86,12 +91,17 @@ public class ES7xConnection {
         if (clusterName != null && !clusterName.isEmpty()) {
             clientBuilder.setPathPrefix(clusterName);
         }
+        this.updateByQueryChunkSize = es7x.getUpdateByQueryChunkSize();
         this.minAvailableSpaceHighBulkRequests = es7x.getMinAvailableSpaceHighBulkRequests();
         this.maxRetryCount = es7x.getMaxRetryCount();
         this.bulkRetryCount = es7x.getBulkRetryCount();
         this.bulkCommitSize = es7x.getBulkCommitSize();
         this.concurrentBulkRequest = concurrentBulkRequest;
         this.restHighLevelClient = new RestHighLevelClient(clientBuilder);
+    }
+
+    public int getUpdateByQueryChunkSize() {
+        return updateByQueryChunkSize;
     }
 
     public boolean isMaxBatchSize(int size) {
@@ -192,7 +202,7 @@ public class ES7xConnection {
         public int size() {
             int size = 0;
             for (BulkRequestResponse requestResponse : bulkResponse) {
-                size += requestResponse.response.getItems().length;
+                size += requestResponse.size();
             }
             return size;
         }
@@ -227,7 +237,7 @@ public class ES7xConnection {
         @Override
         public boolean hasFailures() {
             for (BulkRequestResponse bulkItemResponses : bulkResponse) {
-                if (bulkItemResponses.response.hasFailures()) {
+                if (bulkItemResponses.hasFailures()) {
                     return true;
                 }
             }
@@ -237,7 +247,7 @@ public class ES7xConnection {
         @Override
         public boolean isEmpty() {
             for (BulkRequestResponse requestResponse : bulkResponse) {
-                if (requestResponse.response.getItems().length > 0) {
+                if (!requestResponse.isEmpty()) {
                     return false;
                 }
             }
@@ -246,35 +256,48 @@ public class ES7xConnection {
 
         @Override
         public void processFailBulkResponse(String errorMsg) throws RuntimeException {
-            List<BulkItemResponse> errorRespList = null;
-            int notfound = 0;
+            Set<String> errorRespList = new LinkedHashSet<>();
             for (BulkRequestResponse bulkItemResponses : bulkResponse) {
-                for (BulkItemResponse itemResponse : bulkItemResponses.response.getItems()) {
-                    if (!itemResponse.isFailed()) {
-                        continue;
-                    }
-                    RestStatus status = itemResponse.getFailure().getStatus();
-                    if (status == RestStatus.NOT_FOUND) {
-                        if (notfound++ == 0) {
-                            logger.warn("notfound {}", itemResponse.getFailureMessage());
-                        }
-                    } else if (status == RestStatus.CONFLICT) {
-                        logger.warn("conflict {}", itemResponse.getFailureMessage());
-                    } else if (status == RestStatus.TOO_MANY_REQUESTS) {
-                        throw new RuntimeException(errorMsg + "[" + "[" + itemResponse.getOpType() + "]. " + itemResponse.getFailure().getCause().getClass() + ": " + itemResponse.getFailure() + "]");
-                    } else {
-                        if (errorRespList == null) {
-                            errorRespList = new ArrayList<>();
-                        }
-                        errorRespList.add(itemResponse);
-                    }
-                }
+                errorRespList.addAll(bulkItemResponses.processFailBulkResponse());
             }
-            if (errorRespList != null && !errorRespList.isEmpty()) {
-                String msg = errorRespList.stream().map(e -> "[" + e.getOpType() + "]. " + e.getFailure().getCause().getClass() + ": " + e.getFailure()).distinct().collect(Collectors.joining(",\n"));
+            if (!errorRespList.isEmpty()) {
+                String msg = String.join(",\n", errorRespList);
                 throw new RuntimeException(errorMsg + "[" + msg + "]");
             }
         }
+    }
+
+
+    public static class ES7xUpdateByQueryRequest implements ESBulkRequest.ESUpdateByQueryRequest {
+
+        private final UpdateByQueryRequest updateByQueryRequest;
+        private int size = 1;
+
+        public ES7xUpdateByQueryRequest(String index) {
+            updateByQueryRequest = new UpdateByQueryRequest(index);
+        }
+
+        public static ES7xUpdateByQueryRequest byIds(String index, String[] ids, String fieldName, Object fieldValue) {
+            ES7xUpdateByQueryRequest updateByQueryRequest = new ES7xUpdateByQueryRequest(index);
+            updateByQueryRequest.size = ids.length;
+            updateByQueryRequest.updateByQueryRequest.setQuery(QueryBuilders.idsQuery().addIds(ids));
+            updateByQueryRequest.updateByQueryRequest.setBatchSize(ids.length);
+            updateByQueryRequest.updateByQueryRequest.setScript(new Script(ScriptType.INLINE, "painless",
+                    "ctx._source." + fieldName + "= params.v", Collections.singletonMap("v", fieldValue)));
+            updateByQueryRequest.updateByQueryRequest.setAbortOnVersionConflict(false);
+            return updateByQueryRequest;
+        }
+
+        @Override
+        public int size() {
+            return size;
+        }
+
+        @Override
+        public String toString() {
+            return updateByQueryRequest.toString();
+        }
+
     }
 
     public static class ES7xIndexRequest implements ESBulkRequest.ESIndexRequest {
@@ -361,6 +384,7 @@ public class ES7xConnection {
     public static class ConcurrentBulkRequest extends BulkRequest {
         private final ReentrantLock lock = new ReentrantLock();
         private final int id;
+        private final List<ES7xUpdateByQueryRequest> updateByQueryRequests = new ArrayList<>();
         private long beforeEstimatedSizeInBytes;
 
         public ConcurrentBulkRequest(int id) {
@@ -388,11 +412,26 @@ public class ES7xConnection {
             this.beforeEstimatedSizeInBytes = super.estimatedSizeInBytes();
         }
 
+        public void add(ES7xUpdateByQueryRequest updateByQueryRequest) {
+            updateByQueryRequests.add(updateByQueryRequest);
+        }
+
+        public int requestNumberOfActions() {
+            return super.numberOfActions() + updateByQueryRequests.size();
+        }
+
+        public ES7xUpdateByQueryRequest pollUpdateByQuery() {
+            if (updateByQueryRequests.isEmpty()) {
+                return null;
+            }
+            return updateByQueryRequests.remove(updateByQueryRequests.size() - 1);
+        }
+
         @Override
         public String toString() {
             return "ConcurrentBulkRequest{" +
                     "id=" + id +
-                    ", size=" + numberOfActions() +
+                    ", size=" + requestNumberOfActions() +
                     ", lock=" + lock +
                     '}';
         }
@@ -411,6 +450,7 @@ public class ES7xConnection {
         private final ConcurrentBulkRequest request;
         private final long estimatedSizeInBytes;
         private final long totalEstimatedSizeInBytes;
+        private final List<UpdateByQuery> updateByQueryList = new ArrayList<>();
         private BulkResponse response;
 
         public BulkRequestResponse(ConcurrentBulkRequest request) {
@@ -419,10 +459,82 @@ public class ES7xConnection {
             this.totalEstimatedSizeInBytes = request.totalEstimatedSizeInBytes();
         }
 
+        private static String toError(BulkItemResponse e) {
+            return "[" + e.getOpType() + "]. " + e.getFailure().getCause().getClass() + ": " + e.getFailure();
+        }
+
+        public List<String> processFailBulkResponse() throws RuntimeException {
+            int notfound = 0;
+            List<String> errorRespList = new ArrayList<>();
+            for (BulkItemResponse itemResponse : response.getItems()) {
+                if (!itemResponse.isFailed()) {
+                    continue;
+                }
+                RestStatus status = itemResponse.getFailure().getStatus();
+                if (status == RestStatus.NOT_FOUND) {
+                    if (notfound++ == 0) {
+                        logger.warn("notfound {}", itemResponse.getFailureMessage());
+                    }
+                } else if (status == RestStatus.CONFLICT) {
+                    logger.warn("conflict {}", itemResponse.getFailureMessage());
+                } else if (status == RestStatus.TOO_MANY_REQUESTS) {
+                    throw new RuntimeException(toError(itemResponse));
+                } else {
+                    errorRespList.add(toError(itemResponse));
+                }
+            }
+            for (UpdateByQuery updateByQuery : updateByQueryList) {
+                List<BulkItemResponse.Failure> failures = updateByQuery.response.getBulkFailures();
+                for (BulkItemResponse.Failure failure : failures) {
+                    logger.warn("updateByQueryFail {}", failure.toString());
+                }
+            }
+            return errorRespList;
+        }
+
+        public void addUpdateByQueryResponse(ES7xUpdateByQueryRequest request, BulkByScrollResponse response) {
+            updateByQueryList.add(new UpdateByQuery(request, response));
+        }
+
         public String requestBytesToString() {
             long kb = Math.round((double) estimatedSizeInBytes / 1024);
             long mb = Math.round((double) totalEstimatedSizeInBytes / 1024 / 1024);
             return request.getId() + ":" + kb + "kb/" + mb + "mb";
+        }
+
+        public boolean hasFailures() {
+            if (response.hasFailures()) {
+                return true;
+            }
+            for (UpdateByQuery updateByQuery : updateByQueryList) {
+                List<BulkItemResponse.Failure> failures = updateByQuery.response.getBulkFailures();
+                if (!failures.isEmpty()) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        public boolean isEmpty() {
+            return response.getItems().length == 0 && updateByQueryList.isEmpty();
+        }
+
+        public int size() {
+            int size = response.getItems().length;
+            for (UpdateByQuery item : updateByQueryList) {
+                size += item.request.size();
+            }
+            return size;
+        }
+
+        private static class UpdateByQuery {
+            ES7xUpdateByQueryRequest request;
+            BulkByScrollResponse response;
+
+            private UpdateByQuery(ES7xUpdateByQueryRequest request, BulkByScrollResponse response) {
+                this.request = request;
+                this.response = response;
+            }
         }
     }
 
@@ -439,7 +551,6 @@ public class ES7xConnection {
         }
 
         public ESSearchRequest setQuery(QueryBuilder queryBuilder) {
-
             searchRequest.source().query(queryBuilder);
             return this;
         }
@@ -554,11 +665,13 @@ public class ES7xConnection {
             Collection<ConcurrentBulkRequest> concurrentBulkRequests = prioritySort(priorityEnum);
             while (true) {
                 for (ConcurrentBulkRequest bulkRequest : concurrentBulkRequests) {
-                    if (bulkRequest.numberOfActions() < bulkCommitSize && bulkRequest.tryLock()) {
+                    if (bulkRequest.requestNumberOfActions() < bulkCommitSize && bulkRequest.tryLock()) {
                         try {
                             for (Object request : requests) {
                                 if (request instanceof ES7xIndexRequest) {
                                     bulkRequest.add(((ES7xIndexRequest) request).indexRequest);
+                                } else if (request instanceof ES7xUpdateByQueryRequest) {
+                                    bulkRequest.add((ES7xUpdateByQueryRequest) request);
                                 } else if (request instanceof ES7xUpdateRequest) {
                                     bulkRequest.add(((ES7xUpdateRequest) request).updateRequest);
                                 } else if (request instanceof ES7xDeleteRequest) {
@@ -582,9 +695,27 @@ public class ES7xConnection {
             ES7xIndexRequest eir = (ES7xIndexRequest) esIndexRequest;
             while (true) {
                 for (ConcurrentBulkRequest bulkRequest : bulkRequests) {
-                    if (bulkRequest.numberOfActions() < bulkCommitSize && bulkRequest.tryLock()) {
+                    if (bulkRequest.requestNumberOfActions() < bulkCommitSize && bulkRequest.tryLock()) {
                         try {
                             bulkRequest.add(eir.indexRequest);
+                        } finally {
+                            bulkRequest.unlock();
+                        }
+                        return this;
+                    }
+                }
+                yieldThread();
+            }
+        }
+
+        @Override
+        public ESBulkRequest add(ESUpdateByQueryRequest esUpdateRequest) {
+            ES7xUpdateByQueryRequest eir = (ES7xUpdateByQueryRequest) esUpdateRequest;
+            while (true) {
+                for (ConcurrentBulkRequest bulkRequest : bulkRequests) {
+                    if (bulkRequest.requestNumberOfActions() < bulkCommitSize && bulkRequest.tryLock()) {
+                        try {
+                            bulkRequest.add(eir);
                         } finally {
                             bulkRequest.unlock();
                         }
@@ -600,7 +731,7 @@ public class ES7xConnection {
             ES7xUpdateRequest eur = (ES7xUpdateRequest) esUpdateRequest;
             while (true) {
                 for (ConcurrentBulkRequest bulkRequest : bulkRequests) {
-                    if (bulkRequest.numberOfActions() < bulkCommitSize && bulkRequest.tryLock()) {
+                    if (bulkRequest.requestNumberOfActions() < bulkCommitSize && bulkRequest.tryLock()) {
                         try {
                             bulkRequest.add(eur.updateRequest);
                         } finally {
@@ -618,7 +749,7 @@ public class ES7xConnection {
             ES7xDeleteRequest edr = (ES7xDeleteRequest) esDeleteRequest;
             while (true) {
                 for (ConcurrentBulkRequest bulkRequest : bulkRequests) {
-                    if (bulkRequest.numberOfActions() < bulkCommitSize && bulkRequest.tryLock()) {
+                    if (bulkRequest.requestNumberOfActions() < bulkCommitSize && bulkRequest.tryLock()) {
                         try {
                             bulkRequest.add(edr.deleteRequest);
                         } finally {
@@ -635,7 +766,7 @@ public class ES7xConnection {
         public int numberOfActions() {
             int count = 0;
             for (ConcurrentBulkRequest bulkRequest : bulkRequests) {
-                count += bulkRequest.numberOfActions();
+                count += bulkRequest.requestNumberOfActions();
             }
             return count;
         }
@@ -643,7 +774,7 @@ public class ES7xConnection {
         @Override
         public boolean isEmpty() {
             for (ConcurrentBulkRequest bulkRequest : bulkRequests) {
-                if (bulkRequest.numberOfActions() > 0) {
+                if (bulkRequest.requestNumberOfActions() > 0) {
                     return false;
                 }
             }
@@ -655,7 +786,7 @@ public class ES7xConnection {
             List<BulkRequestResponse> bulkResponse = new ArrayList<>(bulkRequests.length);
             ES7xBulkResponse es7xBulkResponse = new ES7xBulkResponse(bulkResponse);
             for (ConcurrentBulkRequest bulkRequest : bulkRequests) {
-                if (bulkRequest.numberOfActions() > 0 && bulkRequest.tryLock()) {
+                if (bulkRequest.requestNumberOfActions() > 0 && bulkRequest.tryLock()) {
                     try {
                         BulkRequestResponse requestResponse = commit(bulkRequest, maxRetryCount > 0);
                         bulkResponse.add(requestResponse);
@@ -671,6 +802,9 @@ public class ES7xConnection {
         }
 
         private BulkResponse bulk(BulkRequest bulkRequest) throws IOException {
+            if (bulkRequest.numberOfActions() == 0) {
+                return new BulkResponse(new BulkItemResponse[0], 0L);
+            }
             IOException ioException = null;
             int bulkRetryCount = Math.max(1, connection.bulkRetryCount);
             for (int i = 0; i < bulkRetryCount; i++) {
@@ -686,9 +820,9 @@ public class ES7xConnection {
 
         private BulkRequestResponse commit(ConcurrentBulkRequest bulkRequest, boolean retry) throws IOException {
             BulkRequestResponse requestResponse = new BulkRequestResponse(bulkRequest);
-            requestResponse.response = bulk(bulkRequest);
-            if (retry && requestResponse.response.hasFailures()) {
-                if (hasTooManyRequests(requestResponse.response)) {
+            BulkResponse response = requestResponse.response = bulk(bulkRequest);
+            if (retry && response.hasFailures()) {
+                if (hasTooManyRequests(response)) {
                     yieldThreadRandom();
                 } else if (bulkRequest.numberOfActions() > 1) {
                     ArrayList<DocWriteRequest<?>> errorRequests1 = new ArrayList<>();
@@ -712,6 +846,15 @@ public class ES7xConnection {
                 }
             } else {
                 bulkRequest.clear();
+            }
+
+            while (true) {
+                ES7xUpdateByQueryRequest updateByQueryRequest = bulkRequest.pollUpdateByQuery();
+                if (updateByQueryRequest == null) {
+                    break;
+                }
+                BulkByScrollResponse updatedByQuery = connection.restHighLevelClient.updateByQuery(updateByQueryRequest.updateByQueryRequest, RequestOptions.DEFAULT);
+                requestResponse.addUpdateByQueryResponse(updateByQueryRequest, updatedByQuery);
             }
             return requestResponse;
         }

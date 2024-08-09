@@ -38,8 +38,8 @@ public class ES7xAdapter implements Adapter {
     private boolean autoUpdateChildren = false;
     private int refreshThreshold = 10;
     private int joinUpdateSize = 10;
-    private int streamChunkSize = 1000;
-    private int basicMaxIdIn = 500;
+    private int streamChunkSize = 10000;
+    private int maxIdIn = 1000;
 
     @Override
     public void init(CanalConfig.CanalAdapter canalAdapter, CanalConfig.OuterAdapterConfig configuration, Properties envProperties) {
@@ -51,7 +51,7 @@ public class ES7xAdapter implements Adapter {
         this.refreshThreshold = configuration.getEs7x().getRefreshThreshold();
         this.esConnection = new ES7xConnection(configuration.getEs7x());
         this.esTemplate = new ES7xTemplate(esConnection);
-        this.basicMaxIdIn = configuration.getEs7x().getBasicMaxIdIn();
+        this.maxIdIn = configuration.getEs7x().getMaxIdIn();
         this.basicFieldWriter = new BasicFieldWriter(esTemplate);
         this.listenerExecutor = Util.newFixedThreadPool(
                 configuration.getEs7x().getListenerThreads(),
@@ -60,12 +60,12 @@ public class ES7xAdapter implements Adapter {
         this.slaveTableExecutor = slaveNestedField.isBlock() ?
                 Runnable::run :
                 Util.newFixedThreadPool(1, slaveNestedField.getThreads(),
-                        60_000L, "ESNestedSlave", true, false, slaveNestedField.getQueues());
+                        60_000L, "ESNestedSlave", true, false, slaveNestedField.getQueues(), NestedSlaveTableRunnable::merge);
         CanalConfig.OuterAdapterConfig.Es7x.MainJoinNestedField mainJoinNestedField = configuration.getEs7x().getMainJoinTableField();
         this.mainJoinTableExecutor = mainJoinNestedField.isBlock() ?
                 Runnable::run :
                 Util.newFixedThreadPool(1, mainJoinNestedField.getThreads(),
-                        60_000L, "ESNestedMainJoin", true, false, mainJoinNestedField.getQueues());
+                        60_000L, "ESNestedMainJoin", true, false, mainJoinNestedField.getQueues(), NestedMainJoinTableRunnable::merge);
         ESSyncUtil.loadESSyncConfig(dbTableEsSyncConfig, esSyncConfig, envProperties, configuration.getEs7x().resourcesDir(), env);
 
         this.listenerList.sort(AnnotationAwareOrderComparator.INSTANCE);
@@ -142,7 +142,7 @@ public class ES7xAdapter implements Adapter {
                     }
                 }
             }
-            BasicFieldWriter.executeUpdate(configSQLList, basicMaxIdIn);
+            BasicFieldWriter.executeUpdate(configSQLList, maxIdIn);
         } finally {
             basicFieldWriterCost = System.currentTimeMillis() - timestamp;
             cacheMap.cacheClear();
@@ -233,7 +233,7 @@ public class ES7xAdapter implements Adapter {
         if (!slaveTableList.isEmpty()) {
             NestedSlaveTableRunnable runnable = new NestedSlaveTableRunnable(
                     slaveTableList, esTemplate,
-                    cacheMap.getMaxValueSize(), maxTimestamp, streamChunkSize);
+                    cacheMap.getMaxValueSize(), maxTimestamp, maxIdIn, streamChunkSize);
             futures.add(runnable);
             slaveTableExecutor.execute(runnable);
         }

@@ -20,13 +20,34 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
     private final int maxIdInCount;
     private final int streamChunkSize;
     private final Timestamp maxTimestamp;
+    private final NestedMainJoinTableRunnable oldRun;
+    private final NestedMainJoinTableRunnable newRun;
 
-    NestedMainJoinTableRunnable(List<Dependent> dmlList, ES7xTemplate es7xTemplate, int maxIdInCount, int streamChunkSize, Timestamp maxTimestamp) {
+    NestedMainJoinTableRunnable(List<Dependent> dmlList, ES7xTemplate es7xTemplate,
+                                int maxIdInCount, int streamChunkSize, Timestamp maxTimestamp) {
+        this(dmlList, es7xTemplate, maxIdInCount, streamChunkSize, maxTimestamp, null, null);
+    }
+
+    NestedMainJoinTableRunnable(List<Dependent> dmlList, ES7xTemplate es7xTemplate,
+                                int maxIdInCount, int streamChunkSize, Timestamp maxTimestamp,
+                                NestedMainJoinTableRunnable oldRun,
+                                NestedMainJoinTableRunnable newRun) {
         this.dmlList = dmlList;
         this.es7xTemplate = es7xTemplate;
         this.maxIdInCount = maxIdInCount;
         this.streamChunkSize = streamChunkSize;
         this.maxTimestamp = maxTimestamp;
+        this.oldRun = oldRun;
+        this.newRun = newRun;
+    }
+
+    static NestedMainJoinTableRunnable merge(NestedMainJoinTableRunnable oldRun, NestedMainJoinTableRunnable newRun) {
+        List<Dependent> dmlList = new ArrayList<>(oldRun.dmlList.size() + newRun.dmlList.size());
+        dmlList.addAll(oldRun.dmlList);
+        dmlList.addAll(newRun.dmlList);
+        return new NestedMainJoinTableRunnable(dmlList, oldRun.es7xTemplate,
+                oldRun.maxIdInCount, oldRun.streamChunkSize, oldRun.maxTimestamp,
+                oldRun, newRun);
     }
 
     private static DependentSQL convertParentSql(Dependent dependent) {
@@ -84,17 +105,11 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
 
             Map<Dependent, List<Map<String, Object>>> parentGetterMap = MergeJdbcTemplateSQL.toMap(mergeNestedMainSqlList, DependentSQL::getDependent);
             for (MergeJdbcTemplateSQL<DependentSQL> children : childrenMergeSqlList) {
-                children.executeQueryStream(streamChunkSize, DependentSQL::getDependent,(chunk) -> {
+                children.executeQueryStream(streamChunkSize, DependentSQL::getDependent, (chunk) -> {
                     childrenCounter.addAndGet(chunk.rowList.size());
                     SchemaItem schemaItem = chunk.source.getSchemaItem();
                     List<Map<String, Object>> parentList = parentGetterMap.get(chunk.source);
-                    for (Map<String, Object> row : chunk.rowList) {
-                        if (row.isEmpty()) {
-                            continue;
-                        }
-                        Object pkValue = row.values().iterator().next();
-                        NestedFieldWriter.executeEsTemplateUpdate(bulkRequestList, es7xTemplate, pkValue, schemaItem, parentList);
-                    }
+                    NestedFieldWriter.executeEsTemplateUpdate(bulkRequestList, es7xTemplate, chunk.rowListFirst(), schemaItem, parentList);
                 });
                 bulkRequestList.commit(es7xTemplate);
             }
@@ -116,4 +131,25 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
         }
     }
 
+    @Override
+    public boolean complete(Void value) {
+        if (oldRun != null) {
+            oldRun.complete(value);
+        }
+        if (newRun != null) {
+            newRun.complete(value);
+        }
+        return super.complete(value);
+    }
+
+    @Override
+    public boolean completeExceptionally(Throwable ex) {
+        if (oldRun != null) {
+            oldRun.completeExceptionally(ex);
+        }
+        if (newRun != null) {
+            newRun.completeExceptionally(ex);
+        }
+        return super.completeExceptionally(ex);
+    }
 }

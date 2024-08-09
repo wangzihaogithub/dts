@@ -11,6 +11,8 @@ public interface ESBulkRequest {
 
     ESBulkRequest add(ESIndexRequest esIndexRequest);
 
+    ESBulkRequest add(ESUpdateByQueryRequest esUpdateRequest);
+
     ESBulkRequest add(ESUpdateRequest esUpdateRequest);
 
     ESBulkRequest add(ESDeleteRequest esDeleteRequest);
@@ -26,6 +28,11 @@ public interface ESBulkRequest {
         ESIndexRequest setSource(Map<String, ?> source);
 
         ESIndexRequest setRouting(String routing);
+    }
+
+    interface ESUpdateByQueryRequest extends ESRequest {
+
+        int size();
     }
 
     interface ESUpdateRequest extends ESRequest {
@@ -45,9 +52,10 @@ public interface ESBulkRequest {
     interface ESDeleteRequest extends ESRequest {
     }
 
-    interface EsRefreshResponse{
+    interface EsRefreshResponse {
 
     }
+
     interface ESBulkResponse {
         boolean hasFailures();
 

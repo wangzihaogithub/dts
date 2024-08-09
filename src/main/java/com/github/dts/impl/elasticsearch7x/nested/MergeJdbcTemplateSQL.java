@@ -297,6 +297,32 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
             this.uniqueColumnKey = uniqueColumnKey;
         }
 
+        public List<Object> rowListFirst() {
+            List<Object> rowListFirst = new ArrayList<>(rowList.size());
+            for (Map<String, Object> row : rowList) {
+                if (row.isEmpty()) {
+                    continue;
+                }
+                Object pkValue = row.values().iterator().next();
+                rowListFirst.add(pkValue);
+            }
+            return rowListFirst;
+        }
+
+        public List<Object> rowListFirst(Set<String> visited, String dmlUniqueColumnKey) {
+            List<Object> rowListFirst = new ArrayList<>(rowList.size());
+            for (Map<String, Object> row : rowList) {
+                if (row.isEmpty()) {
+                    continue;
+                }
+                Object pkValue = row.values().iterator().next();
+                if (visited.add(pkValue + "_" + dmlUniqueColumnKey)) {
+                    rowListFirst.add(pkValue);
+                }
+            }
+            return rowListFirst;
+        }
+
         public boolean hasNext() {
             return rowList.size() == pageSize;
         }

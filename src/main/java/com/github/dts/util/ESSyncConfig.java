@@ -97,10 +97,10 @@ public class ESSyncConfig {
          */
         private boolean writeNull = false;
         private String indexUpdatedTime = "";
+        private boolean updateByQuerySkipIndexUpdatedTime = true;
         private int version = 0;
         private boolean enable = true;
         private String pk;
-        private Map<String, RelationMapping> relations = new LinkedHashMap<>();
         private String sql;
         // 对象字段, 例: objFields:
         // - _labels: array:;
@@ -117,6 +117,14 @@ public class ESSyncConfig {
         @Override
         public String toString() {
             return env + "[" + _index + "]";
+        }
+
+        public boolean isUpdateByQuerySkipIndexUpdatedTime() {
+            return updateByQuerySkipIndexUpdatedTime;
+        }
+
+        public void setUpdateByQuerySkipIndexUpdatedTime(boolean updateByQuerySkipIndexUpdatedTime) {
+            this.updateByQuerySkipIndexUpdatedTime = updateByQuerySkipIndexUpdatedTime;
         }
 
         public long getMappingMetadataTimeout() {
@@ -240,14 +248,6 @@ public class ESSyncConfig {
             this.skips = skips;
         }
 
-        public Map<String, RelationMapping> getRelations() {
-            return relations;
-        }
-
-        public void setRelations(Map<String, RelationMapping> relations) {
-            this.relations = relations;
-        }
-
         public String getSql() {
             return sql;
         }
@@ -294,28 +294,6 @@ public class ESSyncConfig {
 
         public void setSchemaItem(SchemaItem schemaItem) {
             this.schemaItem = schemaItem;
-        }
-    }
-
-    public static class RelationMapping {
-
-        private String name;
-        private String parent;
-
-        public String getName() {
-            return name;
-        }
-
-        public void setName(String name) {
-            this.name = name;
-        }
-
-        public String getParent() {
-            return parent;
-        }
-
-        public void setParent(String parent) {
-            this.parent = parent;
         }
     }
 

@@ -19,6 +19,7 @@ import java.util.Enumeration;
 import java.util.Objects;
 import java.util.TimeZone;
 import java.util.concurrent.*;
+import java.util.function.BiFunction;
 import java.util.stream.Stream;
 
 public class Util {
@@ -188,10 +189,14 @@ public class Util {
     }
 
     public static ThreadPoolExecutor newFixedThreadPool(int core, int nThreads, long keepAliveTime, String name, boolean wrapper, boolean allowCoreThreadTimeOut, int queues) {
+        return newFixedThreadPool(core, nThreads, keepAliveTime, name, wrapper, allowCoreThreadTimeOut, queues, null);
+    }
+
+    public static <E extends Runnable> ThreadPoolExecutor newFixedThreadPool(int core, int nThreads, long keepAliveTime, String name, boolean wrapper, boolean allowCoreThreadTimeOut, int queues, BiFunction<E, E, E> mergeFunction) {
         BlockingQueue<Runnable> workQueue = queues == 0 ?
                 new SynchronousQueue<>() :
-                (queues < 0 ? new LinkedBlockingQueue<>(Integer.MAX_VALUE)
-                        : new LinkedBlockingQueue<>(queues));
+                (queues < 0 ? mergeFunction == null ? new LinkedBlockingQueue<>(Integer.MAX_VALUE) : (BlockingQueue<Runnable>) new MergeLinkedBlockingQueue<>(Integer.MAX_VALUE, mergeFunction)
+                        : mergeFunction == null ? new LinkedBlockingQueue<>(queues) : (BlockingQueue<Runnable>) new MergeLinkedBlockingQueue<>(queues, mergeFunction));
         ThreadPoolExecutor executor = new ThreadPoolExecutor(core,
                 nThreads,
                 keepAliveTime,

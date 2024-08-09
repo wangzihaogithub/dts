@@ -400,6 +400,7 @@ public class CanalConfig {
             private String username;// 账号，来源：租户账号
             private String password;// 密码，来源：租户密码
             private Map<String, String> properties; // 其余参数, 可填写适配器中的所需的配置信息
+            private int updateByQueryChunkSize = 1000;
             private int maxRetryCount = 1;// 错误请求重试几次
             private int bulkRetryCount = 1;
             private int concurrentBulkRequest = 16;// 最大并发bulk请求
@@ -411,8 +412,16 @@ public class CanalConfig {
             private int maxQueryCacheSize = 10000;//查询缓存大小
             private int nestedFieldThreads = 10;
             private int joinUpdateSize = 10;
-            private int streamChunkSize = 1000;
-            private int basicMaxIdIn = 500;
+            private int streamChunkSize = 10000;
+            private int maxIdIn = 1000;
+
+            public int getUpdateByQueryChunkSize() {
+                return updateByQueryChunkSize;
+            }
+
+            public void setUpdateByQueryChunkSize(int updateByQueryChunkSize) {
+                this.updateByQueryChunkSize = updateByQueryChunkSize;
+            }
 
             public int getMinAvailableSpaceHighBulkRequests() {
                 return minAvailableSpaceHighBulkRequests;
@@ -430,12 +439,12 @@ public class CanalConfig {
                 this.bulkRetryCount = bulkRetryCount;
             }
 
-            public int getBasicMaxIdIn() {
-                return basicMaxIdIn;
+            public int getMaxIdIn() {
+                return maxIdIn;
             }
 
-            public void setBasicMaxIdIn(int basicMaxIdIn) {
-                this.basicMaxIdIn = basicMaxIdIn;
+            public void setMaxIdIn(int maxIdIn) {
+                this.maxIdIn = maxIdIn;
             }
 
             public MainJoinNestedField getMainJoinTableField() {

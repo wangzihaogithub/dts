@@ -1,7 +1,6 @@
 package com.github.dts.util;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * 表依赖关系
@@ -22,6 +21,7 @@ public class Dependent {
      * 嵌套文档从表
      */
     private final List<SchemaItem.TableItem> nestedSlaveTableList;
+    private transient String dmlKey;
 
     public Dependent(SchemaItem schemaItem, int index,
                      SchemaItem.TableItem indexMainTable,
@@ -91,8 +91,8 @@ public class Dependent {
 
     @Override
     public String toString() {
-        List<Map<String, Object>> old = dml.getOld();
-        String oldString = old == null ? "" : old.stream().map(Map::keySet).collect(Collectors.toList()).toString();
+        Map<String, Object> old = dml.getOld().get(index);
+        String oldString = old == null ? "" : old.keySet().toString();
         return dml.getType() + "(" + oldString + ")." + dml.getTable() + "(" + schemaItem + ")";
     }
 
@@ -107,6 +107,14 @@ public class Dependent {
     @Override
     public int hashCode() {
         return Objects.hash(dml, schemaItem, index);
+    }
+
+    public String dmlKey() {
+        if (dmlKey == null) {
+            Map<String, Object> old = dml.getOld().get(index);
+            dmlKey = dml.getType() + "_" + dml.getTable() + "_" + (old == null ? "null" : old.keySet());
+        }
+        return dmlKey;
     }
 
     public boolean isIndexMainTable() {
