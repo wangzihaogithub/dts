@@ -91,7 +91,8 @@ public class Dependent {
 
     @Override
     public String toString() {
-        Map<String, Object> old = dml.getOld().get(index);
+        List<Map<String, Object>> oldList = dml.getOld();
+        Map<String, Object> old = oldList != null ? oldList.get(index) : null;
         String oldString = old == null ? "" : old.keySet().toString();
         return dml.getType() + "(" + oldString + ")." + dml.getTable() + "(" + schemaItem + ")";
     }
@@ -111,7 +112,8 @@ public class Dependent {
 
     public String dmlKey() {
         if (dmlKey == null) {
-            Map<String, Object> old = dml.getOld().get(index);
+            List<Map<String, Object>> oldList = dml.getOld();
+            Map<String, Object> old = oldList != null ? oldList.get(index) : null;
             dmlKey = dml.getType() + "_" + dml.getTable() + "_" + (old == null ? "null" : old.keySet());
         }
         return dmlKey;
