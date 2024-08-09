@@ -21,8 +21,6 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 
-import static org.apache.kafka.common.config.SslConfigs.SSL_TRUSTSTORE_LOCATION_CONFIG;
-
 public class KafkaCanalConnector implements CanalConnector {
     private final Logger logger = LoggerFactory.getLogger(getClass());
     private final Object seekLock = new Object();
@@ -62,9 +60,9 @@ public class KafkaCanalConnector implements CanalConnector {
         properties.put("max.poll.interval.ms", "300000"); // 5分钟
         properties.put("fetch.max.bytes", 10 * 1024 * 1024); // 10M
         properties.putAll(config);
-        String location = properties.getProperty(SSL_TRUSTSTORE_LOCATION_CONFIG);
+        String location = properties.getProperty(org.apache.kafka.common.config.SslConfigs.SSL_TRUSTSTORE_LOCATION_CONFIG);
         if (location != null && !location.isEmpty()) {
-            properties.setProperty(SSL_TRUSTSTORE_LOCATION_CONFIG, getClass().getResource(location).getPath());
+            properties.setProperty(org.apache.kafka.common.config.SslConfigs.SSL_TRUSTSTORE_LOCATION_CONFIG, getClass().getResource(location).getPath());
         }
         this.properties = properties;
     }
