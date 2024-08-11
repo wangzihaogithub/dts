@@ -83,7 +83,7 @@ public class SchemaItem {
                 if (groupBy != null && groupBy.length > 0) {
                     groupByIdColumns = Arrays.stream(groupBy).map(ColumnItem::parse).collect(Collectors.toCollection(LinkedHashSet::new));
                 } else {
-                    if (objectField.getType() == ESSyncConfig.ObjectField.Type.OBJECT_SQL) {
+                    if (objectField.getType().isSingleJoinType()) {
                         groupByIdColumns = parseByObjectFieldIdColumns();
                     } else if (!isJoinByParentPrimaryKey() && objectField.getType() == ESSyncConfig.ObjectField.Type.ARRAY_SQL) {
                         throw new IllegalArgumentException("the join sql must have group by. sql = " + sql);

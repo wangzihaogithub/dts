@@ -195,12 +195,12 @@ public class NestedFieldWriter {
 
     public void writeMainTable(List<Dependent> mainTableDependentList,
                                ESTemplate.BulkRequestList bulkRequestList,
-                               boolean autoUpdateChildren) {
+                               int maxIdIn) {
         if (mainTableDependentList.isEmpty()) {
             return;
         }
         Set<DependentSQL> sqlList = convertToSql(mainTableDependentList);
-        List<MergeJdbcTemplateSQL<DependentSQL>> mergeSqlList = MergeJdbcTemplateSQL.merge(sqlList, 1000);
+        List<MergeJdbcTemplateSQL<DependentSQL>> mergeSqlList = MergeJdbcTemplateSQL.merge(sqlList, maxIdIn);
         if (mainTableListenerExecutor == null) {
             executeEsTemplateUpdate(mergeSqlList, bulkRequestList, cacheMap, esTemplate);
         } else {

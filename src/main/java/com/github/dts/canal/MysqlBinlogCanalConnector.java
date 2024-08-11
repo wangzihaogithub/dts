@@ -72,6 +72,7 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
     private MetaDataFileMixedMetaManager metaManager;
     // 最大Canal事件存储内存
     private final RingBufferSizeMemoryEnum eventStoreMemoryEnum;
+    private final String redisConnectionFactoryBeanName;
 
     public MysqlBinlogCanalConnector(CanalConfig canalConfig,
                                      CanalConfig.CanalAdapter config,
@@ -103,13 +104,14 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
             this.dataSource = dataSource(url, username, password);
         }
 
+        this.redisConnectionFactoryBeanName = properties.getProperty("redisConnectionFactoryBeanName", "redisConnectionFactory");
         // JVM内存的${maxEventStoreMemoryJvmRate}%，分给Canal事件存储用
         int maxEventStoreMemoryJvmRate = Integer.parseInt(properties.getProperty("maxEventStoreMemoryJvmRate", "35%").trim().replace("%", "").trim());
         this.eventStoreMemoryEnum = RingBufferSizeMemoryEnum.getByJvmMaxMemoryRate(maxEventStoreMemoryJvmRate);
 
         log.info("binlog used max eventStoreMemory = {}, by jvm memory{}%", eventStoreMemoryEnum, maxEventStoreMemoryJvmRate);
         this.enableGTID = "true".equalsIgnoreCase(properties.getProperty("enableGTID", "false"));
-        this.slaveId = Integer.parseInt(properties.getProperty("slaveId", String.valueOf(generateUniqueServerId(clientIdentityName, Util.getIPAddress()))));
+        this.slaveId = Integer.parseInt(properties.getProperty("slaveId", String.valueOf(generateUniqueServerId(clientIdentityName, Util.getIPAddressPort()))));
         this.dataDir = new File(properties.getProperty("dataDir", System.getProperty("user.dir")));
         server.setCanalInstanceGenerator(canalInstanceMap::get);
     }
@@ -362,7 +364,7 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
         AviaterRegexFilter eventBlackFilter = new AviaterRegexFilter("", false);
         eventParser.setEventBlackFilter(eventBlackFilter);
 
-        FileMixedMetaManager metaManager = this.metaManager = new MetaDataFileMixedMetaManager(identity, startupServer, metaPrefix, selectAck2);
+        FileMixedMetaManager metaManager = this.metaManager = new MetaDataFileMixedMetaManager(identity, startupServer, metaPrefix, redisConnectionFactoryBeanName, selectAck2);
         metaManager.setDataDirByFile(dataDir);
         metaManager.setPeriod(1000L);
 
@@ -611,11 +613,11 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
         private volatile Object cursor;
         private long period = 1000L;
 
-        public MetaDataFileMixedMetaManager(ClientIdentity identity, StartupServer startupServer, String prefix, boolean selectAck2) {
+        public MetaDataFileMixedMetaManager(ClientIdentity identity, StartupServer startupServer, String prefix, String redisConnectionFactoryBeanName, boolean selectAck2) {
             this.identity = identity;
             this.selectAck2 = selectAck2;
             this.metaDataRepository = MetaDataRepository.newInstance(
-                    prefix + ":" + identity.getDestination(), startupServer.getBeanFactory());
+                    prefix + ":" + identity.getDestination(), redisConnectionFactoryBeanName, startupServer.getBeanFactory());
         }
 
         @Override

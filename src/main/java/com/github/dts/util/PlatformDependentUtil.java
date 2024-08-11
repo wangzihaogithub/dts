@@ -13,4 +13,7 @@ public class PlatformDependentUtil {
         REDIS_CONNECTION_FACTORY_CLASS = redisConnectionFactory;
     }
 
+    public static boolean isSupportSpringframeworkRedis() {
+        return REDIS_CONNECTION_FACTORY_CLASS != null;
+    }
 }

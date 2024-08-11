@@ -138,6 +138,10 @@ public class ESSyncConfig {
             return indexUpdatedTime;
         }
 
+        public boolean isSetIndexUpdatedTime() {
+            return indexUpdatedTime != null && !indexUpdatedTime.isEmpty();
+        }
+
         public void setIndexUpdatedTime(String indexUpdatedTime) {
             this.indexUpdatedTime = indexUpdatedTime;
         }
@@ -508,6 +512,10 @@ public class ESSyncConfig {
 
             public boolean isSqlType() {
                 return this == Type.OBJECT_SQL || this == Type.ARRAY_SQL;
+            }
+
+            public boolean isSingleJoinType() {
+                return this == Type.OBJECT_SQL;
             }
         }
     }

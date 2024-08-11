@@ -22,11 +22,11 @@ import static com.github.dts.util.BeanUtil.*;
  */
 public class DifferentComparatorUtil {
 
-    public static <E> ListDiffResult<E> listDiff(List<E> before, List<E> after) {
+    public static <E> ListDiffResult<E> listDiff(Collection<E> before, Collection<E> after) {
         return listDiff(before, after, e -> e);
     }
 
-    public static <E, ID> ListDiffResult<E> listDiff(List<? extends E> before, List<? extends E> after, Function<E, ID> idFunction) {
+    public static <E, ID> ListDiffResult<E> listDiff(Collection<? extends E> before, Collection<? extends E> after, Function<E, ID> idFunction) {
         if (before == null) {
             before = Collections.emptyList();
         }
@@ -234,23 +234,15 @@ public class DifferentComparatorUtil {
     }
 
     public static class ListDiffResult<E> {
-        private List<E> insertList = new ArrayList<>();
-        private List<E> deleteList = new ArrayList<>();
+        private final List<E> insertList = new ArrayList<>();
+        private final List<E> deleteList = new ArrayList<>();
 
         public List<E> getInsertList() {
             return insertList;
         }
 
-        public void setInsertList(List<E> insertList) {
-            this.insertList = insertList;
-        }
-
         public List<E> getDeleteList() {
             return deleteList;
-        }
-
-        public void setDeleteList(List<E> deleteList) {
-            this.deleteList = deleteList;
         }
     }
 

@@ -158,6 +158,7 @@ public class ES7xAdapter implements Adapter {
         DependentGroup dependentGroup = nestedFieldWriter.convertToDependentGroup(syncDmlList, onlyCurrentIndex);
 
         List<CompletableFuture<?>> futures = asyncRunDependent(maxTimestamp, joinUpdateSize,
+                bulkRequestList,
                 dependentGroup.getMainTableJoinDependentList(), dependentGroup.getSlaveTableDependentList());
 
         try {
@@ -165,7 +166,7 @@ public class ES7xAdapter implements Adapter {
             List<Dependent> mainTableDependentList = dependentGroup.getMainTableDependentList();
             List<Dependent> filterMainTableDependentList = onlyFieldName == null ?
                     mainTableDependentList : onlyFieldName.isEmpty() ? Collections.emptyList() : mainTableDependentList.stream().filter(e -> e.containsObjectField(onlyFieldName)).collect(Collectors.toList());
-            nestedFieldWriter.writeMainTable(filterMainTableDependentList, bulkRequestList, autoUpdateChildren);
+            nestedFieldWriter.writeMainTable(filterMainTableDependentList, bulkRequestList, maxIdIn);
         } finally {
             log.info("sync(dml[{}]).BasicFieldWriter={}ms, NestedFieldWriter={}ms, {}, table={}",
                     syncDmlList.size(),
@@ -213,6 +214,7 @@ public class ES7xAdapter implements Adapter {
 
     private List<CompletableFuture<?>> asyncRunDependent(Timestamp maxTimestamp,
                                                          int joinUpdateSize,
+                                                         ESTemplate.BulkRequestList bulkRequestList,
                                                          List<Dependent> mainTableJoinDependentList,
                                                          List<Dependent> slaveTableDependentList) {
         List<CompletableFuture<?>> futures = new ArrayList<>();
@@ -221,6 +223,7 @@ public class ES7xAdapter implements Adapter {
         if (!mainTableJoinDependentList.isEmpty()) {
             NestedMainJoinTableRunnable runnable = new NestedMainJoinTableRunnable(
                     mainTableJoinDependentList, esTemplate,
+                    bulkRequestList,
                     joinUpdateSize, streamChunkSize, maxTimestamp);
             futures.add(runnable);
             mainJoinTableExecutor.execute(runnable);
@@ -233,6 +236,7 @@ public class ES7xAdapter implements Adapter {
         if (!slaveTableList.isEmpty()) {
             NestedSlaveTableRunnable runnable = new NestedSlaveTableRunnable(
                     slaveTableList, esTemplate,
+                    bulkRequestList,
                     cacheMap.getMaxValueSize(), maxTimestamp, maxIdIn, streamChunkSize);
             futures.add(runnable);
             slaveTableExecutor.execute(runnable);

@@ -1,23 +1,13 @@
 package com.github.dts.util;
 
-import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.BeanFactory;
 
 public interface MetaDataRepository {
 
-    static MetaDataRepository newInstance(String key, BeanFactory beanFactory) {
+    static MetaDataRepository newInstance(String key, String redisConnectionFactoryBeanName, BeanFactory beanFactory) {
         return new LazyMetaDataRepository(() -> {
-            if (PlatformDependentUtil.REDIS_CONNECTION_FACTORY_CLASS != null) {
-                Object redisConnectionFactory;
-                try {
-                    redisConnectionFactory = beanFactory.getBean("redisConnectionFactory");
-                } catch (BeansException e) {
-                    try {
-                        redisConnectionFactory = beanFactory.getBean(PlatformDependentUtil.REDIS_CONNECTION_FACTORY_CLASS);
-                    } catch (Exception e1) {
-                        redisConnectionFactory = null;
-                    }
-                }
+            if (PlatformDependentUtil.isSupportSpringframeworkRedis()) {
+                Object redisConnectionFactory = SpringUtil.getBean(beanFactory, redisConnectionFactoryBeanName, PlatformDependentUtil.REDIS_CONNECTION_FACTORY_CLASS);
                 if (RedisMetaDataRepository.isActive(redisConnectionFactory)) {
                     return new RedisMetaDataRepository(key, redisConnectionFactory);
                 }

@@ -1,5 +1,7 @@
 package com.github.dts.canal;
 
+import com.github.dts.cluster.DiscoveryService;
+import com.github.dts.cluster.ServerInstanceClient;
 import com.github.dts.util.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,11 +35,13 @@ public class CanalThread extends Thread {
     protected UncaughtExceptionHandler handler = (t, e) -> logger.error("parse events has an error", e);
     private boolean suspend;
     private CompletableFuture<Void>[] lastFutureList = new CompletableFuture[0];
+    private final StartupServer startupServer;
 
     public CanalThread(CanalConfig canalConfig, CanalConfig.CanalAdapter config,
                        List<Adapter> adapterList, AbstractMessageService messageService,
                        StartupServer startupServer, CanalThread parent,
                        Consumer<CanalThread> rebuild) throws InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException {
+        this.startupServer = startupServer;
         CanalConnector connector = config.newCanalConnector(canalConfig, startupServer, parent != null);
         this.adapterList = adapterList.toArray(new Adapter[adapterList.size()]);
         this.canalConfig = canalConfig;
@@ -90,6 +94,20 @@ public class CanalThread extends Thread {
         Exception exception = null;
         long lastErrorTimestamp = 0;
 
+        DiscoveryService discoveryService = startupServer.getDiscoveryService();
+        if(discoveryService != null){
+            discoveryService.addListener(new DiscoveryService.Listener() {
+                @Override
+                public void onChange(ReferenceCounted<DiscoveryService.ChangeEvent> eventRef) {
+                    try (ReferenceCounted<DiscoveryService.ChangeEvent> ref =eventRef.open()){
+                        DiscoveryService.ChangeEvent event = ref.get();
+                        List<ServerInstanceClient> insertList = event.diff.getInsertList();
+                        int size = event.after.size();
+
+                    }
+                }
+            });
+        }
         while (running) {
             try {
                 logger.info("=============> Start to connect destination: {} <=============", this.name);
@@ -116,6 +134,7 @@ public class CanalThread extends Thread {
                         for (Dml dml : message) {
                             dml.setDestination(config.getDestination());
                         }
+
                         if (suspend) {
                             Thread.sleep(10_000);
                         } else if (message.isEmpty()) {

@@ -1,5 +1,6 @@
 package com.github.dts.canal;
 
+import com.github.dts.cluster.DiscoveryService;
 import com.github.dts.impl.elasticsearch7x.ES7xAdapter;
 import com.github.dts.impl.rds.RDSAdapter;
 import com.github.dts.util.AbstractMessageService;
@@ -9,6 +10,7 @@ import com.github.dts.util.Util;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.BeanFactory;
+import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
@@ -32,7 +34,7 @@ public class StartupServer implements ApplicationRunner {
     private final Map<String, List<ThreadRef>> canalThreadMap = new HashMap<>();
     private final Map<String, Adapter> adapterMap = new ConcurrentHashMap<>();
     @Autowired
-    private BeanFactory beanFactory;
+    private ListableBeanFactory beanFactory;
     @Autowired
     private AbstractMessageService messageService;
     @Resource
@@ -40,6 +42,11 @@ public class StartupServer implements ApplicationRunner {
     private volatile boolean running = false;
     @Value("${spring.profiles.active:}")
     private String env;
+    private DiscoveryService discoveryService;
+
+    public DiscoveryService getDiscoveryService() {
+        return discoveryService;
+    }
 
     public String getEnv() {
         return env;
@@ -88,15 +95,24 @@ public class StartupServer implements ApplicationRunner {
         return list;
     }
 
-    public void start(CanalConfig canalClientConfig) {
+    public void start(CanalConfig canalConfig) {
         // 初始化canal-client的适配器
-        if (canalClientConfig.getCanalAdapters() == null) {
+        if (canalConfig.getCanalAdapters() == null) {
             log.info("adapter for canal is empty config");
             return;
         }
-
         Environment env = beanFactory.getBean(Environment.class);
-        for (CanalConfig.CanalAdapter canalAdapter : canalClientConfig.getCanalAdapters()) {
+
+        DiscoveryService discoveryService = this.discoveryService = DiscoveryService.newInstance(canalConfig.getCluster(), beanFactory);
+        if (discoveryService != null) {
+            String ip = Util.getIPAddress();
+            Integer port = env.getProperty("server.port", Integer.class, 8080);
+            discoveryService.registerInstance(ip, port);
+        } else {
+            log.info("discoveryService is disabled");
+        }
+
+        for (CanalConfig.CanalAdapter canalAdapter : canalConfig.getCanalAdapters()) {
             if (!canalAdapter.isEnable()) {
                 continue;
             }
@@ -115,7 +131,7 @@ public class StartupServer implements ApplicationRunner {
             }
 
             String clientIdentity = canalAdapter.clientIdentity();
-            ThreadRef thread = new ThreadRef(canalClientConfig,
+            ThreadRef thread = new ThreadRef(canalConfig,
                     canalAdapter, adapterList, messageService, this);
             canalThreadMap.computeIfAbsent(clientIdentity, e -> new ArrayList<>())
                     .add(thread);

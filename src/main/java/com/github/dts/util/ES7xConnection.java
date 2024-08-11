@@ -298,15 +298,19 @@ public class ES7xConnection {
             return updateByQueryRequest.toString();
         }
 
+        public ES7xUpdateByQueryRequest build() {
+            return this;
+        }
     }
 
     public static class ES7xIndexRequest implements ESBulkRequest.ESIndexRequest {
 
         private final IndexRequest indexRequest;
 
-        public ES7xIndexRequest(String index, String id) {
+        public ES7xIndexRequest(String index, String id, Map<String, ?> source) {
             indexRequest = new IndexRequest(index);
             indexRequest.id(id);
+            indexRequest.source(source);
         }
 
         @Override
@@ -314,16 +318,8 @@ public class ES7xConnection {
             return indexRequest.toString();
         }
 
-        @Override
-        public ES7xIndexRequest setSource(Map<String, ?> source) {
-            indexRequest.source(source);
-            return this;
-        }
-
-        @Override
-        public ES7xIndexRequest setRouting(String routing) {
-            indexRequest.routing(routing);
-            return this;
+        public IndexRequest build() {
+            return indexRequest;
         }
 
     }
@@ -331,9 +327,23 @@ public class ES7xConnection {
     public static class ES7xUpdateRequest implements ESBulkRequest.ESUpdateRequest {
 
         private final UpdateRequest updateRequest;
+        private final String index;
+        private final String id;
 
-        public ES7xUpdateRequest(String index, String id) {
+        public ES7xUpdateRequest(String index, String id, Map source, boolean shouldUpsertDoc) {
             updateRequest = new UpdateRequest(index, id);
+            updateRequest.docAsUpsert(shouldUpsertDoc);
+            updateRequest.doc(source);
+            this.index = index;
+            this.id = id;
+        }
+
+        public String getIndex() {
+            return index;
+        }
+
+        public String getId() {
+            return id;
         }
 
         @Override
@@ -341,30 +351,9 @@ public class ES7xConnection {
             return updateRequest.toString();
         }
 
-        @Override
-        public ES7xUpdateRequest setScript(Script script) {
-            updateRequest.script(script);
-            return this;
+        public UpdateRequest build() {
+            return updateRequest;
         }
-
-        @Override
-        public ES7xUpdateRequest setDoc(Map source) {
-            updateRequest.doc(source);
-            return this;
-        }
-
-        @Override
-        public ES7xUpdateRequest setDocAsUpsert(boolean shouldUpsertDoc) {
-            updateRequest.docAsUpsert(shouldUpsertDoc);
-            return this;
-        }
-
-        @Override
-        public ES7xUpdateRequest setRouting(String routing) {
-            updateRequest.routing(routing);
-            return this;
-        }
-
     }
 
     public static class ES7xDeleteRequest implements ESBulkRequest.ESDeleteRequest {
@@ -378,6 +367,10 @@ public class ES7xConnection {
         @Override
         public String toString() {
             return deleteRequest.toString();
+        }
+
+        public DeleteRequest build() {
+            return deleteRequest;
         }
     }
 
@@ -421,10 +414,8 @@ public class ES7xConnection {
         }
 
         public ES7xUpdateByQueryRequest pollUpdateByQuery() {
-            if (updateByQueryRequests.isEmpty()) {
-                return null;
-            }
-            return updateByQueryRequests.remove(updateByQueryRequests.size() - 1);
+            int size = updateByQueryRequests.size();
+            return size == 0 ? null : updateByQueryRequests.remove(size - 1);
         }
 
         @Override
@@ -669,13 +660,13 @@ public class ES7xConnection {
                         try {
                             for (Object request : requests) {
                                 if (request instanceof ES7xIndexRequest) {
-                                    bulkRequest.add(((ES7xIndexRequest) request).indexRequest);
+                                    bulkRequest.add(((ES7xIndexRequest) request).build());
                                 } else if (request instanceof ES7xUpdateByQueryRequest) {
-                                    bulkRequest.add((ES7xUpdateByQueryRequest) request);
+                                    bulkRequest.add(((ES7xUpdateByQueryRequest) request).build());
                                 } else if (request instanceof ES7xUpdateRequest) {
-                                    bulkRequest.add(((ES7xUpdateRequest) request).updateRequest);
+                                    bulkRequest.add(((ES7xUpdateRequest) request).build());
                                 } else if (request instanceof ES7xDeleteRequest) {
-                                    bulkRequest.add(((ES7xDeleteRequest) request).deleteRequest);
+                                    bulkRequest.add(((ES7xDeleteRequest) request).build());
                                 } else {
                                     throw new IllegalArgumentException("Unknown request type: " + request.getClass());
                                 }
@@ -697,7 +688,7 @@ public class ES7xConnection {
                 for (ConcurrentBulkRequest bulkRequest : bulkRequests) {
                     if (bulkRequest.requestNumberOfActions() < bulkCommitSize && bulkRequest.tryLock()) {
                         try {
-                            bulkRequest.add(eir.indexRequest);
+                            bulkRequest.add(eir.build());
                         } finally {
                             bulkRequest.unlock();
                         }
@@ -715,7 +706,7 @@ public class ES7xConnection {
                 for (ConcurrentBulkRequest bulkRequest : bulkRequests) {
                     if (bulkRequest.requestNumberOfActions() < bulkCommitSize && bulkRequest.tryLock()) {
                         try {
-                            bulkRequest.add(eir);
+                            bulkRequest.add(eir.build());
                         } finally {
                             bulkRequest.unlock();
                         }
@@ -733,7 +724,7 @@ public class ES7xConnection {
                 for (ConcurrentBulkRequest bulkRequest : bulkRequests) {
                     if (bulkRequest.requestNumberOfActions() < bulkCommitSize && bulkRequest.tryLock()) {
                         try {
-                            bulkRequest.add(eur.updateRequest);
+                            bulkRequest.add(eur.build());
                         } finally {
                             bulkRequest.unlock();
                         }
@@ -751,7 +742,7 @@ public class ES7xConnection {
                 for (ConcurrentBulkRequest bulkRequest : bulkRequests) {
                     if (bulkRequest.requestNumberOfActions() < bulkCommitSize && bulkRequest.tryLock()) {
                         try {
-                            bulkRequest.add(edr.deleteRequest);
+                            bulkRequest.add(edr.build());
                         } finally {
                             bulkRequest.unlock();
                         }

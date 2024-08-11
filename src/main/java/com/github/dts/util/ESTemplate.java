@@ -122,6 +122,9 @@ public interface ESTemplate extends AutoCloseable {
 
         void commit(ESTemplate esTemplate);
 
+        BulkRequestList fork(BulkRequestList bulkRequestList);
+
+        BulkRequestList fork(BulkPriorityEnum priorityEnum);
     }
 
     class ESSearchResponse {

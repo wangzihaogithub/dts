@@ -26,9 +26,14 @@ import java.util.regex.Pattern;
 @ConfigurationProperties(prefix = "canal.conf")
 public class CanalConfig {
     private Map<String, DatasourceConfig> srcDataSources;
+    private final ClusterConfig cluster = new ClusterConfig();
     private boolean enablePull = true;
     // canal adapters 配置
     private List<CanalAdapter> canalAdapters;
+
+    public ClusterConfig getCluster() {
+        return cluster;
+    }
 
     public boolean isEnablePull() {
         return enablePull;
@@ -220,6 +225,139 @@ public class CanalConfig {
         public void setMaxActive(Integer maxActive) {
             this.maxActive = maxActive;
         }
+    }
+
+    public static class ClusterConfig {
+        private int testSocketTimeoutMs = 150;
+        private final Redis redis = new Redis();
+        private final Nacos nacos = new Nacos();
+
+        public int getTestSocketTimeoutMs() {
+            return testSocketTimeoutMs;
+        }
+
+        public void setTestSocketTimeoutMs(int testSocketTimeoutMs) {
+            this.testSocketTimeoutMs = testSocketTimeoutMs;
+        }
+
+        private DiscoveryEnum discovery = DiscoveryEnum.DISABLE;
+        private String groupName = "def";
+
+        public Nacos getNacos() {
+            return nacos;
+        }
+
+        public void setDiscovery(DiscoveryEnum discovery) {
+            this.discovery = discovery;
+        }
+
+        public DiscoveryEnum getDiscovery() {
+            return discovery;
+        }
+
+        public String getGroupName() {
+            return groupName;
+        }
+
+        public void setGroupName(String groupName) {
+            this.groupName = groupName;
+        }
+
+        public Redis getRedis() {
+            return redis;
+        }
+
+        public static class Redis {
+            private String redisConnectionFactoryBeanName = "redisConnectionFactory";
+            private String redisKeyRootPrefix = "dts:";
+            private int redisInstanceExpireSec = 10;
+
+            public String getRedisConnectionFactoryBeanName() {
+                return redisConnectionFactoryBeanName;
+            }
+
+            public void setRedisConnectionFactoryBeanName(String redisConnectionFactoryBeanName) {
+                this.redisConnectionFactoryBeanName = redisConnectionFactoryBeanName;
+            }
+
+            public String getRedisKeyRootPrefix() {
+                return redisKeyRootPrefix;
+            }
+
+            public void setRedisKeyRootPrefix(String redisKeyRootPrefix) {
+                this.redisKeyRootPrefix = redisKeyRootPrefix;
+            }
+
+            public int getRedisInstanceExpireSec() {
+                return redisInstanceExpireSec;
+            }
+
+            public void setRedisInstanceExpireSec(int redisInstanceExpireSec) {
+                this.redisInstanceExpireSec = redisInstanceExpireSec;
+            }
+
+        }
+
+        public static class Nacos {
+            private String serverAddr = "${nacos.discovery.server-addr:${nacos.config.server-addr:${spring.cloud.nacos.server-addr:${spring.cloud.nacos.discovery.server-addr:${spring.cloud.nacos.config.server-addr:}}}}}";
+            private String namespace = "${nacos.discovery.namespace:${nacos.config.namespace:${spring.cloud.nacos.namespace:${spring.cloud.nacos.discovery.namespace:${spring.cloud.nacos.config.namespace:}}}}}";
+            private String serviceName = "${spring.application.name:sse-server}";
+            private String clusterName = "${nacos.discovery.clusterName:${nacos.config.clusterName:${spring.cloud.nacos.clusterName:${spring.cloud.nacos.discovery.clusterName:${spring.cloud.nacos.config.clusterName:DEFAULT}}}}}";
+            private Properties properties = new Properties();
+
+            public Properties buildProperties() {
+                Properties properties = new Properties();
+                properties.putAll(this.properties);
+                if (serverAddr != null && !serverAddr.isEmpty()) {
+                    properties.put("serverAddr", serverAddr);
+                }
+                if (namespace != null && !namespace.isEmpty()) {
+                    properties.put("namespace", namespace);
+                }
+                return properties;
+            }
+
+            public String getServerAddr() {
+                return serverAddr;
+            }
+
+            public void setServerAddr(String serverAddr) {
+                this.serverAddr = serverAddr;
+            }
+
+            public String getNamespace() {
+                return namespace;
+            }
+
+            public void setNamespace(String namespace) {
+                this.namespace = namespace;
+            }
+
+            public String getServiceName() {
+                return serviceName;
+            }
+
+            public void setServiceName(String serviceName) {
+                this.serviceName = serviceName;
+            }
+
+            public String getClusterName() {
+                return clusterName;
+            }
+
+            public void setClusterName(String clusterName) {
+                this.clusterName = clusterName;
+            }
+
+            public Properties getProperties() {
+                return properties;
+            }
+
+            public void setProperties(Properties properties) {
+                this.properties = properties;
+            }
+        }
+
     }
 
     public static class CanalAdapter {
@@ -670,6 +808,13 @@ public class CanalConfig {
         public void setOuterAdaptersMap(Map<String, OuterAdapterConfig> outerAdaptersMap) {
             this.outerAdaptersMap = outerAdaptersMap;
         }
+    }
+
+    public enum DiscoveryEnum {
+        AUTO,
+        REDIS,
+        NACOS,
+        DISABLE
     }
 
 }

@@ -25,9 +25,6 @@ public interface ESBulkRequest {
 
     interface ESIndexRequest extends ESRequest {
 
-        ESIndexRequest setSource(Map<String, ?> source);
-
-        ESIndexRequest setRouting(String routing);
     }
 
     interface ESUpdateByQueryRequest extends ESRequest {
@@ -37,13 +34,6 @@ public interface ESBulkRequest {
 
     interface ESUpdateRequest extends ESRequest {
 
-        ESUpdateRequest setDoc(Map source);
-
-        ESUpdateRequest setDocAsUpsert(boolean shouldUpsertDoc);
-
-        ESUpdateRequest setRouting(String routing);
-
-        ESUpdateRequest setScript(Script script);
     }
 
     interface ESRequest {

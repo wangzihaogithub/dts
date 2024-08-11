@@ -5,7 +5,6 @@ import com.github.dts.util.SchemaItem.FieldItem;
 import com.google.common.collect.Lists;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.cluster.metadata.MappingMetaData;
-import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.index.query.RangeQueryBuilder;
 import org.elasticsearch.search.SearchHit;
@@ -76,9 +75,9 @@ public class ES7xTemplate implements ESTemplate {
     public void insert(ESMapping mapping, Object pkVal, Map<String, Object> esFieldData, BulkRequestList bulkRequestList) {
         setterIndexUpdatedTime(mapping, esFieldData);
 
-        esFieldData = convertType(esFieldData, mapping);
+        esFieldData = copyAndConvertType(esFieldData, mapping);
         ESBulkRequest.ESUpdateRequest updateRequest = new ES7xConnection.ES7xUpdateRequest(mapping.get_index(),
-                pkVal.toString()).setDoc(esFieldData).setDocAsUpsert(true);
+                pkVal.toString(), esFieldData, true);
         addRequest(updateRequest, bulkRequestList);
     }
 
@@ -108,9 +107,9 @@ public class ES7xTemplate implements ESTemplate {
         Map<String, Object> esFieldDataConvert;
         if (parentFieldName == null) {
             esFieldDataTmp.putAll(esFieldData);
-            esFieldDataConvert = convertType(esFieldDataTmp, mapping);
+            esFieldDataConvert = copyAndConvertType(esFieldDataTmp, mapping);
         } else {
-            esFieldDataConvert = convertType(esFieldDataTmp, mapping);
+            esFieldDataConvert = copyAndConvertType(esFieldDataTmp, mapping);
             if (esFieldDataConvert != null) {
                 esFieldDataConvert = new LinkedHashMap<>(esFieldDataConvert);
                 esFieldDataConvert.putAll(esFieldData);
@@ -120,15 +119,14 @@ public class ES7xTemplate implements ESTemplate {
     }
 
     private void setterIndexUpdatedTime(ESMapping mapping, Map<String, Object> esFieldData) {
-        String indexUpdatedTime = mapping.getIndexUpdatedTime();
-        if (indexUpdatedTime != null && !indexUpdatedTime.isEmpty()) {
-            esFieldData.put(indexUpdatedTime, new Timestamp(System.currentTimeMillis()));
+        if (mapping.isSetIndexUpdatedTime()) {
+            esFieldData.put(mapping.getIndexUpdatedTime(), new Timestamp(System.currentTimeMillis()));
         }
     }
 
     @Override
-    public BulkRequestList newBulkRequestList(BulkPriorityEnum priorityEnum) {
-        return new BulkRequestListImpl(priorityEnum);
+    public BulkRequestListImpl newBulkRequestList(BulkPriorityEnum priorityEnum) {
+        return new BulkRequestListImpl(priorityEnum, new ConcurrentHashMap<>());
     }
 
     /**
@@ -152,7 +150,7 @@ public class ES7xTemplate implements ESTemplate {
             ESMapping mapping = config.getEsMapping();
             setterIndexUpdatedTime(mapping, esFieldData);
 
-            Map<String, Object> esFieldDataTmp = convertType(esFieldData, mapping);
+            Map<String, Object> esFieldDataTmp = copyAndConvertType(esFieldData, mapping);
 
             // 查询sql批量更新
             DataSource ds = CanalConfig.DatasourceConfig.getDataSource(config.getDataSourceKey());
@@ -168,7 +166,7 @@ public class ES7xTemplate implements ESTemplate {
                 try {
                     while (rs.next()) {
                         Object idVal = getIdValFromRS(mapping, rs);
-                        append4Update(mapping, idVal, esFieldDataTmp, bulkRequestList);
+                        append4Update(mapping, idVal, new LinkedHashMap<>(esFieldDataTmp), bulkRequestList);
                         count++;
                     }
                 } catch (Exception e) {
@@ -379,16 +377,30 @@ public class ES7xTemplate implements ESTemplate {
             for (String[] pkArr : p) {
                 for (Map.Entry<String, Object> entry : esFieldData.entrySet()) {
                     String fieldName = entry.getKey();
-                    if (mapping.isUpdateByQuerySkipIndexUpdatedTime() && esFieldData.size() > 1 && fieldName.equals(mapping.getIndexUpdatedTime())) {
+                    if (mapping.isUpdateByQuerySkipIndexUpdatedTime()
+                            && mapping.isSetIndexUpdatedTime()
+                            && esFieldData.size() > 1
+                            && fieldName.equals(mapping.getIndexUpdatedTime())) {
                         continue;
                     }
                     addRequest(ES7xConnection.ES7xUpdateByQueryRequest.byIds(mapping.get_index(), pkArr, fieldName, entry.getValue()), bulkRequestList);
                 }
             }
         } else {
-            ES7xConnection.ES7xUpdateRequest esUpdateRequest = new ES7xConnection.ES7xUpdateRequest(mapping.get_index(),
-                    pkVal.toString()).setDoc(esFieldData).setDocAsUpsert(mapping.isUpsert());
+            String pkToString = pkVal.toString();
+            String index = mapping.get_index();
+            ES7xConnection.ES7xUpdateRequest esUpdateRequest = new ES7xConnection.ES7xUpdateRequest(index,
+                    pkToString, esFieldData, mapping.isUpsert());
+            trimRemoveIndexUpdateTime(mapping, bulkRequestList, esFieldData, index, pkToString);
             addRequest(esUpdateRequest, bulkRequestList);
+        }
+    }
+
+    private static void trimRemoveIndexUpdateTime(ESMapping mapping, BulkRequestList bulkRequestList, Map<String, Object> esFieldData, String index, String pkToString) {
+        if (mapping.isSetIndexUpdatedTime() && bulkRequestList instanceof BulkRequestListImpl) {
+            if (((BulkRequestListImpl) bulkRequestList).containsUpdate(index, pkToString)) {
+                esFieldData.remove(mapping.getIndexUpdatedTime());
+            }
         }
     }
 
@@ -582,8 +594,8 @@ public class ES7xTemplate implements ESTemplate {
         return resultIdVal;
     }
 
-    private Map<String, Object> convertType(Map<String, Object> mysqlData, ESMapping mapping) {
-        return ESSyncUtil.convertType(mysqlData, getEsType(mapping));
+    private Map<String, Object> copyAndConvertType(Map<String, Object> mysqlData, ESMapping mapping) {
+        return ESSyncUtil.copyAndConvertType(mysqlData, getEsType(mapping));
     }
 
     private ESFieldTypesCache getEsType(ESMapping mapping) {
@@ -692,9 +704,11 @@ public class ES7xTemplate implements ESTemplate {
         private final List<ESBulkRequest.ESRequest> requests = new ArrayList<>();
         private final BulkPriorityEnum priorityEnum;
         private int size = 0;
+        private final Map<String, Set<String>> indexPkUpdateMap;
 
-        public BulkRequestListImpl(BulkPriorityEnum priorityEnum) {
+        public BulkRequestListImpl(BulkPriorityEnum priorityEnum, Map<String, Set<String>> indexPkUpdateMap) {
             this.priorityEnum = priorityEnum;
+            this.indexPkUpdateMap = indexPkUpdateMap;
         }
 
         @Override
@@ -707,12 +721,23 @@ public class ES7xTemplate implements ESTemplate {
                     size++;
                 }
             }
+            if (request instanceof ES7xConnection.ES7xUpdateRequest) {
+                ES7xConnection.ES7xUpdateRequest u = ((ES7xConnection.ES7xUpdateRequest) request);
+                indexPkUpdateMap.computeIfAbsent(u.getIndex(),
+                                e -> Collections.newSetFromMap(new ConcurrentHashMap<>()))
+                        .add(u.getId());
+            }
             if (isMaxBatchSize(size)) {
                 int bulk = bulk(this);
                 if (bulk > 0) {
                     ES7xTemplate.this.commit();
                 }
             }
+        }
+
+        public boolean containsUpdate(String index, String id) {
+            Set<String> strings = indexPkUpdateMap.get(index);
+            return strings != null && strings.contains(id);
         }
 
         List<ESBulkRequest.ESRequest> drainTo() {
@@ -741,6 +766,20 @@ public class ES7xTemplate implements ESTemplate {
                 esTemplate.bulk(this);
                 esTemplate.commit();
             }
+        }
+
+        @Override
+        public BulkRequestList fork(BulkRequestList bulkRequestList) {
+            Map<String, Set<String>> map = new ConcurrentHashMap<>(indexPkUpdateMap);
+            if (bulkRequestList instanceof BulkRequestListImpl) {
+                map.putAll(((BulkRequestListImpl) bulkRequestList).indexPkUpdateMap);
+            }
+            return new BulkRequestListImpl(priorityEnum, map);
+        }
+
+        @Override
+        public BulkRequestList fork(BulkPriorityEnum priorityEnum) {
+            return new BulkRequestListImpl(priorityEnum, indexPkUpdateMap);
         }
 
         @Override

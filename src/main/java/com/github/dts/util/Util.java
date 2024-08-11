@@ -12,12 +12,10 @@ import java.io.StringWriter;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.URL;
+import java.nio.charset.Charset;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
-import java.util.Date;
-import java.util.Enumeration;
-import java.util.Objects;
-import java.util.TimeZone;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.BiFunction;
 import java.util.stream.Stream;
@@ -51,6 +49,26 @@ public class Util {
         throw (E) t;
     }
 
+    public static String encodeBasicAuth(String username, String password, Charset charset) {
+        String credentialsString = username + ":" + password;
+        byte[] encodedBytes = Base64.getEncoder().encode(credentialsString.getBytes(charset));
+        return new String(encodedBytes, charset);
+    }
+
+    public static String filterNonAscii(String str) {
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < str.length(); i++) {
+            char c = str.charAt(i);
+            if (c == '"') {
+                builder.append('\'');
+            } else if (c == ':') {
+                builder.append('-');
+            } else if (c >= 32 && c <= 126) {
+                builder.append(c);
+            }
+        }
+        return builder.toString();
+    }
 
     public static String getStackTrace(Throwable throwable) {
         StringWriter sw = new StringWriter();
@@ -97,15 +115,15 @@ public class Util {
         return !isBlank(str);
     }
 
-    public static String getIPAddress() {
+    public static String getIPAddressPort() {
         if (port != null && port > 0) {
-            return getIPAddress0() + ":" + port;
+            return getIPAddress() + ":" + port;
         } else {
-            return getIPAddress0();
+            return getIPAddress();
         }
     }
 
-    public static String getIPAddress0() {
+    public static String getIPAddress() {
         if (ipAddress != null) {
             return ipAddress;
         } else {

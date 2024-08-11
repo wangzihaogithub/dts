@@ -18,6 +18,7 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
     private final Timestamp timestamp;
     private final JoinByParentSlaveTableForeignKey joinForeignKey = new JoinByParentSlaveTableForeignKey();
     private final JoinBySlaveTable joinBySlaveTable = new JoinBySlaveTable();
+    private final ESTemplate.BulkRequestList bulkRequestList;
     private final int cacheMaxSize;
     private final int chunkSize;
     private final int streamChunkSize;
@@ -26,18 +27,21 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
 
     NestedSlaveTableRunnable(List<Dependent> updateDmlList,
                              ES7xTemplate es7xTemplate,
+                             ESTemplate.BulkRequestList bulkRequestList,
                              int cacheMaxSize, Timestamp timestamp, int chunkSize, int streamChunkSize) {
-        this(updateDmlList, es7xTemplate, cacheMaxSize, timestamp, chunkSize, streamChunkSize, null, null);
+        this(updateDmlList, es7xTemplate, bulkRequestList, cacheMaxSize, timestamp, chunkSize, streamChunkSize, null, null);
     }
 
     NestedSlaveTableRunnable(List<Dependent> updateDmlList,
                              ES7xTemplate es7xTemplate,
+                             ESTemplate.BulkRequestList bulkRequestList,
                              int cacheMaxSize, Timestamp timestamp, int chunkSize, int streamChunkSize,
                              NestedSlaveTableRunnable oldRun, NestedSlaveTableRunnable newRun) {
         this.timestamp = timestamp == null ? new Timestamp(System.currentTimeMillis()) : timestamp;
         this.updateDmlList = updateDmlList;
         this.es7xTemplate = es7xTemplate;
         this.chunkSize = chunkSize;
+        this.bulkRequestList = bulkRequestList;
         this.streamChunkSize = streamChunkSize;
         this.cacheMaxSize = cacheMaxSize;
         this.oldRun = oldRun;
@@ -49,6 +53,7 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
         dmlList.addAll(oldRun.updateDmlList);
         dmlList.addAll(newRun.updateDmlList);
         return new NestedSlaveTableRunnable(dmlList, oldRun.es7xTemplate,
+                oldRun.bulkRequestList.fork(newRun.bulkRequestList),
                 oldRun.cacheMaxSize, oldRun.timestamp, oldRun.chunkSize, oldRun.streamChunkSize,
                 oldRun, newRun);
     }
@@ -59,10 +64,10 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
 
     @Override
     public void run() {
-        CacheMap cacheMap = new CacheMap(chunkSize);
+        CacheMap cacheMap = new CacheMap(cacheMaxSize);
         parseSql(chunkSize, cacheMap);
         try {
-            ESTemplate.BulkRequestList bulkRequestList = es7xTemplate.newBulkRequestList(BulkPriorityEnum.LOW);
+            ESTemplate.BulkRequestList bulkRequestList = this.bulkRequestList.fork(BulkPriorityEnum.LOW);
             if (!joinBySlaveTable.nestedMainSqlList.isEmpty()) {
                 List<MergeJdbcTemplateSQL<DependentSQL>> merge = MergeJdbcTemplateSQL.merge(joinBySlaveTable.nestedMainSqlList, chunkSize);
                 MergeJdbcTemplateSQL.executeQueryList(merge, cacheMap, (sql, list) -> NestedFieldWriter.executeEsTemplateUpdate(bulkRequestList, es7xTemplate, sql, list));
@@ -184,7 +189,7 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
         Map<String, List<String>> joinColumnList = getOnChildChangeWhereSqlColumnList(dependent);
         for (List<String> columnItem : joinColumnList.values()) {
             for (String column : columnItem) {
-                ESSyncUtil.appendConditionByExpr(condition, "#{" + column + "}", dependent.getIndexMainTable().getAlias(), column, and);
+                ESSyncUtil.appendConditionByExpr(condition, SQL.wrapPlaceholder(column), dependent.getIndexMainTable().getAlias(), column, and);
             }
         }
         int len = condition.length();
@@ -208,7 +213,7 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
         StringBuilder condition = new StringBuilder();
         String and = " AND ";
         for (String pkName : dml.getPkNames()) {
-            ESSyncUtil.appendConditionByExpr(condition, "#{" + pkName + "}", tableItem.getAlias(), pkName, and);
+            ESSyncUtil.appendConditionByExpr(condition, SQL.wrapPlaceholder(pkName), tableItem.getAlias(), pkName, and);
         }
         int len = condition.length();
         condition.delete(len - and.length(), len);
