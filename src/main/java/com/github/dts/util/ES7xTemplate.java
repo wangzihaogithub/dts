@@ -304,11 +304,13 @@ public class ES7xTemplate implements ESTemplate {
 
     /**
      * 提交批次
+     *
+     * @return ESBulkResponse
      */
     @Override
-    public void commit() {
+    public ESBulkRequest.ESBulkResponse commit() {
         if (esBulkRequest.isEmpty()) {
-            return;
+            return ES7xConnection.EMPTY_RESPONSE;
         }
         long timestamp = System.currentTimeMillis();
         ESBulkRequest.ESBulkResponse response = esBulkRequest.bulk();
@@ -322,6 +324,7 @@ public class ES7xTemplate implements ESTemplate {
             }
             response.processFailBulkResponse("ES7 sync commit error. ");
         }
+        return response;
     }
 
     @Override
@@ -760,11 +763,17 @@ public class ES7xTemplate implements ESTemplate {
         }
 
         @Override
-        public void commit(ESTemplate esTemplate) {
-            esTemplate.commit();
+        public void commit(ESTemplate esTemplate, CommitListener listener) {
+            ESBulkRequest.ESBulkResponse commit = esTemplate.commit();
+            if (listener != null && !commit.isEmpty()) {
+                listener.done(commit);
+            }
             if (!requests.isEmpty()) {
                 esTemplate.bulk(this);
-                esTemplate.commit();
+                ESBulkRequest.ESBulkResponse commit1 = esTemplate.commit();
+                if (listener != null && !commit1.isEmpty()) {
+                    listener.done(commit1);
+                }
             }
         }
 

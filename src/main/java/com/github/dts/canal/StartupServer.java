@@ -107,7 +107,7 @@ public class StartupServer implements ApplicationRunner {
         if (discoveryService != null) {
             String ip = Util.getIPAddress();
             Integer port = env.getProperty("server.port", Integer.class, 8080);
-            discoveryService.registerInstance(ip, port);
+            discoveryService.registerServerInstance(ip, port);
         } else {
             log.info("discoveryService is disabled");
         }
@@ -126,7 +126,7 @@ public class StartupServer implements ApplicationRunner {
                 for (CanalConfig.OuterAdapterConfig config : connectorGroup.getOuterAdapters()) {
                     config.setCanalAdapter(canalAdapter);
                     config.setConnectorGroup(connectorGroup);
-                    adapterList.add(loadAdapter(canalAdapter, config, env));
+                    adapterList.add(loadAdapter(canalAdapter, config, discoveryService, env));
                 }
             }
 
@@ -139,7 +139,10 @@ public class StartupServer implements ApplicationRunner {
         }
     }
 
-    private Adapter loadAdapter(CanalConfig.CanalAdapter canalAdapter, CanalConfig.OuterAdapterConfig config, Environment env) {
+    private Adapter loadAdapter(CanalConfig.CanalAdapter canalAdapter,
+                                CanalConfig.OuterAdapterConfig config,
+                                DiscoveryService discoveryService,
+                                Environment env) {
         try {
             Properties evnProperties = null;
             if (env instanceof StandardEnvironment) {
@@ -168,7 +171,7 @@ public class StartupServer implements ApplicationRunner {
                     throw new IllegalArgumentException("adapter");
                 }
                 adapterMap.put(name, adapter);
-                adapter.init(canalAdapter, config, evnProperties);
+                adapter.init(canalAdapter, config, evnProperties, discoveryService);
                 log.info("Load canal adapter: {} succeed", config.getName());
             }
             return adapter;

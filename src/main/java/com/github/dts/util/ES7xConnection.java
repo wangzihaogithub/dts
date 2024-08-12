@@ -190,6 +190,8 @@ public class ES7xConnection {
         }
     }
 
+    public static final ES7xBulkResponse EMPTY_RESPONSE = new ES7xBulkResponse(Collections.emptyList());
+
     public static class ES7xBulkResponse implements ESBulkRequest.ESBulkResponse {
 
         private final List<BulkRequestResponse> bulkResponse;
@@ -439,6 +441,7 @@ public class ES7xConnection {
 
     public static class BulkRequestResponse {
         private final ConcurrentBulkRequest request;
+        private final List<DocWriteRequest<?>> requests;
         private final long estimatedSizeInBytes;
         private final long totalEstimatedSizeInBytes;
         private final List<UpdateByQuery> updateByQueryList = new ArrayList<>();
@@ -446,6 +449,7 @@ public class ES7xConnection {
 
         public BulkRequestResponse(ConcurrentBulkRequest request) {
             this.request = request;
+            this.requests = request.requests();
             this.estimatedSizeInBytes = request.estimatedSizeInBytes();
             this.totalEstimatedSizeInBytes = request.totalEstimatedSizeInBytes();
         }

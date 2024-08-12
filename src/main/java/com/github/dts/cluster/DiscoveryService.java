@@ -1,5 +1,6 @@
 package com.github.dts.cluster;
 
+import com.github.dts.cluster.redis.RedisDiscoveryService;
 import com.github.dts.util.*;
 import com.sun.net.httpserver.HttpPrincipal;
 import org.springframework.beans.factory.ListableBeanFactory;
@@ -42,37 +43,64 @@ public interface DiscoveryService {
         }
     }
 
-    HttpPrincipal login(String authorization);
+    HttpPrincipal loginServer(String authorization);
 
-    void registerInstance(String ip, int port);
+    void registerServerInstance(String ip, int port);
 
-    ReferenceCounted<List<ServerInstanceClient>> getClientListRef();
+    <E extends ServerInstanceClient> ReferenceCounted<List<E>> getServerListRef();
 
-    void addListener(Listener listener);
+    <E extends SdkInstanceClient> ReferenceCounted<List<E>> getSdkListRef();
 
-    interface Listener {
-        void onChange(ReferenceCounted<ChangeEvent> event);
+    void addServerListener(ServerListener serverListener);
+
+    void addSdkListener(SdkListener serverListener);
+
+    interface ServerListener {
+        <E extends ServerInstanceClient> void onChange(ReferenceCounted<ServerChangeEvent<E>> event);
     }
 
-    class ChangeEvent {
+    interface SdkListener {
+        <E extends SdkInstanceClient> void onChange(ReferenceCounted<SdkChangeEvent<E>> event);
+    }
+
+    class ServerChangeEvent<E extends ServerInstanceClient> {
         // 首次=0，从0开始计数
         public int updateInstanceCount;
-        public final List<ServerInstanceClient> before;
-        public final List<ServerInstanceClient> after;
-        public final ServerInstanceClient beforeLocalDevice;
-        public final ServerInstanceClient afterLocalDevice;
-        public final DifferentComparatorUtil.ListDiffResult<ServerInstanceClient> diff;
+        public final List<E> before;
+        public final List<E> after;
+        public final E beforeLocalDevice;
+        public final E afterLocalDevice;
+        public final DifferentComparatorUtil.ListDiffResult<E> diff;
 
-        public ChangeEvent(int updateInstanceCount,
-                           List<ServerInstanceClient> before, List<ServerInstanceClient> after) {
+        public ServerChangeEvent(int updateInstanceCount,
+                                 List<E> before, List<E> after) {
             this.updateInstanceCount = updateInstanceCount;
             this.before = before;
             this.after = after;
-            List<ServerInstanceClient> beforeConnectedList = before.stream().filter(ServerInstanceClient::isSocketConnected).collect(Collectors.toList());
-            List<ServerInstanceClient> afterConnectedList = before.stream().filter(ServerInstanceClient::isSocketConnected).collect(Collectors.toList());
+            List<E> beforeConnectedList = before.stream().filter(ServerInstanceClient::isSocketConnected).collect(Collectors.toList());
+            List<E> afterConnectedList = before.stream().filter(ServerInstanceClient::isSocketConnected).collect(Collectors.toList());
             this.beforeLocalDevice = before.stream().filter(ServerInstanceClient::isLocalDevice).findFirst().orElse(null);
             this.afterLocalDevice = after.stream().filter(ServerInstanceClient::isLocalDevice).findFirst().orElse(null);
-            this.diff = DifferentComparatorUtil.listDiff(beforeConnectedList, afterConnectedList, ServerInstanceClient::getAccount);
+            this.diff = DifferentComparatorUtil.listDiff(beforeConnectedList, afterConnectedList, E::getAccount);
+        }
+
+    }
+
+    class SdkChangeEvent<E extends SdkInstanceClient> {
+        // 首次=0，从0开始计数
+        public int updateInstanceCount;
+        public final List<E> before;
+        public final List<E> after;
+        public final DifferentComparatorUtil.ListDiffResult<E> diff;
+
+        public SdkChangeEvent(int updateInstanceCount,
+                              List<E> before, List<E> after) {
+            this.updateInstanceCount = updateInstanceCount;
+            this.before = before;
+            this.after = after;
+            List<E> beforeConnectedList = before.stream().filter(E::isSocketConnected).collect(Collectors.toList());
+            List<E> afterConnectedList = before.stream().filter(E::isSocketConnected).collect(Collectors.toList());
+            this.diff = DifferentComparatorUtil.listDiff(beforeConnectedList, afterConnectedList, E::getAccount);
         }
 
     }

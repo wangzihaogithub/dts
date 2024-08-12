@@ -2,7 +2,7 @@ package com.github.dts.cluster;
 
 import com.github.dts.util.CanalConfig;
 
-public abstract class ServerInstanceClient {
+public abstract class SdkInstanceClient {
     /**
      * 集群中的下标
      */
@@ -12,36 +12,26 @@ public abstract class ServerInstanceClient {
      */
     private final int total;
 
-    private final ServerInstance serverInstance;
-    /**
-     * 是否是自己
-     */
-    private final boolean localDevice;
+    private final SdkInstance sdkInstance;
     /**
      * 网络是否可以连上
      */
     private final boolean socketConnected;
     private final CanalConfig.ClusterConfig clusterConfig;
 
-    public ServerInstanceClient(int index,
-                                int total,
-                                boolean localDevice,
-                                boolean socketConnected,
-                                ServerInstance serverInstance, CanalConfig.ClusterConfig clusterConfig) {
+    public SdkInstanceClient(int index,
+                             int total,
+                             boolean socketConnected,
+                             SdkInstance sdkInstance, CanalConfig.ClusterConfig clusterConfig) {
         this.index = index;
         this.total = total;
-        this.localDevice = localDevice;
         this.socketConnected = socketConnected;
-        this.serverInstance = serverInstance;
+        this.sdkInstance = sdkInstance;
         this.clusterConfig = clusterConfig;
     }
 
     public String getAccount() {
-        return serverInstance.getAccount();
-    }
-
-    public boolean isLocalDevice() {
-        return localDevice;
+        return sdkInstance.getAccount();
     }
 
     public boolean isSocketConnected() {
@@ -56,8 +46,8 @@ public abstract class ServerInstanceClient {
         return index;
     }
 
-    public ServerInstance getServerInstance() {
-        return serverInstance;
+    public SdkInstance getSdkInstance() {
+        return sdkInstance;
     }
 
     public void close() {
@@ -66,9 +56,8 @@ public abstract class ServerInstanceClient {
 
     @Override
     public String toString() {
-        return "ServerInstanceClient{" +
+        return "SdkInstanceClient{" +
                 index + "/" + total +
-                ", localDevice=" + localDevice +
                 ", socketConnected=" + socketConnected +
                 '}';
     }

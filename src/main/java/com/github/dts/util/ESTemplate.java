@@ -66,8 +66,10 @@ public interface ESTemplate extends AutoCloseable {
 
     /**
      * 提交批次
+     *
+     * @return ESBulkResponse
      */
-    void commit();
+    ESBulkRequest.ESBulkResponse commit();
 
     /**
      * 刷盘
@@ -120,11 +122,32 @@ public interface ESTemplate extends AutoCloseable {
 
         int size();
 
-        void commit(ESTemplate esTemplate);
+        default void commit(ESTemplate esTemplate) {
+            commit(esTemplate, null);
+        }
+
+        void commit(ESTemplate esTemplate, CommitListener listener);
 
         BulkRequestList fork(BulkRequestList bulkRequestList);
 
         BulkRequestList fork(BulkPriorityEnum priorityEnum);
+    }
+
+    interface CommitListener {
+        void done(ESBulkRequest.ESBulkResponse response);
+    }
+
+    static CommitListener merge(CommitListener listener1, CommitListener listener2) {
+        if (listener1 == listener2) {
+            return listener1;
+        }
+        if (listener1 != null && listener2 != null) {
+            return response -> {
+                listener1.done(response);
+                listener2.done(response);
+            };
+        }
+        return listener1 != null ? listener1 : listener2;
     }
 
     class ESSearchResponse {

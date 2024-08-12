@@ -24,19 +24,24 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
     private final NestedMainJoinTableRunnable newRun;
     private final ESTemplate.BulkRequestList bulkRequestList;
 
+    private final ESTemplate.CommitListener commitListener;
+
     NestedMainJoinTableRunnable(List<Dependent> dmlList, ES7xTemplate es7xTemplate,
                                 ESTemplate.BulkRequestList bulkRequestList,
+                                ESTemplate.CommitListener commitListener,
                                 int maxIdInCount, int streamChunkSize, Timestamp maxTimestamp) {
-        this(dmlList, es7xTemplate, bulkRequestList, maxIdInCount, streamChunkSize, maxTimestamp, null, null);
+        this(dmlList, es7xTemplate, bulkRequestList, commitListener, maxIdInCount, streamChunkSize, maxTimestamp, null, null);
     }
 
     NestedMainJoinTableRunnable(List<Dependent> dmlList, ES7xTemplate es7xTemplate,
                                 ESTemplate.BulkRequestList bulkRequestList,
+                                ESTemplate.CommitListener commitListener,
                                 int maxIdInCount, int streamChunkSize, Timestamp maxTimestamp,
                                 NestedMainJoinTableRunnable oldRun,
                                 NestedMainJoinTableRunnable newRun) {
         this.dmlList = dmlList;
         this.es7xTemplate = es7xTemplate;
+        this.commitListener = commitListener;
         this.maxIdInCount = maxIdInCount;
         this.bulkRequestList = bulkRequestList;
         this.streamChunkSize = streamChunkSize;
@@ -51,6 +56,7 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
         dmlList.addAll(newRun.dmlList);
         return new NestedMainJoinTableRunnable(dmlList, oldRun.es7xTemplate,
                 oldRun.bulkRequestList.fork(newRun.bulkRequestList),
+                ESTemplate.merge(oldRun.commitListener, newRun.commitListener),
                 oldRun.maxIdInCount, oldRun.streamChunkSize, oldRun.maxTimestamp,
                 oldRun, newRun);
     }

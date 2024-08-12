@@ -1,5 +1,7 @@
 package com.github.dts.util;
 
+import com.github.dts.cluster.DiscoveryService;
+
 import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
@@ -19,7 +21,9 @@ public interface Adapter {
      * @param configuration 外部适配器配置信息
      * @param envProperties 环境变量的配置属性
      */
-    void init(CanalConfig.CanalAdapter canalAdapter, CanalConfig.OuterAdapterConfig configuration, Properties envProperties);
+    void init(CanalConfig.CanalAdapter canalAdapter,
+              CanalConfig.OuterAdapterConfig configuration, Properties envProperties,
+              DiscoveryService discoveryService);
 
     /**
      * 往适配器中同步数据

@@ -1,5 +1,6 @@
 package com.github.dts.impl.elasticsearch7x;
 
+import com.github.dts.cluster.DiscoveryService;
 import com.github.dts.impl.elasticsearch7x.basic.ESSyncConfigSQL;
 import com.github.dts.util.*;
 import org.slf4j.Logger;
@@ -40,10 +41,19 @@ public class ES7xAdapter implements Adapter {
     private int joinUpdateSize = 10;
     private int streamChunkSize = 10000;
     private int maxIdIn = 1000;
+    private ESTemplate.CommitListener connectorCommitListener;
 
     @Override
-    public void init(CanalConfig.CanalAdapter canalAdapter, CanalConfig.OuterAdapterConfig configuration, Properties envProperties) {
+    public void init(CanalConfig.CanalAdapter canalAdapter,
+                     CanalConfig.OuterAdapterConfig configuration, Properties envProperties,
+                     DiscoveryService discoveryService) {
         this.configuration = configuration;
+        this.connectorCommitListener = new ESTemplate.CommitListener() {
+            @Override
+            public void done(ESBulkRequest.ESBulkResponse response) {
+
+            }
+        };
         this.cacheMap = new CacheMap(configuration.getEs7x().getMaxQueryCacheSize());
         this.joinUpdateSize = configuration.getEs7x().getJoinUpdateSize();
         this.streamChunkSize = configuration.getEs7x().getStreamChunkSize();
@@ -102,11 +112,13 @@ public class ES7xAdapter implements Adapter {
 
     @Override
     public CompletableFuture<Void> sync(List<Dml> dmls) {
-        return sync(dmls, refresh, autoUpdateChildren, false, joinUpdateSize, null);
+        return sync(dmls, refresh, autoUpdateChildren, false, joinUpdateSize, null, connectorCommitListener);
     }
 
     public CompletableFuture<Void> sync(List<Dml> dmls, boolean refresh, boolean autoUpdateChildren,
-                                        boolean onlyCurrentIndex, int joinUpdateSize, Collection<String> onlyFieldName) {
+                                        boolean onlyCurrentIndex, int joinUpdateSize,
+                                        Collection<String> onlyFieldName,
+                                        ESTemplate.CommitListener commitListener) {
         if (dmls == null || dmls.isEmpty()) {
             return CompletableFuture.completedFuture(null);
         }
@@ -146,7 +158,7 @@ public class ES7xAdapter implements Adapter {
         } finally {
             basicFieldWriterCost = System.currentTimeMillis() - timestamp;
             cacheMap.cacheClear();
-            bulkRequestList.commit(esTemplate);
+            bulkRequestList.commit(esTemplate, commitListener);
 
             // refresh
             if (refresh) {
@@ -159,6 +171,7 @@ public class ES7xAdapter implements Adapter {
 
         List<CompletableFuture<?>> futures = asyncRunDependent(maxTimestamp, joinUpdateSize,
                 bulkRequestList,
+                commitListener,
                 dependentGroup.getMainTableJoinDependentList(), dependentGroup.getSlaveTableDependentList());
 
         try {
@@ -174,7 +187,7 @@ public class ES7xAdapter implements Adapter {
                     System.currentTimeMillis() - timestamp,
                     maxTimestamp, tables);
             cacheMap.cacheClear();
-            bulkRequestList.commit(esTemplate);
+            bulkRequestList.commit(esTemplate, commitListener);
         }
 
         // call listeners
@@ -185,7 +198,7 @@ public class ES7xAdapter implements Adapter {
                 Util.sneakyThrows(e);
             } finally {
                 cacheMap.cacheClear();
-                bulkRequestList.commit(esTemplate); // 批次统一提交
+                bulkRequestList.commit(esTemplate, commitListener); // 批次统一提交
             }
         }
 
@@ -215,6 +228,7 @@ public class ES7xAdapter implements Adapter {
     private List<CompletableFuture<?>> asyncRunDependent(Timestamp maxTimestamp,
                                                          int joinUpdateSize,
                                                          ESTemplate.BulkRequestList bulkRequestList,
+                                                         ESTemplate.CommitListener commitListener,
                                                          List<Dependent> mainTableJoinDependentList,
                                                          List<Dependent> slaveTableDependentList) {
         List<CompletableFuture<?>> futures = new ArrayList<>();
@@ -224,6 +238,7 @@ public class ES7xAdapter implements Adapter {
             NestedMainJoinTableRunnable runnable = new NestedMainJoinTableRunnable(
                     mainTableJoinDependentList, esTemplate,
                     bulkRequestList,
+                    commitListener,
                     joinUpdateSize, streamChunkSize, maxTimestamp);
             futures.add(runnable);
             mainJoinTableExecutor.execute(runnable);
@@ -237,6 +252,7 @@ public class ES7xAdapter implements Adapter {
             NestedSlaveTableRunnable runnable = new NestedSlaveTableRunnable(
                     slaveTableList, esTemplate,
                     bulkRequestList,
+                    commitListener,
                     cacheMap.getMaxValueSize(), maxTimestamp, maxIdIn, streamChunkSize);
             futures.add(runnable);
             slaveTableExecutor.execute(runnable);

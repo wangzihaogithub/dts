@@ -19,6 +19,7 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
     private final JoinByParentSlaveTableForeignKey joinForeignKey = new JoinByParentSlaveTableForeignKey();
     private final JoinBySlaveTable joinBySlaveTable = new JoinBySlaveTable();
     private final ESTemplate.BulkRequestList bulkRequestList;
+    private final ESTemplate.CommitListener commitListener;
     private final int cacheMaxSize;
     private final int chunkSize;
     private final int streamChunkSize;
@@ -28,13 +29,15 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
     NestedSlaveTableRunnable(List<Dependent> updateDmlList,
                              ES7xTemplate es7xTemplate,
                              ESTemplate.BulkRequestList bulkRequestList,
+                             ESTemplate.CommitListener commitListener,
                              int cacheMaxSize, Timestamp timestamp, int chunkSize, int streamChunkSize) {
-        this(updateDmlList, es7xTemplate, bulkRequestList, cacheMaxSize, timestamp, chunkSize, streamChunkSize, null, null);
+        this(updateDmlList, es7xTemplate, bulkRequestList, commitListener, cacheMaxSize, timestamp, chunkSize, streamChunkSize, null, null);
     }
 
     NestedSlaveTableRunnable(List<Dependent> updateDmlList,
                              ES7xTemplate es7xTemplate,
                              ESTemplate.BulkRequestList bulkRequestList,
+                             ESTemplate.CommitListener commitListener,
                              int cacheMaxSize, Timestamp timestamp, int chunkSize, int streamChunkSize,
                              NestedSlaveTableRunnable oldRun, NestedSlaveTableRunnable newRun) {
         this.timestamp = timestamp == null ? new Timestamp(System.currentTimeMillis()) : timestamp;
@@ -42,6 +45,7 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
         this.es7xTemplate = es7xTemplate;
         this.chunkSize = chunkSize;
         this.bulkRequestList = bulkRequestList;
+        this.commitListener = commitListener;
         this.streamChunkSize = streamChunkSize;
         this.cacheMaxSize = cacheMaxSize;
         this.oldRun = oldRun;
@@ -54,6 +58,7 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
         dmlList.addAll(newRun.updateDmlList);
         return new NestedSlaveTableRunnable(dmlList, oldRun.es7xTemplate,
                 oldRun.bulkRequestList.fork(newRun.bulkRequestList),
+                ESTemplate.merge(oldRun.commitListener, newRun.commitListener),
                 oldRun.cacheMaxSize, oldRun.timestamp, oldRun.chunkSize, oldRun.streamChunkSize,
                 oldRun, newRun);
     }

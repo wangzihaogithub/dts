@@ -95,13 +95,13 @@ public class CanalThread extends Thread {
         long lastErrorTimestamp = 0;
 
         DiscoveryService discoveryService = startupServer.getDiscoveryService();
-        if(discoveryService != null){
-            discoveryService.addListener(new DiscoveryService.Listener() {
+        if (discoveryService != null) {
+            discoveryService.addServerListener(new DiscoveryService.ServerListener() {
                 @Override
-                public void onChange(ReferenceCounted<DiscoveryService.ChangeEvent> eventRef) {
-                    try (ReferenceCounted<DiscoveryService.ChangeEvent> ref =eventRef.open()){
-                        DiscoveryService.ChangeEvent event = ref.get();
-                        List<ServerInstanceClient> insertList = event.diff.getInsertList();
+                public <E extends ServerInstanceClient> void onChange(ReferenceCounted<DiscoveryService.ServerChangeEvent<E>> eventRef) {
+                    try (ReferenceCounted<DiscoveryService.ServerChangeEvent<E>> ref = eventRef.open()) {
+                        DiscoveryService.ServerChangeEvent<E> event = ref.get();
+                        List<E> insertList = event.diff.getInsertList();
                         int size = event.after.size();
 
                     }

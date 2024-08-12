@@ -182,7 +182,7 @@ public abstract class AbstractEs7xETLDateController {
         if (!append) {
             ESBulkRequest.ESBulkResponse esBulkResponse = esAdapter.getEsTemplate().deleteByRange(config.getEsMapping(), fieldName, minIdDate, maxIdDate, null);
         }
-        esAdapter.sync(dmlList, false, true, onlyCurrentIndex, joinUpdateSize, onlyFieldName);
+        esAdapter.sync(dmlList, false, true, onlyCurrentIndex, joinUpdateSize, onlyFieldName, null);
         return dmlList.size();
     }
 
