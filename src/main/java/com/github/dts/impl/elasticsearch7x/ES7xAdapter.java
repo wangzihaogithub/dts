@@ -136,7 +136,7 @@ public class ES7xAdapter implements Adapter {
             for (Map.Entry<Map<String, ESSyncConfig>, List<Dml>> entry : groupByMap.entrySet()) {
                 List<ESSyncConfigSQL> item = basicFieldWriter.writeEsReturnSql(entry.getKey().values(), entry.getValue(), bulkRequestList);
                 configSQLList.addAll(item);
-                if (!item.isEmpty() && !bulkRequestList.isEmpty()) {
+                if (!item.isEmpty() || !bulkRequestList.isEmpty()) {
                     for (ESSyncConfig value : entry.getKey().values()) {
                         indices.add(value.getEsMapping().get_index());
                     }
@@ -206,7 +206,7 @@ public class ES7xAdapter implements Adapter {
 
         // refresh
         if (refresh && dmls.size() < refreshThreshold) {
-            esTemplate.refresh(indices);
+            esTemplate.refresh(allIndices);
         }
         return future;
     }
