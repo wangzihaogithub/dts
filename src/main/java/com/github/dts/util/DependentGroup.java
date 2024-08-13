@@ -1,12 +1,25 @@
 package com.github.dts.util;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 
 public class DependentGroup {
     private final List<Dependent> mainTableDependentList = new ArrayList<>();
     private final List<Dependent> mainTableJoinDependentList = new ArrayList<>();
     private final List<Dependent> slaveTableDependentList = new ArrayList<>();
+
+    public Collection<String> getIndices() {
+        Set<String> indices = new LinkedHashSet<>();
+        for (Dependent dependent : mainTableDependentList) {
+            indices.add(dependent.getSchemaItem().getEsMapping().get_index());
+        }
+        for (Dependent dependent : mainTableJoinDependentList) {
+            indices.add(dependent.getSchemaItem().getEsMapping().get_index());
+        }
+        for (Dependent dependent : slaveTableDependentList) {
+            indices.add(dependent.getSchemaItem().getEsMapping().get_index());
+        }
+        return indices;
+    }
 
     public List<Dependent> getMainTableDependentList() {
         return mainTableDependentList;
@@ -36,6 +49,19 @@ public class DependentGroup {
         mainTableDependentList.addAll(dependentGroup.mainTableDependentList);
         mainTableJoinDependentList.addAll(dependentGroup.mainTableJoinDependentList);
         slaveTableDependentList.addAll(dependentGroup.slaveTableDependentList);
+    }
+
+    public boolean isEmpty() {
+        return mainTableDependentList.isEmpty() && mainTableJoinDependentList.isEmpty() && slaveTableDependentList.isEmpty();
+    }
+
+    @Override
+    public String toString() {
+        return "DependentGroup{" +
+                "mainTableSize=" + mainTableDependentList.size() +
+                ", mainTableJoinSize=" + mainTableJoinDependentList.size() +
+                ", slaveTableSize=" + slaveTableDependentList.size() +
+                '}';
     }
 }
    

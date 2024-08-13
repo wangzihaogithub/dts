@@ -5,6 +5,7 @@ import org.joda.time.DateTimeZone;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.concurrent.CustomizableThreadFactory;
+import org.springframework.util.LinkedCaseInsensitiveMap;
 
 import java.io.File;
 import java.io.PrintWriter;
@@ -373,5 +374,25 @@ public class Util {
         }
 
         return null;
+    }
+
+    public static <V> Map<String, V> newLinkedCaseInsensitiveMap() {
+        return new LinkedCaseInsensitiveMap<>();
+    }
+
+    public static Set<String> newLinkedCaseInsensitiveSet() {
+        return Collections.newSetFromMap(new LinkedCaseInsensitiveMap<>());
+    }
+
+    public static <V> Map<String, V> newLinkedCaseInsensitiveMap(Map<String, V> map) {
+        Map<String, V> map1 = new LinkedCaseInsensitiveMap<>(map.size());
+        map1.putAll(map);
+        return map1;
+    }
+
+    public static Set<String> newLinkedCaseInsensitiveSet(Collection<String> list) {
+        Set<String> strings = Collections.newSetFromMap(new LinkedCaseInsensitiveMap<>(list.size()));
+        strings.addAll(list);
+        return strings;
     }
 }

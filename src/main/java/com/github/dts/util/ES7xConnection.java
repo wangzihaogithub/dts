@@ -51,6 +51,7 @@ import java.util.stream.Collectors;
  * @version 1.0.0
  */
 public class ES7xConnection {
+    public static final ES7xBulkResponse EMPTY_RESPONSE = new ES7xBulkResponse(Collections.emptyList());
     private static final Logger logger = LoggerFactory.getLogger(ES7xConnection.class);
     private final RestHighLevelClient restHighLevelClient;
     private final int concurrentBulkRequest;
@@ -127,7 +128,7 @@ public class ES7xConnection {
                 @Override
                 public void onResponse(RefreshResponse refreshResponse) {
                     refreshAsyncCache.remove(key);
-                    future.complete(new Es7RefreshResponse(refreshResponse));
+                    future.complete(new Es7RefreshResponse(indices, refreshResponse));
                 }
 
                 @Override
@@ -179,9 +180,16 @@ public class ES7xConnection {
 
     public static class Es7RefreshResponse implements ESBulkRequest.EsRefreshResponse {
         private final RefreshResponse refreshResponse;
+        private final String[] indices;
 
-        public Es7RefreshResponse(RefreshResponse refreshResponse) {
+        public Es7RefreshResponse(String[] indices, RefreshResponse refreshResponse) {
+            this.indices = indices;
             this.refreshResponse = refreshResponse;
+        }
+
+        @Override
+        public String[] getIndices() {
+            return indices;
         }
 
         @Override
@@ -189,8 +197,6 @@ public class ES7xConnection {
             return refreshResponse.toString();
         }
     }
-
-    public static final ES7xBulkResponse EMPTY_RESPONSE = new ES7xBulkResponse(Collections.emptyList());
 
     public static class ES7xBulkResponse implements ESBulkRequest.ESBulkResponse {
 

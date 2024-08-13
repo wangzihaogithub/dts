@@ -2,10 +2,24 @@ package com.github.dts.util;
 
 import com.github.dts.util.ESSyncConfig.ESMapping;
 
+import java.sql.Timestamp;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 
 public interface ESTemplate extends AutoCloseable {
+
+    static CommitListener merge(CommitListener listener1, CommitListener listener2) {
+        if (listener1 == listener2) {
+            return listener1;
+        }
+        if (listener1 != null && listener2 != null) {
+            return response -> {
+                listener1.done(response);
+                listener2.done(response);
+            };
+        }
+        return listener1 != null ? listener1 : listener2;
+    }
 
     /**
      * 插入数据
@@ -88,7 +102,6 @@ public interface ESTemplate extends AutoCloseable {
                            Map<String, Object> esFieldData,
                            Map<String, Object> data);
 
-
     Object getESDataFromRS(ESMapping mapping, Map<String, Object> row,
                            Map<String, Object> esFieldData, Map<String, Object> data);
 
@@ -103,7 +116,6 @@ public interface ESTemplate extends AutoCloseable {
      */
     void convertValueType(ESMapping esMapping, String parentFieldName,
                           Map<String, Object> theConvertMap);
-
 
     Object getValFromData(ESMapping mapping, Map<String, Object> dmlData, String fieldName, String columnName);
 
@@ -137,17 +149,8 @@ public interface ESTemplate extends AutoCloseable {
         void done(ESBulkRequest.ESBulkResponse response);
     }
 
-    static CommitListener merge(CommitListener listener1, CommitListener listener2) {
-        if (listener1 == listener2) {
-            return listener1;
-        }
-        if (listener1 != null && listener2 != null) {
-            return response -> {
-                listener1.done(response);
-                listener2.done(response);
-            };
-        }
-        return listener1 != null ? listener1 : listener2;
+    interface RefreshListener {
+        void done(ESBulkRequest.EsRefreshResponse response);
     }
 
     class ESSearchResponse {

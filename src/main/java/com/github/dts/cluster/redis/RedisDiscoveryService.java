@@ -1,7 +1,10 @@
 package com.github.dts.cluster.redis;
 
 import com.github.dts.cluster.*;
-import com.github.dts.util.*;
+import com.github.dts.util.CanalConfig;
+import com.github.dts.util.ReferenceCounted;
+import com.github.dts.util.SnowflakeIdWorker;
+import com.github.dts.util.Util;
 import com.sun.net.httpserver.HttpPrincipal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,8 +25,8 @@ import java.util.*;
 import java.util.concurrent.*;
 
 public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
-    private static final Logger log = LoggerFactory.getLogger(RedisDiscoveryService.class);
     public static final String DEVICE_ID = String.valueOf(SnowflakeIdWorker.INSTANCE.nextId());
+    private static final Logger log = LoggerFactory.getLogger(RedisDiscoveryService.class);
     private static final int MIN_REDIS_INSTANCE_EXPIRE_SEC = 2;
     private static volatile ScheduledExecutorService scheduled;
     private final int redisInstanceExpireSec;
@@ -41,6 +44,8 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
     private final CanalConfig.ClusterConfig clusterConfig;
     private final RedisTemplate<byte[], byte[]> redisTemplate = new RedisTemplate<>();
     private final ServerInstance serverInstance = new ServerInstance();
+    private final Collection<ServerListener> serverListenerList = new CopyOnWriteArrayList<>();
+    private final Collection<SdkListener> sdkListenerList = new CopyOnWriteArrayList<>();
     private long serverHeartbeatCount;
     private byte[] serverInstanceBytes;
     private Map<String, ServerInstance> serverInstanceMap = new LinkedHashMap<>();
@@ -50,15 +55,13 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
     // 首次=0，从0开始计数
     private int sdkUpdateInstanceCount = 0;
     private ScheduledFuture<?> serverHeartbeatScheduledFuture;
-    private final Collection<ServerListener> serverListenerList = new CopyOnWriteArrayList<>();
-    private final Collection<SdkListener> sdkListenerList = new CopyOnWriteArrayList<>();
     private boolean destroy;
     private volatile ReferenceCounted<List<RedisServerInstanceClient>> serverInstanceClientListRef = new ReferenceCounted<>(Collections.emptyList());
     private volatile ReferenceCounted<List<RedisSdkInstanceClient>> sdkInstanceClientListRef = new ReferenceCounted<>(Collections.emptyList());
 
     public RedisDiscoveryService(Object redisConnectionFactory,
-                                 String redisKeyRootPrefix,
                                  String groupName,
+                                 String redisKeyRootPrefix,
                                  int redisInstanceExpireSec,
                                  CanalConfig.ClusterConfig clusterConfig) {
         String shortGroupName = String.valueOf(Math.abs(groupName.hashCode()));
@@ -73,20 +76,20 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
         this.redisInstanceExpireSec = Math.max(redisInstanceExpireSec, MIN_REDIS_INSTANCE_EXPIRE_SEC);
         this.clusterConfig = clusterConfig;
         StringRedisSerializer keySerializer = StringRedisSerializer.UTF_8;
-        this.keyServerSetBytes = keySerializer.serialize(redisKeyRootPrefix + ":svr:ls:" + DEVICE_ID);
-        this.keyServerPubSubBytes = keySerializer.serialize(redisKeyRootPrefix + ":svr:mq:sub");
-        this.keyServerPubUnsubBytes = keySerializer.serialize(redisKeyRootPrefix + ":svr:mq:unsub");
-        this.keyServerSubBytes = keySerializer.serialize(redisKeyRootPrefix + ":svr:mq:*");
+        this.keyServerSetBytes = keySerializer.serialize(redisKeyRootPrefix + "svr:ls:" + DEVICE_ID);
+        this.keyServerPubSubBytes = keySerializer.serialize(redisKeyRootPrefix + "svr:mq:sub");
+        this.keyServerPubUnsubBytes = keySerializer.serialize(redisKeyRootPrefix + "svr:mq:unsub");
+        this.keyServerSubBytes = keySerializer.serialize(redisKeyRootPrefix + "svr:mq:*");
         this.keyServerSetScanOptions = ScanOptions.scanOptions()
                 .count(20)
-                .match(redisKeyRootPrefix + ":svr:ls:*")
+                .match(redisKeyRootPrefix + "svr:ls:*")
                 .build();
-        byte[] keySdkPubSubBytes = keySerializer.serialize(redisKeyRootPrefix + ":sdk:mq:sub");
-        byte[] keySdkPubUnsubBytes = keySerializer.serialize(redisKeyRootPrefix + ":sdk:mq:unsub");
-        this.keySdkSubBytes = keySerializer.serialize(redisKeyRootPrefix + ":sdk:mq:*");
+        byte[] keySdkPubSubBytes = keySerializer.serialize(redisKeyRootPrefix + "sdk:mq:sub");
+        byte[] keySdkPubUnsubBytes = keySerializer.serialize(redisKeyRootPrefix + "sdk:mq:unsub");
+        this.keySdkSubBytes = keySerializer.serialize(redisKeyRootPrefix + "sdk:mq:*");
         this.keySdkSetScanOptions = ScanOptions.scanOptions()
                 .count(20)
-                .match(redisKeyRootPrefix + ":sdk:ls:*")
+                .match(redisKeyRootPrefix + "sdk:ls:*")
                 .build();
 
         this.messageServerListener = (message, pattern) -> {
@@ -132,6 +135,10 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
             }
         }
         return scheduled;
+    }
+
+    private static boolean isLocalDevice(ServerInstance instance) {
+        return Objects.equals(instance.getDeviceId(), DEVICE_ID);
     }
 
     protected void subscribeSdk() {
@@ -192,7 +199,7 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
         for (SdkInstance instance : instanceList) {
             boolean socketConnected = SdkInstance.isSocketConnected(instance, clusterConfig.getTestSocketTimeoutMs());
             try {
-                RedisSdkInstanceClient service = new RedisSdkInstanceClient(i++, size, socketConnected, instance, clusterConfig);
+                RedisSdkInstanceClient service = new RedisSdkInstanceClient(i++, size, socketConnected, instance, clusterConfig, redisTemplate);
                 list.add(service);
             } catch (Exception e) {
                 throw new IllegalStateException(
@@ -222,12 +229,24 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
 
     @Override
     public ReferenceCounted<List<RedisServerInstanceClient>> getServerListRef() {
-        return serverInstanceClientListRef;
+        while (true) {
+            try {
+                return serverInstanceClientListRef.open();
+            } catch (IllegalStateException ignored) {
+
+            }
+        }
     }
 
     @Override
     public ReferenceCounted<List<RedisSdkInstanceClient>> getSdkListRef() {
-        return sdkInstanceClientListRef;
+        while (true) {
+            try {
+                return sdkInstanceClientListRef.open();
+            } catch (IllegalStateException ignored) {
+
+            }
+        }
     }
 
     private ScheduledFuture<?> scheduledServerHeartbeat() {
@@ -434,10 +453,6 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
             return null;
         }
         return map;
-    }
-
-    private static boolean isLocalDevice(ServerInstance instance) {
-        return Objects.equals(instance.getDeviceId(), DEVICE_ID);
     }
 
     @Override

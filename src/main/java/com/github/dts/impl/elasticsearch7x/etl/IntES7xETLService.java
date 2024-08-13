@@ -474,7 +474,7 @@ public class IntES7xETLService {
                                 adapter.getEsTemplate().deleteByRange(config.getEsMapping(), ESSyncConfig.ES_ID_FIELD_NAME, offset, dmlListMaxId, offsetAdd);
                             }
                             if (!dmlList.isEmpty()) {
-                                adapter.sync(dmlList, false, true, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet, null);
+                                adapter.sync(dmlList, false, false, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet, null);
                             }
                             dmlSize.addAndGet(dmlList.size());
                             if (log.isInfoEnabled()) {
@@ -565,7 +565,7 @@ public class IntES7xETLService {
         String tableName = config.getEsMapping().getSchemaItem().getMainTable().getTableName();
         for (Long i : id) {
             List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, i, 1, tableName, pk, config);
-            esAdapter.sync(dmlList, false, true, onlyCurrentIndex, 1, onlyFieldNameSet, null);
+            esAdapter.sync(dmlList, false, false, onlyCurrentIndex, 1, onlyFieldNameSet, null);
             count += dmlList.size();
         }
         return count;

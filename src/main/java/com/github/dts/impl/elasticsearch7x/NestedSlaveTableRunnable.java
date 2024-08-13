@@ -123,15 +123,14 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
             if (ESSyncUtil.isEmpty(dml.getPkNames())) {
                 continue;
             }
-            if (dml.getOld() != null) {
-                Map<String, Object> old = dml.getOld().get(dependent.getIndex());
-                SchemaItem.ColumnItem columnItem = dependent.getSchemaItem().getAnyColumnItem(dml.getTable(), old.keySet());
-                if (columnItem == null) {
+
+            if (dependent.isJoinByMainTablePrimaryKey()) {
+                Set<DependentSQL> nestedMainSqlList = convertDependentSQL(dependent.getNestedSlaveTableList(dml.getTable()), dependent, cacheMap, chunkSize);
+                if (nestedMainSqlList.isEmpty()) {
                     continue;
                 }
-            }
-
-            if (dependent.isJoinByParentSlaveTableForeignKey()) {
+                joinBySlaveTable.nestedMainSqlList.addAll(nestedMainSqlList);
+            } else {
                 Set<DependentSQL> childSqlSet = convertDependentSQLJoinByParentSlaveTable(dependent.getNestedSlaveTableList(dml.getTable()), dependent, cacheMap, chunkSize);
                 if (childSqlSet.isEmpty()) {
                     continue;
@@ -142,12 +141,6 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
                 }
                 joinForeignKey.childSqlSet.addAll(childSqlSet);
                 joinForeignKey.parentSqlList.addAll(parentSqlList);
-            } else {
-                Set<DependentSQL> nestedMainSqlList = convertDependentSQL(dependent.getNestedSlaveTableList(dml.getTable()), dependent, cacheMap, chunkSize);
-                if (nestedMainSqlList.isEmpty()) {
-                    continue;
-                }
-                joinBySlaveTable.nestedMainSqlList.addAll(nestedMainSqlList);
             }
         }
     }
@@ -191,7 +184,7 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
         StringBuilder condition = new StringBuilder();
         String and = " AND ";
 
-        Map<String, List<String>> joinColumnList = getOnChildChangeWhereSqlColumnList(dependent);
+        Map<String, List<String>> joinColumnList = dependent.getSchemaItem().getOnSlaveTableChangeWhereSqlColumnList();
         for (List<String> columnItem : joinColumnList.values()) {
             for (String column : columnItem) {
                 ESSyncUtil.appendConditionByExpr(condition, SQL.wrapPlaceholder(column), dependent.getIndexMainTable().getAlias(), column, and);
@@ -209,10 +202,6 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
         return changedSelect + " WHERE " + condition + " ";
     }
 
-    private Map<String, List<String>> getOnChildChangeWhereSqlColumnList(Dependent dependent) {
-        return SqlParser.getColumnList(dependent.getSchemaItem().getObjectField().getOnChildChangeWhereSql());
-    }
-
     private SQL convertNestedSlaveTableSQL(SchemaItem.TableItem tableItem, Dependent dependent) {
         Dml dml = dependent.getDml();
         StringBuilder condition = new StringBuilder();
@@ -225,7 +214,7 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
 
         String sql1 = dependent.getSchemaItem().sql() + " WHERE " + condition + " ";
 
-        Map<String, List<String>> columnList = getOnChildChangeWhereSqlColumnList(dependent);
+        Map<String, List<String>> columnList = dependent.getSchemaItem().getOnSlaveTableChangeWhereSqlColumnList();
         String sql2 = SqlParser.changeSelect(sql1, columnList, true);
         return SQL.convertToSql(sql2, dependent.getMergeDataMap());
     }

@@ -321,7 +321,7 @@ public class StringEs7xETLService {
             String dmlListMaxId = getDmlListMaxId(dmlList);
             ESBulkRequest.ESBulkResponse esBulkResponse = esAdapter.getEsTemplate().deleteByRange(config.getEsMapping(), ESSyncConfig.ES_ID_FIELD_NAME, minId, dmlListMaxId, limit);
         }
-        esAdapter.sync(dmlList, false, true, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet, null);
+        esAdapter.sync(dmlList, false, false, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet, null);
         return dmlList;
     }
 
@@ -338,7 +338,7 @@ public class StringEs7xETLService {
             for (Dml dml : dmlList) {
                 dml.setDestination(esAdapter.getConfiguration().getCanalAdapter().getDestination());
             }
-            esAdapter.sync(dmlList, false, true, onlyCurrentIndex, 1, onlyFieldNameSet, null);
+            esAdapter.sync(dmlList, false, false, onlyCurrentIndex, 1, onlyFieldNameSet, null);
             count += dmlList.size();
         }
         return count;

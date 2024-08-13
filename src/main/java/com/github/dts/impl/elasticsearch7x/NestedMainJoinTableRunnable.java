@@ -74,13 +74,13 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
         String and = " AND ";
 
         if (dependent.getSchemaItem().getObjectField().getType().isSingleJoinType()) {
-            Set<String> pkNames = SQL.convertToSql(dependent.getSchemaItem().getObjectField().getOnParentChangeWhereSql(), Collections.emptyMap()).getArgsMap().keySet();
+            Set<String> pkNames = dependent.getSchemaItem().getOnMainTableChangeWhereSqlVarList();
             List<String> dmlPkNames = dml.getPkNames();
             String pkName = pkNames.iterator().next();
             ESSyncUtil.appendConditionByExpr(condition, SQL.wrapPlaceholder(dmlPkNames.get(0)), tableItem.getAlias(), pkName, and);
         } else {
-            String parentDocumentId = dependent.getSchemaItem().getObjectField().getParentDocumentId();
-            ESSyncUtil.appendConditionByExpr(condition, SQL.wrapPlaceholder(parentDocumentId), tableItem.getAlias(), parentDocumentId, and);
+            String joinTableColumnName = dependent.getSchemaItem().getObjectField().getJoinTableColumnName();
+            ESSyncUtil.appendConditionByExpr(condition, SQL.wrapPlaceholder(joinTableColumnName), tableItem.getAlias(), joinTableColumnName, and);
         }
 
         int len = condition.length();

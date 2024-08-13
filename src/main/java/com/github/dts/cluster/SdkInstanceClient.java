@@ -2,6 +2,8 @@ package com.github.dts.cluster;
 
 import com.github.dts.util.CanalConfig;
 
+import java.util.concurrent.CompletableFuture;
+
 public abstract class SdkInstanceClient {
     /**
      * 集群中的下标
@@ -50,6 +52,8 @@ public abstract class SdkInstanceClient {
         return sdkInstance;
     }
 
+    public abstract CompletableFuture<Void> send(AdapterEnum adapterEnum, Object data);
+
     public void close() {
 
     }
@@ -60,5 +64,10 @@ public abstract class SdkInstanceClient {
                 index + "/" + total +
                 ", socketConnected=" + socketConnected +
                 '}';
+    }
+
+    public enum AdapterEnum {
+        ES,
+        RDS
     }
 }

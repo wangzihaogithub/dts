@@ -4,6 +4,7 @@ import com.github.dts.cluster.redis.RedisDiscoveryService;
 import com.github.dts.util.*;
 import com.sun.net.httpserver.HttpPrincipal;
 import org.springframework.beans.factory.ListableBeanFactory;
+import org.springframework.core.env.Environment;
 
 import java.util.List;
 import java.util.Objects;
@@ -28,11 +29,15 @@ public interface DiscoveryService {
         switch (discoveryEnum) {
             case REDIS: {
                 CanalConfig.ClusterConfig.Redis redis = config.getRedis();
+                String redisKeyRootPrefix = redis.getRedisKeyRootPrefix();
+                if (redisKeyRootPrefix != null) {
+                    redisKeyRootPrefix = beanFactory.getBean(Environment.class).resolvePlaceholders(redisKeyRootPrefix);
+                }
                 Object redisConnectionFactory = SpringUtil.getBean(beanFactory, redis.getRedisConnectionFactoryBeanName(), PlatformDependentUtil.REDIS_CONNECTION_FACTORY_CLASS);
                 return new RedisDiscoveryService(
                         redisConnectionFactory,
                         config.getGroupName(),
-                        redis.getRedisKeyRootPrefix(),
+                        redisKeyRootPrefix,
                         redis.getRedisInstanceExpireSec(),
                         config);
             }
@@ -64,13 +69,13 @@ public interface DiscoveryService {
     }
 
     class ServerChangeEvent<E extends ServerInstanceClient> {
-        // 首次=0，从0开始计数
-        public int updateInstanceCount;
         public final List<E> before;
         public final List<E> after;
         public final E beforeLocalDevice;
         public final E afterLocalDevice;
         public final DifferentComparatorUtil.ListDiffResult<E> diff;
+        // 首次=0，从0开始计数
+        public int updateInstanceCount;
 
         public ServerChangeEvent(int updateInstanceCount,
                                  List<E> before, List<E> after) {
@@ -87,11 +92,11 @@ public interface DiscoveryService {
     }
 
     class SdkChangeEvent<E extends SdkInstanceClient> {
-        // 首次=0，从0开始计数
-        public int updateInstanceCount;
         public final List<E> before;
         public final List<E> after;
         public final DifferentComparatorUtil.ListDiffResult<E> diff;
+        // 首次=0，从0开始计数
+        public int updateInstanceCount;
 
         public SdkChangeEvent(int updateInstanceCount,
                               List<E> before, List<E> after) {

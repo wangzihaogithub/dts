@@ -25,8 +25,8 @@ import java.util.regex.Pattern;
  */
 @ConfigurationProperties(prefix = "canal.conf")
 public class CanalConfig {
-    private Map<String, DatasourceConfig> srcDataSources;
     private final ClusterConfig cluster = new ClusterConfig();
+    private Map<String, DatasourceConfig> srcDataSources;
     private boolean enablePull = true;
     // canal adapters 配置
     private List<CanalAdapter> canalAdapters;
@@ -67,6 +67,13 @@ public class CanalConfig {
         return "CanalClientConfig{" +
                 "canalAdapters=" + canalAdapters +
                 '}';
+    }
+
+    public enum DiscoveryEnum {
+        AUTO,
+        REDIS,
+        NACOS,
+        DISABLE
     }
 
     public static class DatasourceConfig {
@@ -228,9 +235,11 @@ public class CanalConfig {
     }
 
     public static class ClusterConfig {
-        private int testSocketTimeoutMs = 150;
         private final Redis redis = new Redis();
         private final Nacos nacos = new Nacos();
+        private int testSocketTimeoutMs = 500;
+        private DiscoveryEnum discovery = DiscoveryEnum.DISABLE;
+        private String groupName = "def";
 
         public int getTestSocketTimeoutMs() {
             return testSocketTimeoutMs;
@@ -240,19 +249,16 @@ public class CanalConfig {
             this.testSocketTimeoutMs = testSocketTimeoutMs;
         }
 
-        private DiscoveryEnum discovery = DiscoveryEnum.DISABLE;
-        private String groupName = "def";
-
         public Nacos getNacos() {
             return nacos;
         }
 
-        public void setDiscovery(DiscoveryEnum discovery) {
-            this.discovery = discovery;
-        }
-
         public DiscoveryEnum getDiscovery() {
             return discovery;
+        }
+
+        public void setDiscovery(DiscoveryEnum discovery) {
+            this.discovery = discovery;
         }
 
         public String getGroupName() {
@@ -269,7 +275,7 @@ public class CanalConfig {
 
         public static class Redis {
             private String redisConnectionFactoryBeanName = "redisConnectionFactory";
-            private String redisKeyRootPrefix = "dts:";
+            private String redisKeyRootPrefix = "dts:${spring.profiles.active:def}";
             private int redisInstanceExpireSec = 10;
 
             public String getRedisConnectionFactoryBeanName() {
@@ -552,6 +558,33 @@ public class CanalConfig {
             private int joinUpdateSize = 10;
             private int streamChunkSize = 10000;
             private int maxIdIn = 1000;
+            private int commitEventPublishScheduledTickMs = 1000;
+            private int commitEventPublishMaxBlockCount = 1000;
+            private boolean onlyEffect = true;// 只更新受到影响的字段
+
+            public boolean isOnlyEffect() {
+                return onlyEffect;
+            }
+
+            public void setOnlyEffect(boolean onlyEffect) {
+                this.onlyEffect = onlyEffect;
+            }
+
+            public int getCommitEventPublishMaxBlockCount() {
+                return commitEventPublishMaxBlockCount;
+            }
+
+            public void setCommitEventPublishMaxBlockCount(int commitEventPublishMaxBlockCount) {
+                this.commitEventPublishMaxBlockCount = commitEventPublishMaxBlockCount;
+            }
+
+            public int getCommitEventPublishScheduledTickMs() {
+                return commitEventPublishScheduledTickMs;
+            }
+
+            public void setCommitEventPublishScheduledTickMs(int commitEventPublishScheduledTickMs) {
+                this.commitEventPublishScheduledTickMs = commitEventPublishScheduledTickMs;
+            }
 
             public int getUpdateByQueryChunkSize() {
                 return updateByQueryChunkSize;
@@ -808,13 +841,6 @@ public class CanalConfig {
         public void setOuterAdaptersMap(Map<String, OuterAdapterConfig> outerAdaptersMap) {
             this.outerAdaptersMap = outerAdaptersMap;
         }
-    }
-
-    public enum DiscoveryEnum {
-        AUTO,
-        REDIS,
-        NACOS,
-        DISABLE
     }
 
 }

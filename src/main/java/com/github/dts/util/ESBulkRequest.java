@@ -1,9 +1,6 @@
 package com.github.dts.util;
 
-import org.elasticsearch.script.Script;
-
 import java.util.Collection;
-import java.util.Map;
 
 public interface ESBulkRequest {
 
@@ -43,7 +40,7 @@ public interface ESBulkRequest {
     }
 
     interface EsRefreshResponse {
-
+        String[] getIndices();
     }
 
     interface ESBulkResponse {
