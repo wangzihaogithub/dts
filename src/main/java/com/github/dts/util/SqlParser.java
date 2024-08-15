@@ -238,6 +238,21 @@ public class SqlParser {
         });
     }
 
+    public static String setGroupBy(String sql, Collection<SchemaItem.ColumnItem> needGroupBy) {
+        SQLStatement sqlStatement = SQLUtils.parseSingleMysqlStatement(sql);
+        if (sqlStatement instanceof SQLSelectStatement) {
+            SQLSelect select = ((SQLSelectStatement) sqlStatement).getSelect();
+            SQLSelectQueryBlock queryBlock = select.getQueryBlock();
+            SQLSelectGroupByClause groupBy = queryBlock.getGroupBy();
+            if (groupBy == null) {
+                SQLSelectGroupByClause groupByClause = getSqlSelectGroupByClause(needGroupBy);
+                queryBlock.setGroupBy(groupByClause);
+                return toMysqlString(sqlStatement);
+            }
+        }
+        return sql;
+    }
+
     private static String toMysqlString(SQLObject sqlObject) {
         return SQLUtils.toMySqlString(sqlObject, new VisitorFeature[0]);
     }
