@@ -15,8 +15,8 @@ import java.util.Map;
 public class UpdateESSyncConfigSQL extends ESSyncConfigSQL {
     public UpdateESSyncConfigSQL(SQL sql, ESSyncConfig config, Dml dml,
                                  Map<String, Object> data, Map<String, Object> old,
-                                 ESTemplate.BulkRequestList bulkRequestList, ESTemplate esTemplate) {
-        super(sql, config, dml, data, old, bulkRequestList, esTemplate);
+                                 ESTemplate.BulkRequestList bulkRequestList,int index, ESTemplate esTemplate) {
+        super(sql, config, dml, data, old, bulkRequestList, index,esTemplate);
     }
 
     @Override

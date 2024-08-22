@@ -6,11 +6,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.io.Writer;
 import java.math.BigDecimal;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.TimeZone;
+import java.util.*;
 import java.util.function.Supplier;
 
 public class JsonUtil {
@@ -154,6 +152,21 @@ public class JsonUtil {
         }
     }
 
+    public  interface ObjectWriter {
+        void writeValue(Writer w, Object value) throws IOException;
+    }
+
+    public static ObjectWriter objectWriter() {
+        ObjectMapper objectMapper = new ObjectMapper();
+        objectMapper.configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, true);
+        return new ObjectWriter() {
+            @Override
+            public void writeValue(Writer w, Object value) throws IOException {
+                objectMapper.writeValue(w, value);
+            }
+        };
+    }
+
     //JSON的下划线风格转为驼峰风格
     public static String toJsonCamel(String json, boolean containNull, Class clazz) {
         if (json == null) {
@@ -258,6 +271,26 @@ public class JsonUtil {
         } catch (Exception e) {
             log.error("toList error, json = " + json, e);
             return null;
+        }
+    }
+
+    private static class KVEntry<T, E> implements Map.Entry<T, E> {
+        T key;
+        E value;
+
+        @Override
+        public T getKey() {
+            return key;
+        }
+
+        @Override
+        public E getValue() {
+            return value;
+        }
+
+        @Override
+        public E setValue(E value) {
+            throw new UnsupportedOperationException("setValue");
         }
     }
 

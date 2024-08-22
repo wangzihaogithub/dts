@@ -24,7 +24,7 @@ import java.util.function.Function;
  */
 public class ES7xTemplate implements ESTemplate {
     private static final Logger logger = LoggerFactory.getLogger(ES7xTemplate.class);
-    private static final ConcurrentMap<String, ESFieldTypesCache> esFieldTypes = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<String, ESFieldTypesCache> esFieldTypes = new ConcurrentHashMap<>(2);
     private final ES7xConnection esConnection;
     private final ES7xConnection.ES7xBulkRequest esBulkRequest;
     private int deleteByIdRangeBatch = 1000;
@@ -57,6 +57,14 @@ public class ES7xTemplate implements ESTemplate {
             logger.error("sqlRs has error, sql: {} ,异常信息：{}", sql, e.toString());
             Util.sneakyThrows(e);
             return null;
+        }
+    }
+
+    private static void trimRemoveIndexUpdateTime(ESMapping mapping, BulkRequestList bulkRequestList, Map<String, Object> esFieldData, String index, String pkToString) {
+        if (mapping.isSetIndexUpdatedTime() && bulkRequestList instanceof BulkRequestListImpl) {
+            if (((BulkRequestListImpl) bulkRequestList).containsUpdate(index, pkToString)) {
+                esFieldData.remove(mapping.getIndexUpdatedTime());
+            }
         }
     }
 
@@ -399,14 +407,6 @@ public class ES7xTemplate implements ESTemplate {
         }
     }
 
-    private static void trimRemoveIndexUpdateTime(ESMapping mapping, BulkRequestList bulkRequestList, Map<String, Object> esFieldData, String index, String pkToString) {
-        if (mapping.isSetIndexUpdatedTime() && bulkRequestList instanceof BulkRequestListImpl) {
-            if (((BulkRequestListImpl) bulkRequestList).containsUpdate(index, pkToString)) {
-                esFieldData.remove(mapping.getIndexUpdatedTime());
-            }
-        }
-    }
-
     private Object getIdValFromRS(ESMapping mapping, ResultSet resultSet) throws SQLException {
         FieldItem idField = mapping.getSchemaItem().getIdField();
         String fieldName = idField.getFieldName();
@@ -602,18 +602,35 @@ public class ES7xTemplate implements ESTemplate {
     }
 
     private ESFieldTypesCache getEsType(ESMapping mapping) {
-        String key = mapping.get_index();
-        ESFieldTypesCache cache = esFieldTypes.get(key);
+        String index = mapping.get_index();
+        long timeout = mapping.getMappingMetadataTimeout();
 
-        if (cache == null || cache.isTimeout(mapping.getMappingMetadataTimeout())) {
+        ESFieldTypesCache cache = esFieldTypes.get(index);
+        if (cache == null || cache.isTimeout(timeout)) {
             synchronized (this) {
-                cache = esFieldTypes.get(key);
-                if (cache == null || cache.isTimeout(mapping.getMappingMetadataTimeout())) {
-                    MappingMetaData mappingMetaData = esConnection.getMapping(mapping.get_index());
-                    if (mappingMetaData == null) {
-                        throw new IllegalArgumentException("Not found the mapping info of index: " + mapping.get_index());
+                cache = esFieldTypes.get(index);
+                if (cache == null || cache.isTimeout(timeout)) {
+                    CompletableFuture<MappingMetaData> future = esConnection.getMapping(index);
+                    if (cache == null) {
+                        try {
+                            MappingMetaData mappingMetaData = future.get();
+                            if (mappingMetaData != null) {
+                                esFieldTypes.put(index, cache = new ESFieldTypesCache(mappingMetaData.getSourceAsMap()));
+                            } else {
+                                throw new IllegalArgumentException("Not found the mapping info of index: " + index);
+                            }
+                        } catch (Exception e) {
+                            Util.sneakyThrows(e);
+                        }
+                    } else {
+                        future.whenComplete((mappingMetaData, throwable) -> {
+                            if (mappingMetaData != null) {
+                                esFieldTypes.put(index, new ESFieldTypesCache(mappingMetaData.getSourceAsMap()));
+                            } else if (throwable != null) {
+                                logger.warn("esConnection.getMapping error {}", throwable.toString(), throwable);
+                            }
+                        });
                     }
-                    esFieldTypes.put(key, cache = new ESFieldTypesCache(mappingMetaData.getSourceAsMap()));
                 }
             }
         }
@@ -706,8 +723,8 @@ public class ES7xTemplate implements ESTemplate {
     public class BulkRequestListImpl implements BulkRequestList {
         private final List<ESBulkRequest.ESRequest> requests = new ArrayList<>();
         private final BulkPriorityEnum priorityEnum;
-        private int size = 0;
         private final Map<String, Set<String>> indexPkUpdateMap;
+        private int size = 0;
 
         public BulkRequestListImpl(BulkPriorityEnum priorityEnum, Map<String, Set<String>> indexPkUpdateMap) {
             this.priorityEnum = priorityEnum;

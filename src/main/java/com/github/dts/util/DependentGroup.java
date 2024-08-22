@@ -1,6 +1,7 @@
 package com.github.dts.util;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class DependentGroup {
     private final List<Dependent> mainTableDependentList = new ArrayList<>();
@@ -19,6 +20,20 @@ public class DependentGroup {
             indices.add(dependent.getSchemaItem().getEsMapping().get_index());
         }
         return indices;
+    }
+
+    public List<Dependent> selectMainTableDependentList(Collection<String> onlyFieldName) {
+        if (onlyFieldName == null) {
+            return mainTableDependentList;
+        } else {
+            if (onlyFieldName.isEmpty()) {
+                return Collections.emptyList();
+            } else {
+                return mainTableDependentList.stream()
+                        .filter(e -> e.containsObjectField(onlyFieldName))
+                        .collect(Collectors.toList());
+            }
+        }
     }
 
     public List<Dependent> getMainTableDependentList() {

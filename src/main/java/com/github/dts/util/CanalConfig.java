@@ -234,12 +234,42 @@ public class CanalConfig {
         }
     }
 
+    public static class SdkAccount {
+        private String account;
+        private String password;
+
+        public String getAccount() {
+            return account;
+        }
+
+        public void setAccount(String account) {
+            this.account = account;
+        }
+
+        public String getPassword() {
+            return password;
+        }
+
+        public void setPassword(String password) {
+            this.password = password;
+        }
+    }
+
     public static class ClusterConfig {
         private final Redis redis = new Redis();
         private final Nacos nacos = new Nacos();
         private int testSocketTimeoutMs = 500;
         private DiscoveryEnum discovery = DiscoveryEnum.DISABLE;
         private String groupName = "def";
+        private List<SdkAccount> sdkAccount;
+
+        public List<SdkAccount> getSdkAccount() {
+            return sdkAccount;
+        }
+
+        public void setSdkAccount(List<SdkAccount> sdkAccount) {
+            this.sdkAccount = sdkAccount;
+        }
 
         public int getTestSocketTimeoutMs() {
             return testSocketTimeoutMs;
@@ -277,6 +307,15 @@ public class CanalConfig {
             private String redisConnectionFactoryBeanName = "redisConnectionFactory";
             private String redisKeyRootPrefix = "dts:${spring.profiles.active:def}";
             private int redisInstanceExpireSec = 10;
+            private int messageIdIncrementDelta = 50;
+
+            public int getMessageIdIncrementDelta() {
+                return messageIdIncrementDelta;
+            }
+
+            public void setMessageIdIncrementDelta(int messageIdIncrementDelta) {
+                this.messageIdIncrementDelta = messageIdIncrementDelta;
+            }
 
             public String getRedisConnectionFactoryBeanName() {
                 return redisConnectionFactoryBeanName;

@@ -27,6 +27,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @Order(Integer.MIN_VALUE)
 public class StartupServer implements ApplicationRunner {
@@ -42,6 +43,7 @@ public class StartupServer implements ApplicationRunner {
     private volatile boolean running = false;
     @Value("${spring.profiles.active:}")
     private String env;
+    @Autowired(required = false)
     private DiscoveryService discoveryService;
 
     public DiscoveryService getDiscoveryService() {
@@ -101,22 +103,20 @@ public class StartupServer implements ApplicationRunner {
             log.info("adapter for canal is empty config");
             return;
         }
-        Environment env = beanFactory.getBean(Environment.class);
+        Collection<CanalConfig.CanalAdapter> canalAdapterList = canalConfig.getCanalAdapters().stream().filter(CanalConfig.CanalAdapter::isEnable).collect(Collectors.toList());
+        if (canalAdapterList.isEmpty()) {
+            log.info("adapter for canal is not enable config");
+            return;
+        }
 
-        DiscoveryService discoveryService = this.discoveryService = DiscoveryService.newInstance(canalConfig.getCluster(), beanFactory);
+        Environment env = beanFactory.getBean(Environment.class);
         if (discoveryService != null) {
-            String ip = Util.getIPAddress();
-            Integer port = env.getProperty("server.port", Integer.class, 8080);
-            discoveryService.registerServerInstance(ip, port);
+            discoveryService.registerServerInstance();
         } else {
             log.info("discoveryService is disabled");
         }
 
-        for (CanalConfig.CanalAdapter canalAdapter : canalConfig.getCanalAdapters()) {
-            if (!canalAdapter.isEnable()) {
-                continue;
-            }
-
+        for (CanalConfig.CanalAdapter canalAdapter : canalAdapterList) {
             String metaPrefix = canalAdapter.getRedisMetaPrefix();
             if (metaPrefix != null) {
                 canalAdapter.setRedisMetaPrefix(env.resolvePlaceholders(metaPrefix));

@@ -210,7 +210,7 @@ public class IntES7xETLService {
                                         if (updateIdList.size() < maxSendMessageSize) {
                                             updateIdList.add(id);
                                         }
-                                        esTemplate.update(esMapping, id, hit, null);
+                                        esTemplate.update(esMapping, id, db, null);
                                     }
                                 } else {
                                     esTemplate.delete(esMapping, id, null);

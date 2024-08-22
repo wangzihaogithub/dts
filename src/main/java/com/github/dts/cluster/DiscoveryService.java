@@ -2,10 +2,10 @@ package com.github.dts.cluster;
 
 import com.github.dts.cluster.redis.RedisDiscoveryService;
 import com.github.dts.util.*;
-import com.sun.net.httpserver.HttpPrincipal;
 import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.core.env.Environment;
 
+import java.security.Principal;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -13,6 +13,7 @@ import java.util.stream.Collectors;
 public interface DiscoveryService {
 
     static DiscoveryService newInstance(CanalConfig.ClusterConfig config,
+                                        SdkSubscriber sdkSubscriber,
                                         ListableBeanFactory beanFactory) {
         CanalConfig.DiscoveryEnum discoveryEnum = config.getDiscovery();
         if (discoveryEnum == CanalConfig.DiscoveryEnum.DISABLE) {
@@ -26,12 +27,15 @@ public interface DiscoveryService {
             }
         }
 
+        Environment env = beanFactory.getBean(Environment.class);
+        String ip = Util.getIPAddress();
+        Integer port = env.getProperty("server.port", Integer.class, 8080);
         switch (discoveryEnum) {
             case REDIS: {
                 CanalConfig.ClusterConfig.Redis redis = config.getRedis();
                 String redisKeyRootPrefix = redis.getRedisKeyRootPrefix();
                 if (redisKeyRootPrefix != null) {
-                    redisKeyRootPrefix = beanFactory.getBean(Environment.class).resolvePlaceholders(redisKeyRootPrefix);
+                    redisKeyRootPrefix = env.resolvePlaceholders(redisKeyRootPrefix);
                 }
                 Object redisConnectionFactory = SpringUtil.getBean(beanFactory, redis.getRedisConnectionFactoryBeanName(), PlatformDependentUtil.REDIS_CONNECTION_FACTORY_CLASS);
                 return new RedisDiscoveryService(
@@ -39,7 +43,8 @@ public interface DiscoveryService {
                         config.getGroupName(),
                         redisKeyRootPrefix,
                         redis.getRedisInstanceExpireSec(),
-                        config);
+                        sdkSubscriber,
+                        config, ip, port);
             }
             case NACOS:
             default: {
@@ -48,9 +53,11 @@ public interface DiscoveryService {
         }
     }
 
-    HttpPrincipal loginServer(String authorization);
+    Principal loginServer(String authorization);
 
-    void registerServerInstance(String ip, int port);
+    Principal loginSdk(String authorization);
+
+    void registerServerInstance();
 
     <E extends ServerInstanceClient> ReferenceCounted<List<E>> getServerListRef();
 

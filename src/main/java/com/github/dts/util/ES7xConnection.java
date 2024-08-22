@@ -59,7 +59,8 @@ public class ES7xConnection {
     private final int maxRetryCount;
     private final int bulkRetryCount;
     private final int minAvailableSpaceHighBulkRequests;
-    private final Map<String, CompletableFuture<ESBulkRequest.EsRefreshResponse>> refreshAsyncCache = new ConcurrentHashMap<>();
+    private final Map<String, CompletableFuture<ESBulkRequest.EsRefreshResponse>> refreshAsyncCache = new ConcurrentHashMap<>(2);
+    private final Map<String, CompletableFuture<MappingMetaData>> getMappingAsyncCache = new ConcurrentHashMap<>(2);
     private int updateByQueryChunkSize = 1000;
 
     public ES7xConnection(CanalConfig.OuterAdapterConfig.Es7x es7x) {
@@ -141,41 +142,42 @@ public class ES7xConnection {
         });
     }
 
-    public MappingMetaData getMapping(String index) {
-        MappingMetaData mappingMetaData = null;
-        Map<String, MappingMetaData> mappings = Collections.emptyMap();
-        IOException ioException = null;
-        for (int i = 0, retry = 3; i < retry; i++) {
-            try {
-                GetMappingsRequest request = new GetMappingsRequest();
-                request.indices(index);
-                GetMappingsResponse response = restHighLevelClient.indices()
-                        .getMapping(request, RequestOptions.DEFAULT);
+    public CompletableFuture<MappingMetaData> getMapping(String index) {
+        return getMappingAsyncCache.computeIfAbsent(index, cacheKey -> {
+            CompletableFuture<MappingMetaData> future = new CompletableFuture<>();
+            GetMappingsRequest request = new GetMappingsRequest();
+            request.indices(index);
+            restHighLevelClient.indices()
+                    .getMappingAsync(request, RequestOptions.DEFAULT, new ActionListener<GetMappingsResponse>() {
+                        @Override
+                        public void onResponse(GetMappingsResponse response) {
+                            getMappingAsyncCache.remove(cacheKey);
+                            Map<String, MappingMetaData> mappings = response.mappings();
+                            MappingMetaData mappingMetaData = null;
+                            for (String key : mappings.keySet()) {
+                                if (key.startsWith(index)) {
+                                    mappingMetaData = mappings.get(key);
+                                    break;
+                                }
+                            }
+                            if (mappingMetaData == null && !mappings.isEmpty()) {
+                                mappingMetaData = mappings.values().iterator().next();
+                            }
+                            if (mappingMetaData != null) {
+                                future.complete(mappingMetaData);
+                            } else {
+                                future.completeExceptionally(new IllegalArgumentException("Not found the mapping info of index: " + index));
+                            }
+                        }
 
-                mappings = response.mappings();
-                break;
-            } catch (IOException e) {
-                ioException = e;
-            } catch (NullPointerException e) {
-                throw new IllegalArgumentException("Not found the mapping info of index: " + index);
-            }
-        }
-        if (ioException != null) {
-            logger.error("getMapping error {}", ioException, ioException);
-            Util.sneakyThrows(ioException);
-            return null;
-        }
-
-        for (String key : mappings.keySet()) {
-            if (key.startsWith(index)) {
-                mappingMetaData = mappings.get(key);
-                break;
-            }
-        }
-        if (mappingMetaData == null && !mappings.isEmpty()) {
-            return mappings.values().iterator().next();
-        }
-        return mappingMetaData;
+                        @Override
+                        public void onFailure(Exception e) {
+                            getMappingAsyncCache.remove(cacheKey);
+                            future.completeExceptionally(e);
+                        }
+                    });
+            return future;
+        });
     }
 
     public static class Es7RefreshResponse implements ESBulkRequest.EsRefreshResponse {

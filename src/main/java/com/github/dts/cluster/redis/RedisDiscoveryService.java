@@ -5,7 +5,6 @@ import com.github.dts.util.CanalConfig;
 import com.github.dts.util.ReferenceCounted;
 import com.github.dts.util.SnowflakeIdWorker;
 import com.github.dts.util.Util;
-import com.sun.net.httpserver.HttpPrincipal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.DisposableBean;
@@ -21,6 +20,7 @@ import org.springframework.data.redis.core.types.Expiration;
 import org.springframework.data.redis.serializer.Jackson2JsonRedisSerializer;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
+import java.security.Principal;
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -33,8 +33,9 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
     private final byte[] keyServerSubBytes;
     private final byte[] keyServerPubSubBytes;
     private final byte[] keyServerPubUnsubBytes;
-    private final byte[] keySdkSubBytes;
+    private final byte[] keySdkMqBytes;
     private final byte[] keyServerSetBytes;
+    private final byte[] keyIdMsgBytes;
     private final ScanOptions keyServerSetScanOptions;
     private final ScanOptions keySdkSetScanOptions;
     private final MessageListener messageServerListener;
@@ -46,8 +47,9 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
     private final ServerInstance serverInstance = new ServerInstance();
     private final Collection<ServerListener> serverListenerList = new CopyOnWriteArrayList<>();
     private final Collection<SdkListener> sdkListenerList = new CopyOnWriteArrayList<>();
+    private final SdkSubscriber sdkSubscriber;
+    private final byte[] serverInstanceBytes;
     private long serverHeartbeatCount;
-    private byte[] serverInstanceBytes;
     private Map<String, ServerInstance> serverInstanceMap = new LinkedHashMap<>();
     private Map<String, SdkInstance> sdkInstanceMap = new LinkedHashMap<>();
     // 首次=0，从0开始计数
@@ -63,7 +65,10 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
                                  String groupName,
                                  String redisKeyRootPrefix,
                                  int redisInstanceExpireSec,
-                                 CanalConfig.ClusterConfig clusterConfig) {
+                                 SdkSubscriber sdkSubscriber,
+                                 CanalConfig.ClusterConfig clusterConfig,
+                                 String ip,
+                                 Integer port) {
         String shortGroupName = String.valueOf(Math.abs(groupName.hashCode()));
         if (shortGroupName.length() >= groupName.length()) {
             shortGroupName = groupName;
@@ -72,10 +77,15 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
         this.serverInstance.setDeviceId(DEVICE_ID);
         this.serverInstance.setAccount(account);
         this.serverInstance.setPassword(UUID.randomUUID().toString().replace("-", ""));
+        this.serverInstance.setIp(ip);
+        this.serverInstance.setPort(port);
+        this.serverInstanceBytes = instanceServerSerializer.serialize(serverInstance);
 
+        this.sdkSubscriber = sdkSubscriber;
         this.redisInstanceExpireSec = Math.max(redisInstanceExpireSec, MIN_REDIS_INSTANCE_EXPIRE_SEC);
         this.clusterConfig = clusterConfig;
         StringRedisSerializer keySerializer = StringRedisSerializer.UTF_8;
+        this.keyIdMsgBytes = keySerializer.serialize(redisKeyRootPrefix + "id:msg");
         this.keyServerSetBytes = keySerializer.serialize(redisKeyRootPrefix + "svr:ls:" + DEVICE_ID);
         this.keyServerPubSubBytes = keySerializer.serialize(redisKeyRootPrefix + "svr:mq:sub");
         this.keyServerPubUnsubBytes = keySerializer.serialize(redisKeyRootPrefix + "svr:mq:unsub");
@@ -84,9 +94,9 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
                 .count(20)
                 .match(redisKeyRootPrefix + "svr:ls:*")
                 .build();
-        byte[] keySdkPubSubBytes = keySerializer.serialize(redisKeyRootPrefix + "sdk:mq:sub");
-        byte[] keySdkPubUnsubBytes = keySerializer.serialize(redisKeyRootPrefix + "sdk:mq:unsub");
-        this.keySdkSubBytes = keySerializer.serialize(redisKeyRootPrefix + "sdk:mq:*");
+        byte[] keySdkMqSubBytes = keySerializer.serialize(redisKeyRootPrefix + "sdk:mq:sub");
+        byte[] keySdkMqUnsubBytes = keySerializer.serialize(redisKeyRootPrefix + "sdk:mq:unsub");
+        this.keySdkMqBytes = keySerializer.serialize(redisKeyRootPrefix + "sdk:mq:*");
         this.keySdkSetScanOptions = ScanOptions.scanOptions()
                 .count(20)
                 .match(redisKeyRootPrefix + "sdk:ls:*")
@@ -108,9 +118,9 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
                 return;
             }
             byte[] channel = message.getChannel();
-            if (Arrays.equals(channel, keySdkPubSubBytes)) {
+            if (Arrays.equals(channel, keySdkMqSubBytes)) {
                 onSdkInstanceOnline(instanceSdkSerializer.deserialize(message.getBody()));
-            } else if (Arrays.equals(channel, keySdkPubUnsubBytes)) {
+            } else if (Arrays.equals(channel, keySdkMqUnsubBytes)) {
                 onSdkInstanceOffline(instanceSdkSerializer.deserialize(message.getBody()));
             }
         };
@@ -144,14 +154,14 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
     protected void subscribeSdk() {
         // sdk : sub, get
         Map<String, SdkInstance> sdkInstanceMap = redisTemplate.execute(connection -> {
-            connection.pSubscribe(messageSdkListener, keySdkSubBytes);
+            connection.pSubscribe(messageSdkListener, keySdkMqBytes);
             return getSdkInstanceMap(connection);
         }, true);
         updateSdkInstance(sdkInstanceMap);
     }
 
     @Override
-    public HttpPrincipal loginServer(String authorization) {
+    public Principal loginServer(String authorization) {
         if (authorization == null || !authorization.startsWith("Basic ")) {
             return null;
         }
@@ -168,7 +178,35 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
         }
         String dbPassword = instance.getPassword();
         if (Objects.equals(dbPassword, password)) {
-            return new HttpPrincipal(account, password);
+            return () -> account;
+        }
+        return null;
+    }
+
+    @Override
+    public Principal loginSdk(String authorization) {
+        if (authorization == null || !authorization.startsWith("Basic ")) {
+            return null;
+        }
+        String token = authorization.substring("Basic ".length());
+        String[] accountAndPassword;
+        try {
+            accountAndPassword = new String(Base64.getDecoder().decode(token)).split(":", 2);
+        } catch (Exception e) {
+            return null;
+        }
+        if (accountAndPassword.length != 2) {
+            return null;
+        }
+        String account = accountAndPassword[0];
+        String password = accountAndPassword[1];
+        SdkInstance instance = sdkInstanceMap.get(account);
+        if (instance == null) {
+            return null;
+        }
+        String dbPassword = instance.getPassword();
+        if (Objects.equals(dbPassword, password)) {
+            return () -> account;
         }
         return null;
     }
@@ -199,7 +237,7 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
         for (SdkInstance instance : instanceList) {
             boolean socketConnected = SdkInstance.isSocketConnected(instance, clusterConfig.getTestSocketTimeoutMs());
             try {
-                RedisSdkInstanceClient service = new RedisSdkInstanceClient(i++, size, socketConnected, instance, clusterConfig, redisTemplate);
+                RedisSdkInstanceClient service = new RedisSdkInstanceClient(i++, size, socketConnected, instance, clusterConfig, redisTemplate, sdkSubscriber, keyIdMsgBytes);
                 list.add(service);
             } catch (Exception e) {
                 throw new IllegalStateException(
@@ -211,11 +249,7 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
     }
 
     @Override
-    public void registerServerInstance(String ip, int port) {
-        serverInstance.setIp(ip);
-        serverInstance.setPort(port);
-        serverInstanceBytes = instanceServerSerializer.serialize(serverInstance);
-
+    public void registerServerInstance() {
         // server : set, pub, sub, get
         Map<String, ServerInstance> serverInstanceMap = redisTemplate.execute(connection -> {
             connection.set(keyServerSetBytes, serverInstanceBytes, Expiration.seconds(redisInstanceExpireSec), RedisStringCommands.SetOption.UPSERT);
@@ -434,6 +468,20 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
 
     public Map<String, SdkInstance> getSdkInstanceMap(RedisConnection connection) {
         Map<String, SdkInstance> map = new LinkedHashMap<>();
+        List<CanalConfig.SdkAccount> sdkAccount = clusterConfig.getSdkAccount();
+        if (sdkAccount != null) {
+            for (CanalConfig.SdkAccount account : sdkAccount) {
+                SdkInstance row = new SdkInstance();
+                row.setSubscribe(null);
+                row.setIp(serverInstance.getIp());
+                row.setPort(serverInstance.getPort());
+                row.setDeviceId(serverInstance.getDeviceId());
+                row.setAccount(account.getAccount());
+                row.setPassword(account.getPassword());
+                map.put(account.getAccount(), row);
+            }
+        }
+
         try (Cursor<byte[]> cursor = connection.scan(keySdkSetScanOptions)) {
             while (cursor.hasNext()) {
                 byte[] key = cursor.next();
