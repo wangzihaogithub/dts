@@ -14,6 +14,8 @@ import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.URL;
 import java.nio.charset.Charset;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -25,6 +27,8 @@ public class Util {
 
     public final static String timeZone;    // 当前时区
     private static final Logger logger = LoggerFactory.getLogger(Util.class);
+    private static final char[] DIGITS_LOWER;
+    private static final char[] DIGITS_UPPER;
     public static Integer port;
     private static DateTimeZone dateTimeZone;
     private static String ipAddress;
@@ -44,6 +48,11 @@ public class Util {
         timeZone = symbol + hour + ":" + minute;
         dateTimeZone = DateTimeZone.forID(timeZone);
         TimeZone.setDefault(TimeZone.getTimeZone("GMT" + timeZone));
+    }
+
+    static {
+        DIGITS_LOWER = new char[]{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
+        DIGITS_UPPER = new char[]{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
     }
 
     public static <E extends Throwable> void sneakyThrows(Throwable t) throws E {
@@ -95,7 +104,6 @@ public class Util {
         }
         return dir;
     }
-
 
     public static boolean isBlank(String str) {
         int strLen;
@@ -395,4 +403,31 @@ public class Util {
         strings.addAll(list);
         return strings;
     }
+
+    public static String md5(byte[] bytes) {
+        try {
+            MessageDigest md5 = MessageDigest.getInstance("MD5");
+            byte[] digest = md5.digest(bytes);
+
+            char[] chars = encodeHex(digest, DIGITS_LOWER);
+            return new String(chars);
+        } catch (NoSuchAlgorithmException e) {
+            sneakyThrows(e);
+            return null;
+        }
+    }
+
+    protected static char[] encodeHex(byte[] data, char[] toDigits) {
+        int l = data.length;
+        char[] out = new char[l << 1];
+        int i = 0;
+
+        for (int j = 0; i < l; ++i) {
+            out[j++] = toDigits[(240 & data[i]) >>> 4];
+            out[j++] = toDigits[15 & data[i]];
+        }
+
+        return out;
+    }
+
 }

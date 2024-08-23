@@ -57,6 +57,8 @@ public interface DiscoveryService {
 
     Principal loginSdk(String authorization);
 
+    Principal fetchSdk(String authorization);
+
     void registerServerInstance();
 
     <E extends ServerInstanceClient> ReferenceCounted<List<E>> getServerListRef();
@@ -67,12 +69,20 @@ public interface DiscoveryService {
 
     void addSdkListener(SdkListener serverListener);
 
+    MessageIdIncrementer getMessageIdIncrementer();
+
     interface ServerListener {
         <E extends ServerInstanceClient> void onChange(ReferenceCounted<ServerChangeEvent<E>> event);
     }
 
     interface SdkListener {
         <E extends SdkInstanceClient> void onChange(ReferenceCounted<SdkChangeEvent<E>> event);
+    }
+
+    interface MessageIdIncrementer {
+        long incrementId();
+
+        long incrementId(int estimatedCount);
     }
 
     class ServerChangeEvent<E extends ServerInstanceClient> {

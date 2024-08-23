@@ -1,10 +1,7 @@
 package com.github.dts.cluster.redis;
 
 import com.github.dts.cluster.*;
-import com.github.dts.util.CanalConfig;
-import com.github.dts.util.ReferenceCounted;
-import com.github.dts.util.SnowflakeIdWorker;
-import com.github.dts.util.Util;
+import com.github.dts.util.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.DisposableBean;
@@ -30,12 +27,11 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
     private static final int MIN_REDIS_INSTANCE_EXPIRE_SEC = 2;
     private static volatile ScheduledExecutorService scheduled;
     private final int redisInstanceExpireSec;
-    private final byte[] keyServerSubBytes;
     private final byte[] keyServerPubSubBytes;
     private final byte[] keyServerPubUnsubBytes;
-    private final byte[] keySdkMqBytes;
+    private final byte[] keySdkMqSubBytes;
+    private final byte[] keySdkMqUnsubBytes;
     private final byte[] keyServerSetBytes;
-    private final byte[] keyIdMsgBytes;
     private final ScanOptions keyServerSetScanOptions;
     private final ScanOptions keySdkSetScanOptions;
     private final MessageListener messageServerListener;
@@ -49,6 +45,8 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
     private final Collection<SdkListener> sdkListenerList = new CopyOnWriteArrayList<>();
     private final SdkSubscriber sdkSubscriber;
     private final byte[] serverInstanceBytes;
+    private final RedisMessageIdIncrementer messageIdIncrementer;
+    private final int updateInstanceTimerMs;
     private long serverHeartbeatCount;
     private Map<String, ServerInstance> serverInstanceMap = new LinkedHashMap<>();
     private Map<String, SdkInstance> sdkInstanceMap = new LinkedHashMap<>();
@@ -60,6 +58,8 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
     private boolean destroy;
     private volatile ReferenceCounted<List<RedisServerInstanceClient>> serverInstanceClientListRef = new ReferenceCounted<>(Collections.emptyList());
     private volatile ReferenceCounted<List<RedisSdkInstanceClient>> sdkInstanceClientListRef = new ReferenceCounted<>(Collections.emptyList());
+    private ScheduledFuture<?> updateServerInstanceScheduledFuture;
+    private ScheduledFuture<?> updateSdkInstanceScheduledFuture;
 
     public RedisDiscoveryService(Object redisConnectionFactory,
                                  String groupName,
@@ -82,21 +82,20 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
         this.serverInstanceBytes = instanceServerSerializer.serialize(serverInstance);
 
         this.sdkSubscriber = sdkSubscriber;
+        this.updateInstanceTimerMs = clusterConfig.getRedis().getUpdateInstanceTimerMs();
         this.redisInstanceExpireSec = Math.max(redisInstanceExpireSec, MIN_REDIS_INSTANCE_EXPIRE_SEC);
         this.clusterConfig = clusterConfig;
         StringRedisSerializer keySerializer = StringRedisSerializer.UTF_8;
-        this.keyIdMsgBytes = keySerializer.serialize(redisKeyRootPrefix + "id:msg");
+        byte[] keyIdMsgBytes = keySerializer.serialize(redisKeyRootPrefix + "id:msg");
         this.keyServerSetBytes = keySerializer.serialize(redisKeyRootPrefix + "svr:ls:" + DEVICE_ID);
         this.keyServerPubSubBytes = keySerializer.serialize(redisKeyRootPrefix + "svr:mq:sub");
         this.keyServerPubUnsubBytes = keySerializer.serialize(redisKeyRootPrefix + "svr:mq:unsub");
-        this.keyServerSubBytes = keySerializer.serialize(redisKeyRootPrefix + "svr:mq:*");
         this.keyServerSetScanOptions = ScanOptions.scanOptions()
                 .count(20)
                 .match(redisKeyRootPrefix + "svr:ls:*")
                 .build();
-        byte[] keySdkMqSubBytes = keySerializer.serialize(redisKeyRootPrefix + "sdk:mq:sub");
-        byte[] keySdkMqUnsubBytes = keySerializer.serialize(redisKeyRootPrefix + "sdk:mq:unsub");
-        this.keySdkMqBytes = keySerializer.serialize(redisKeyRootPrefix + "sdk:mq:*");
+        this.keySdkMqSubBytes = keySerializer.serialize(redisKeyRootPrefix + "sdk:mq:sub");
+        this.keySdkMqUnsubBytes = keySerializer.serialize(redisKeyRootPrefix + "sdk:mq:unsub");
         this.keySdkSetScanOptions = ScanOptions.scanOptions()
                 .count(20)
                 .match(redisKeyRootPrefix + "sdk:ls:*")
@@ -127,6 +126,7 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
 
         this.redisTemplate.setConnectionFactory((RedisConnectionFactory) redisConnectionFactory);
         this.redisTemplate.afterPropertiesSet();
+        this.messageIdIncrementer = new RedisMessageIdIncrementer(keyIdMsgBytes, clusterConfig.getRedis().getMessageIdIncrementDelta(), redisTemplate);
 
         // sdk : sub, get
         subscribeSdk();
@@ -154,7 +154,7 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
     protected void subscribeSdk() {
         // sdk : sub, get
         Map<String, SdkInstance> sdkInstanceMap = redisTemplate.execute(connection -> {
-            connection.pSubscribe(messageSdkListener, keySdkMqBytes);
+            connection.subscribe(messageSdkListener, keySdkMqSubBytes, keySdkMqUnsubBytes);
             return getSdkInstanceMap(connection);
         }, true);
         updateSdkInstance(sdkInstanceMap);
@@ -186,6 +186,7 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
     @Override
     public Principal loginSdk(String authorization) {
         if (authorization == null || !authorization.startsWith("Basic ")) {
+            log.info("loginSdk fail by authorization is '{}'", authorization);
             return null;
         }
         String token = authorization.substring("Basic ".length());
@@ -193,22 +194,37 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
         try {
             accountAndPassword = new String(Base64.getDecoder().decode(token)).split(":", 2);
         } catch (Exception e) {
+            log.info("loginSdk fail by base64 error {}, {}", authorization, e.toString());
             return null;
         }
         if (accountAndPassword.length != 2) {
+            log.info("loginSdk fail by accountAndPassword.length != 2 {}", authorization);
             return null;
         }
         String account = accountAndPassword[0];
         String password = accountAndPassword[1];
         SdkInstance instance = sdkInstanceMap.get(account);
         if (instance == null) {
+            log.info("loginSdk fail by account is not exist. account={}", account);
             return null;
         }
         String dbPassword = instance.getPassword();
-        if (Objects.equals(dbPassword, password)) {
-            return () -> account;
+        if (!Objects.equals(dbPassword, password)) {
+            log.info("loginSdk fail by password error. account={}", account);
+            return null;
         }
-        return null;
+        log.info("loginSdk success. account={}", account);
+        return () -> account;
+    }
+
+    @Override
+    public Principal fetchSdk(String authorization) {
+        Principal principal = loginSdk(authorization);
+        if (principal == null) {
+            updateSdkInstance(getSdkInstanceMap());
+            principal = loginSdk(authorization);
+        }
+        return principal;
     }
 
     public List<RedisServerInstanceClient> newServerInstanceClient(Collection<ServerInstance> instanceList) {
@@ -237,7 +253,7 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
         for (SdkInstance instance : instanceList) {
             boolean socketConnected = SdkInstance.isSocketConnected(instance, clusterConfig.getTestSocketTimeoutMs());
             try {
-                RedisSdkInstanceClient service = new RedisSdkInstanceClient(i++, size, socketConnected, instance, clusterConfig, redisTemplate, sdkSubscriber, keyIdMsgBytes);
+                RedisSdkInstanceClient service = new RedisSdkInstanceClient(i++, size, socketConnected, instance, clusterConfig, sdkSubscriber);
                 list.add(service);
             } catch (Exception e) {
                 throw new IllegalStateException(
@@ -254,10 +270,13 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
         Map<String, ServerInstance> serverInstanceMap = redisTemplate.execute(connection -> {
             connection.set(keyServerSetBytes, serverInstanceBytes, Expiration.seconds(redisInstanceExpireSec), RedisStringCommands.SetOption.UPSERT);
             connection.publish(keyServerPubSubBytes, serverInstanceBytes);
-            connection.pSubscribe(messageServerListener, keyServerSubBytes);
+            connection.subscribe(messageServerListener, keyServerPubSubBytes, keyServerPubUnsubBytes);
             return getServerInstanceMap(connection);
         }, true);
         updateServerInstance(serverInstanceMap);
+
+        this.updateSdkInstanceScheduledFuture = scheduledUpdateSdkInstance();
+        this.updateServerInstanceScheduledFuture = scheduledUpdateServerInstance();
         this.serverHeartbeatScheduledFuture = scheduledServerHeartbeat();
     }
 
@@ -283,6 +302,28 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
         }
     }
 
+    private ScheduledFuture<?> scheduledUpdateServerInstance() {
+        if (updateInstanceTimerMs <= 0) {
+            return null;
+        }
+        ScheduledFuture<?> scheduledFuture = this.updateServerInstanceScheduledFuture;
+        if (scheduledFuture != null) {
+            scheduledFuture.cancel(false);
+        }
+        return getScheduled().scheduleWithFixedDelay(() -> updateServerInstance(getServerInstanceMap()), updateInstanceTimerMs, updateInstanceTimerMs, TimeUnit.MILLISECONDS);
+    }
+
+    private ScheduledFuture<?> scheduledUpdateSdkInstance() {
+        if (updateInstanceTimerMs <= 0) {
+            return null;
+        }
+        ScheduledFuture<?> scheduledFuture = this.updateSdkInstanceScheduledFuture;
+        if (scheduledFuture != null) {
+            scheduledFuture.cancel(false);
+        }
+        return getScheduled().scheduleWithFixedDelay(() -> updateSdkInstance(getSdkInstanceMap()), updateInstanceTimerMs, updateInstanceTimerMs, TimeUnit.MILLISECONDS);
+    }
+
     private ScheduledFuture<?> scheduledServerHeartbeat() {
         ScheduledFuture<?> scheduledFuture = this.serverHeartbeatScheduledFuture;
         if (scheduledFuture != null) {
@@ -292,19 +333,13 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
         if (redisInstanceExpireSec == MIN_REDIS_INSTANCE_EXPIRE_SEC) {
             delay = 500;
         } else {
-            delay = redisInstanceExpireSec * 1000 - 100;
+            delay = (redisInstanceExpireSec * 1000) / 3;
         }
         return getScheduled().scheduleWithFixedDelay(() -> {
             redisTemplate.execute(connection -> {
                 // 续期过期时间
-                Long ttl = connection.ttl(keyServerSetBytes, TimeUnit.SECONDS);
-                if (ttl != null && ttl > 0) {
-                    long exp = redisInstanceExpireSec * (serverHeartbeatCount + 2) - ttl;
-                    Boolean success = connection.expire(keyServerSetBytes, exp);
-                    if (success == null || !success) {
-                        redisSetServerInstance(connection);
-                    }
-                } else {
+                Boolean success = connection.expire(keyServerSetBytes, redisInstanceExpireSec);
+                if (success == null || !success) {
                     redisSetServerInstance(connection);
                 }
                 serverHeartbeatCount++;
@@ -317,11 +352,16 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
         return connection.set(keyServerSetBytes, serverInstanceBytes, Expiration.seconds(redisInstanceExpireSec), RedisStringCommands.SetOption.UPSERT);
     }
 
-    public void updateServerInstance(Map<String, ServerInstance> serverInstanceMap) {
+    public synchronized void updateServerInstance(Map<String, ServerInstance> serverInstanceMap) {
         if (serverInstanceMap == null) {
             // serverInstanceMap == null is Redis IOException
             return;
         }
+        DifferentComparatorUtil.ListDiffResult<String> diff = DifferentComparatorUtil.listDiff(this.serverInstanceMap.keySet(), serverInstanceMap.keySet());
+        if (diff.isEmpty()) {
+            return;
+        }
+        log.info("updateServerInstance insert={}, delete={}", diff.getInsertList(), diff.getDeleteList());
         ReferenceCounted<List<RedisServerInstanceClient>> before = this.serverInstanceClientListRef;
         ReferenceCounted<List<RedisServerInstanceClient>> after = new ReferenceCounted<>(newServerInstanceClient(serverInstanceMap.values()));
         try {
@@ -339,11 +379,16 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
         this.serverInstanceMap = serverInstanceMap;
     }
 
-    public void updateSdkInstance(Map<String, SdkInstance> sdkInstanceMap) {
+    public synchronized void updateSdkInstance(Map<String, SdkInstance> sdkInstanceMap) {
         if (sdkInstanceMap == null) {
             // sdkInstanceMap == null is Redis IOException
             return;
         }
+        DifferentComparatorUtil.ListDiffResult<String> diff = DifferentComparatorUtil.listDiff(this.sdkInstanceMap.keySet(), sdkInstanceMap.keySet());
+        if (diff.isEmpty()) {
+            return;
+        }
+        log.info("updateSdkInstance insert={}, delete={}", diff.getInsertList(), diff.getDeleteList());
         ReferenceCounted<List<RedisSdkInstanceClient>> before = this.sdkInstanceClientListRef;
         ReferenceCounted<List<RedisSdkInstanceClient>> after = new ReferenceCounted<>(newSdkInstanceClient(sdkInstanceMap.values()));
         try {
@@ -472,7 +517,6 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
         if (sdkAccount != null) {
             for (CanalConfig.SdkAccount account : sdkAccount) {
                 SdkInstance row = new SdkInstance();
-                row.setSubscribe(null);
                 row.setIp(serverInstance.getIp());
                 row.setPort(serverInstance.getPort());
                 row.setDeviceId(serverInstance.getDeviceId());
@@ -513,7 +557,6 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
         }, true);
     }
 
-
     @Override
     public void addServerListener(ServerListener serverListener) {
         serverListenerList.add(serverListener);
@@ -523,4 +566,63 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
     public void addSdkListener(SdkListener serverListener) {
         sdkListenerList.add(serverListener);
     }
+
+    @Override
+    public MessageIdIncrementer getMessageIdIncrementer() {
+        return messageIdIncrementer;
+    }
+
+    private static class RedisMessageIdIncrementer implements MessageIdIncrementer {
+        private final int messageIdIncrementDelta;
+        private final RedisTemplate<byte[], byte[]> redisTemplate;
+        private final byte[] keyIdMsgBytes;
+        private Long lastIncrement;
+        private long localMessageIdIncrement = 0;
+        private int lastIncrementDelta;
+
+        RedisMessageIdIncrementer(byte[] keyIdMsgBytes, int messageIdIncrementDelta, RedisTemplate<byte[], byte[]> redisTemplate) {
+            this.keyIdMsgBytes = keyIdMsgBytes;
+            this.messageIdIncrementDelta = messageIdIncrementDelta;
+            this.redisTemplate = redisTemplate;
+        }
+
+        @Override
+        public long incrementId() {
+            return incrementId(messageIdIncrementDelta);
+        }
+
+        @Override
+        public long incrementId(int estimatedCount) {
+            Long lastIncrement = this.lastIncrement;
+            int incrementDelta = Math.max(messageIdIncrementDelta, estimatedCount);
+            try {
+                if (lastIncrement == null || localMessageIdIncrement > lastIncrementDelta) {
+                    lastIncrement = redisTemplate.opsForValue().increment(keyIdMsgBytes, incrementDelta);
+                    if (lastIncrement != null) {
+                        this.localMessageIdIncrement = 0L;
+                        this.lastIncrement = lastIncrement = lastIncrement - incrementDelta;
+                        this.lastIncrementDelta = incrementDelta;
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("RedisSdkInstanceClient increment ID error {}", e.toString(), e);
+            }
+            if (lastIncrement == null) {
+                return this.lastIncrement = 1L;
+            } else {
+                return lastIncrement + localMessageIdIncrement++;
+            }
+        }
+
+        @Override
+        public String toString() {
+            return "RedisMessageIdIncrementer{" +
+                    "messageIdIncrementDelta=" + messageIdIncrementDelta +
+                    ", lastIncrement=" + lastIncrement +
+                    ", localMessageIdIncrement=" + localMessageIdIncrement +
+                    '}';
+        }
+    }
+
+
 }

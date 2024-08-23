@@ -308,6 +308,16 @@ public class CanalConfig {
             private String redisKeyRootPrefix = "dts:${spring.profiles.active:def}";
             private int redisInstanceExpireSec = 10;
             private int messageIdIncrementDelta = 50;
+            // 防止sub，pub命令有延迟，增加定时轮训
+            private int updateInstanceTimerMs = 5000;
+
+            public int getUpdateInstanceTimerMs() {
+                return updateInstanceTimerMs;
+            }
+
+            public void setUpdateInstanceTimerMs(int updateInstanceTimerMs) {
+                this.updateInstanceTimerMs = updateInstanceTimerMs;
+            }
 
             public int getMessageIdIncrementDelta() {
                 return messageIdIncrementDelta;

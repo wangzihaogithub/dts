@@ -60,8 +60,9 @@ public class ESSyncUtil {
             if (!Objects.equals(env, config.getEsMapping().getEnv())) {
                 continue;
             }
+            String md5 = Util.md5(content);
             try {
-                config.init();
+                config.init(md5);
             } catch (Exception e) {
                 throw new RuntimeException("ERROR Config: " + fileName + " " + e, e);
             }

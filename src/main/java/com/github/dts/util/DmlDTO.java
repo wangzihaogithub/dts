@@ -12,8 +12,16 @@ public class DmlDTO {
     private String type;
     private Map<String, Object> old;
     private Map<String, Object> data;
-
     private List<String> indexNames;
+    private List<String> desc;
+
+    public List<String> getDesc() {
+        return desc;
+    }
+
+    public void setDesc(List<String> desc) {
+        this.desc = desc;
+    }
 
     public String getTableName() {
         return tableName;

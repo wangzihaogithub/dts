@@ -24,7 +24,9 @@ public class SdkSubscriberHttpServlet extends HttpServlet {
         if (authorization == null || authorization.isEmpty()) {
             authorization = req.getParameter("Authorization");
         }
-        Principal principal = discoveryService.loginSdk(authorization);
+        String fetch = req.getHeader("Authorization-fetch");
+
+        Principal principal = "true".equalsIgnoreCase(fetch) ? discoveryService.fetchSdk(authorization) : discoveryService.loginSdk(authorization);
         if (principal == null) {
             resp.setHeader("WWW-Authenticate", "Basic realm=\"SdkSubscriberHttpServlet\"");
             resp.sendError(HttpServletResponse.SC_UNAUTHORIZED);

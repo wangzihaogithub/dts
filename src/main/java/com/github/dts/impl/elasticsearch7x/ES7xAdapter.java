@@ -422,13 +422,21 @@ public class ES7xAdapter implements Adapter {
                     return;
                 }
 
+                DiscoveryService.MessageIdIncrementer messageIdIncrementer = discoveryService.getMessageIdIncrementer();
                 Map<Dml, Map<Integer, List<Dependent>>> dmlListMap = groupByDml(drainTo());
                 List<DmlDTO> dmlDTO = convert(dmlListMap);
-                for (SdkInstanceClient client : clientList) {
+                try {
                     for (DmlDTO dto : dmlDTO) {
-                        client.write(new SdkMessage(MessageTypeEnum.ES_DML, dto));
+                        long id = messageIdIncrementer.incrementId(dmlDTO.size());
+                        SdkMessage sdkMessage = new SdkMessage(id, MessageTypeEnum.ES_DML, dto);
+                        for (SdkInstanceClient client : clientList) {
+                            client.write(sdkMessage);
+                        }
                     }
-                    client.flush();
+                } finally {
+                    for (SdkInstanceClient client : clientList) {
+                        client.flush();
+                    }
                 }
             }
         }
@@ -491,9 +499,12 @@ public class ES7xAdapter implements Adapter {
                 for (Map.Entry<Integer, List<Dependent>> entry1 : entry.getValue().entrySet()) {
                     List<Dependent> value = entry1.getValue();
                     Dependent f = value.get(0);
+                    Set<String> desc = new LinkedHashSet<>();
                     Set<String> indexs = new LinkedHashSet<>();
                     for (Dependent dependent : value) {
-                        indexs.add(dependent.getSchemaItem().getEsMapping().get_index());
+                        SchemaItem schemaItem = dependent.getSchemaItem();
+                        indexs.add(schemaItem.getEsMapping().get_index());
+                        desc.add(schemaItem.getDesc());
                     }
                     DmlDTO dmlDTO = new DmlDTO();
                     dmlDTO.setTableName(dml.getTable());
@@ -505,6 +516,7 @@ public class ES7xAdapter implements Adapter {
                     dmlDTO.setOld(f.getOldMap());
                     dmlDTO.setData(f.getDataMap());
                     dmlDTO.setIndexNames(new ArrayList<>(indexs));
+                    dmlDTO.setDesc(new ArrayList<>(desc));
                     list.add(dmlDTO);
                 }
             }

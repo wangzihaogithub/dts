@@ -17,13 +17,18 @@ public class ESSyncConfig {
     private String dataSourceKey;   // 数据源key
     private String destination;     // canal destination
     private ESMapping esMapping;
+    private String md5;
 
     @Override
     public String toString() {
         return dataSourceKey + "." + destination + "." + esMapping;
     }
 
-    public void init() {
+    public String getMd5() {
+        return md5;
+    }
+
+    public void init(String md5) {
         if (esMapping._index == null) {
             throw new NullPointerException("esMapping._index");
         }
@@ -33,7 +38,7 @@ public class ESSyncConfig {
         if (esMapping.sql == null) {
             throw new NullPointerException("esMapping.sql");
         }
-
+        this.md5 = md5;
         esMapping.setConfig(this);
 
         SchemaItem schemaItem = SqlParser.parse(esMapping.getSql());

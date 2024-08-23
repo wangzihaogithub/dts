@@ -11,7 +11,6 @@ public class SdkInstance {
     private String deviceId;
     private String account;
     private String password;
-    private List<String> subscribe;
 
     public static boolean isSocketConnected(SdkInstance instance, int timeout) {
         try (KeepaliveSocket socket = new KeepaliveSocket(instance.getIp(), instance.getPort())) {
@@ -21,14 +20,6 @@ public class SdkInstance {
         } catch (IOException ignored) {
         }
         return false;
-    }
-
-    public List<String> getSubscribe() {
-        return subscribe;
-    }
-
-    public void setSubscribe(List<String> subscribe) {
-        this.subscribe = subscribe;
     }
 
     public String getIp() {

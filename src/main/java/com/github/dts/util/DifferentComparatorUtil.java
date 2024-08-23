@@ -251,6 +251,10 @@ public class DifferentComparatorUtil {
         public List<E> getDeleteList() {
             return deleteList;
         }
+
+        public boolean isEmpty() {
+            return insertList.isEmpty() && deleteList.isEmpty();
+        }
     }
 
     public static class Diff implements Cloneable {

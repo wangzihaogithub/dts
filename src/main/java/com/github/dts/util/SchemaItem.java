@@ -17,7 +17,6 @@ public class SchemaItem {
     private Map<String, FieldItem> selectFields = Util.newLinkedCaseInsensitiveMap();  // 查询字段
     private String sql;
     private volatile Map<String, FieldItem> fields = Util.newLinkedCaseInsensitiveMap();
-    ;
     private volatile Map<String, List<TableItem>> tableItemAliases;
     private volatile Map<String, List<FieldItem>> columnFields;
     private volatile Boolean allFieldsSimple;
@@ -43,6 +42,14 @@ public class SchemaItem {
     public static void main(String[] args) {
         Map<String, List<String>> columnList = SqlParser.getColumnList("WHERE corpRelationTag.corp_id = #{corp_id} ");
 
+    }
+
+    public String getDesc() {
+        if (objectField != null) {
+            return "nested[" + objectField.getFieldName() + "]";
+        } else {
+            return "doc[" + String.join(",", tableItemAliases.keySet()) + "]";
+        }
     }
 
     public void init(ESSyncConfig.ObjectField objectField, ESMapping esMapping) {
