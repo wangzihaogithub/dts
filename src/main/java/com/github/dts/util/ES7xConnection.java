@@ -51,6 +51,7 @@ import java.util.stream.Collectors;
  * @version 1.0.0
  */
 public class ES7xConnection {
+    public static final ES7xBulkResponse EMPTY_RESPONSE = new ES7xBulkResponse(Collections.emptyList());
     private static final Logger logger = LoggerFactory.getLogger(ES7xConnection.class);
     private final RestHighLevelClient restHighLevelClient;
     private final int concurrentBulkRequest;
@@ -58,7 +59,8 @@ public class ES7xConnection {
     private final int maxRetryCount;
     private final int bulkRetryCount;
     private final int minAvailableSpaceHighBulkRequests;
-    private final Map<String, CompletableFuture<ESBulkRequest.EsRefreshResponse>> refreshAsyncCache = new ConcurrentHashMap<>();
+    private final Map<String, CompletableFuture<ESBulkRequest.EsRefreshResponse>> refreshAsyncCache = new ConcurrentHashMap<>(2);
+    private final Map<String, CompletableFuture<MappingMetaData>> getMappingAsyncCache = new ConcurrentHashMap<>(2);
     private int updateByQueryChunkSize = 1000;
 
     public ES7xConnection(CanalConfig.OuterAdapterConfig.Es7x es7x) {
@@ -127,7 +129,7 @@ public class ES7xConnection {
                 @Override
                 public void onResponse(RefreshResponse refreshResponse) {
                     refreshAsyncCache.remove(key);
-                    future.complete(new Es7RefreshResponse(refreshResponse));
+                    future.complete(new Es7RefreshResponse(indices, refreshResponse));
                 }
 
                 @Override
@@ -140,48 +142,56 @@ public class ES7xConnection {
         });
     }
 
-    public MappingMetaData getMapping(String index) {
-        MappingMetaData mappingMetaData = null;
-        Map<String, MappingMetaData> mappings = Collections.emptyMap();
-        IOException ioException = null;
-        for (int i = 0, retry = 3; i < retry; i++) {
-            try {
-                GetMappingsRequest request = new GetMappingsRequest();
-                request.indices(index);
-                GetMappingsResponse response = restHighLevelClient.indices()
-                        .getMapping(request, RequestOptions.DEFAULT);
+    public CompletableFuture<MappingMetaData> getMapping(String index) {
+        return getMappingAsyncCache.computeIfAbsent(index, cacheKey -> {
+            CompletableFuture<MappingMetaData> future = new CompletableFuture<>();
+            GetMappingsRequest request = new GetMappingsRequest();
+            request.indices(index);
+            restHighLevelClient.indices()
+                    .getMappingAsync(request, RequestOptions.DEFAULT, new ActionListener<GetMappingsResponse>() {
+                        @Override
+                        public void onResponse(GetMappingsResponse response) {
+                            getMappingAsyncCache.remove(cacheKey);
+                            Map<String, MappingMetaData> mappings = response.mappings();
+                            MappingMetaData mappingMetaData = null;
+                            for (String key : mappings.keySet()) {
+                                if (key.startsWith(index)) {
+                                    mappingMetaData = mappings.get(key);
+                                    break;
+                                }
+                            }
+                            if (mappingMetaData == null && !mappings.isEmpty()) {
+                                mappingMetaData = mappings.values().iterator().next();
+                            }
+                            if (mappingMetaData != null) {
+                                future.complete(mappingMetaData);
+                            } else {
+                                future.completeExceptionally(new IllegalArgumentException("Not found the mapping info of index: " + index));
+                            }
+                        }
 
-                mappings = response.mappings();
-                break;
-            } catch (IOException e) {
-                ioException = e;
-            } catch (NullPointerException e) {
-                throw new IllegalArgumentException("Not found the mapping info of index: " + index);
-            }
-        }
-        if (ioException != null) {
-            logger.error("getMapping error {}", ioException, ioException);
-            Util.sneakyThrows(ioException);
-            return null;
-        }
-
-        for (String key : mappings.keySet()) {
-            if (key.startsWith(index)) {
-                mappingMetaData = mappings.get(key);
-                break;
-            }
-        }
-        if (mappingMetaData == null && !mappings.isEmpty()) {
-            return mappings.values().iterator().next();
-        }
-        return mappingMetaData;
+                        @Override
+                        public void onFailure(Exception e) {
+                            getMappingAsyncCache.remove(cacheKey);
+                            future.completeExceptionally(e);
+                        }
+                    });
+            return future;
+        });
     }
 
     public static class Es7RefreshResponse implements ESBulkRequest.EsRefreshResponse {
         private final RefreshResponse refreshResponse;
+        private final String[] indices;
 
-        public Es7RefreshResponse(RefreshResponse refreshResponse) {
+        public Es7RefreshResponse(String[] indices, RefreshResponse refreshResponse) {
+            this.indices = indices;
             this.refreshResponse = refreshResponse;
+        }
+
+        @Override
+        public String[] getIndices() {
+            return indices;
         }
 
         @Override
@@ -298,15 +308,19 @@ public class ES7xConnection {
             return updateByQueryRequest.toString();
         }
 
+        public ES7xUpdateByQueryRequest build() {
+            return this;
+        }
     }
 
     public static class ES7xIndexRequest implements ESBulkRequest.ESIndexRequest {
 
         private final IndexRequest indexRequest;
 
-        public ES7xIndexRequest(String index, String id) {
+        public ES7xIndexRequest(String index, String id, Map<String, ?> source) {
             indexRequest = new IndexRequest(index);
             indexRequest.id(id);
+            indexRequest.source(source);
         }
 
         @Override
@@ -314,16 +328,8 @@ public class ES7xConnection {
             return indexRequest.toString();
         }
 
-        @Override
-        public ES7xIndexRequest setSource(Map<String, ?> source) {
-            indexRequest.source(source);
-            return this;
-        }
-
-        @Override
-        public ES7xIndexRequest setRouting(String routing) {
-            indexRequest.routing(routing);
-            return this;
+        public IndexRequest build() {
+            return indexRequest;
         }
 
     }
@@ -331,9 +337,23 @@ public class ES7xConnection {
     public static class ES7xUpdateRequest implements ESBulkRequest.ESUpdateRequest {
 
         private final UpdateRequest updateRequest;
+        private final String index;
+        private final String id;
 
-        public ES7xUpdateRequest(String index, String id) {
+        public ES7xUpdateRequest(String index, String id, Map source, boolean shouldUpsertDoc) {
             updateRequest = new UpdateRequest(index, id);
+            updateRequest.docAsUpsert(shouldUpsertDoc);
+            updateRequest.doc(source);
+            this.index = index;
+            this.id = id;
+        }
+
+        public String getIndex() {
+            return index;
+        }
+
+        public String getId() {
+            return id;
         }
 
         @Override
@@ -341,30 +361,9 @@ public class ES7xConnection {
             return updateRequest.toString();
         }
 
-        @Override
-        public ES7xUpdateRequest setScript(Script script) {
-            updateRequest.script(script);
-            return this;
+        public UpdateRequest build() {
+            return updateRequest;
         }
-
-        @Override
-        public ES7xUpdateRequest setDoc(Map source) {
-            updateRequest.doc(source);
-            return this;
-        }
-
-        @Override
-        public ES7xUpdateRequest setDocAsUpsert(boolean shouldUpsertDoc) {
-            updateRequest.docAsUpsert(shouldUpsertDoc);
-            return this;
-        }
-
-        @Override
-        public ES7xUpdateRequest setRouting(String routing) {
-            updateRequest.routing(routing);
-            return this;
-        }
-
     }
 
     public static class ES7xDeleteRequest implements ESBulkRequest.ESDeleteRequest {
@@ -378,6 +377,10 @@ public class ES7xConnection {
         @Override
         public String toString() {
             return deleteRequest.toString();
+        }
+
+        public DeleteRequest build() {
+            return deleteRequest;
         }
     }
 
@@ -421,10 +424,8 @@ public class ES7xConnection {
         }
 
         public ES7xUpdateByQueryRequest pollUpdateByQuery() {
-            if (updateByQueryRequests.isEmpty()) {
-                return null;
-            }
-            return updateByQueryRequests.remove(updateByQueryRequests.size() - 1);
+            int size = updateByQueryRequests.size();
+            return size == 0 ? null : updateByQueryRequests.remove(size - 1);
         }
 
         @Override
@@ -448,6 +449,7 @@ public class ES7xConnection {
 
     public static class BulkRequestResponse {
         private final ConcurrentBulkRequest request;
+        private final List<DocWriteRequest<?>> requests;
         private final long estimatedSizeInBytes;
         private final long totalEstimatedSizeInBytes;
         private final List<UpdateByQuery> updateByQueryList = new ArrayList<>();
@@ -455,6 +457,7 @@ public class ES7xConnection {
 
         public BulkRequestResponse(ConcurrentBulkRequest request) {
             this.request = request;
+            this.requests = request.requests();
             this.estimatedSizeInBytes = request.estimatedSizeInBytes();
             this.totalEstimatedSizeInBytes = request.totalEstimatedSizeInBytes();
         }
@@ -669,13 +672,13 @@ public class ES7xConnection {
                         try {
                             for (Object request : requests) {
                                 if (request instanceof ES7xIndexRequest) {
-                                    bulkRequest.add(((ES7xIndexRequest) request).indexRequest);
+                                    bulkRequest.add(((ES7xIndexRequest) request).build());
                                 } else if (request instanceof ES7xUpdateByQueryRequest) {
-                                    bulkRequest.add((ES7xUpdateByQueryRequest) request);
+                                    bulkRequest.add(((ES7xUpdateByQueryRequest) request).build());
                                 } else if (request instanceof ES7xUpdateRequest) {
-                                    bulkRequest.add(((ES7xUpdateRequest) request).updateRequest);
+                                    bulkRequest.add(((ES7xUpdateRequest) request).build());
                                 } else if (request instanceof ES7xDeleteRequest) {
-                                    bulkRequest.add(((ES7xDeleteRequest) request).deleteRequest);
+                                    bulkRequest.add(((ES7xDeleteRequest) request).build());
                                 } else {
                                     throw new IllegalArgumentException("Unknown request type: " + request.getClass());
                                 }
@@ -697,7 +700,7 @@ public class ES7xConnection {
                 for (ConcurrentBulkRequest bulkRequest : bulkRequests) {
                     if (bulkRequest.requestNumberOfActions() < bulkCommitSize && bulkRequest.tryLock()) {
                         try {
-                            bulkRequest.add(eir.indexRequest);
+                            bulkRequest.add(eir.build());
                         } finally {
                             bulkRequest.unlock();
                         }
@@ -715,7 +718,7 @@ public class ES7xConnection {
                 for (ConcurrentBulkRequest bulkRequest : bulkRequests) {
                     if (bulkRequest.requestNumberOfActions() < bulkCommitSize && bulkRequest.tryLock()) {
                         try {
-                            bulkRequest.add(eir);
+                            bulkRequest.add(eir.build());
                         } finally {
                             bulkRequest.unlock();
                         }
@@ -733,7 +736,7 @@ public class ES7xConnection {
                 for (ConcurrentBulkRequest bulkRequest : bulkRequests) {
                     if (bulkRequest.requestNumberOfActions() < bulkCommitSize && bulkRequest.tryLock()) {
                         try {
-                            bulkRequest.add(eur.updateRequest);
+                            bulkRequest.add(eur.build());
                         } finally {
                             bulkRequest.unlock();
                         }
@@ -751,7 +754,7 @@ public class ES7xConnection {
                 for (ConcurrentBulkRequest bulkRequest : bulkRequests) {
                     if (bulkRequest.requestNumberOfActions() < bulkCommitSize && bulkRequest.tryLock()) {
                         try {
-                            bulkRequest.add(edr.deleteRequest);
+                            bulkRequest.add(edr.build());
                         } finally {
                             bulkRequest.unlock();
                         }

@@ -9,44 +9,33 @@ public class Dependent {
     private final Dml dml;
     private final SchemaItem schemaItem;
     private final int index;
-    /**
-     * 索引主表
-     */
-    private final SchemaItem.TableItem indexMainTable;
-    /**
-     * 嵌套文档主表
-     */
-    private final SchemaItem.TableItem nestedMainTable;
-    /**
-     * 嵌套文档从表
-     */
-    private final List<SchemaItem.TableItem> nestedSlaveTableList;
     private transient String dmlKey;
+    private Boolean effect;
 
     public Dependent(SchemaItem schemaItem, int index,
-                     SchemaItem.TableItem indexMainTable,
-                     SchemaItem.TableItem nestedMainTable,
-                     List<SchemaItem.TableItem> nestedSlaveTableList,
                      Dml dml) {
-        this.schemaItem = schemaItem;
-        this.index = index;
-        this.indexMainTable = indexMainTable;
-        this.nestedSlaveTableList = nestedSlaveTableList;
-        this.nestedMainTable = nestedMainTable;
-        this.dml = dml;
+        this(schemaItem, index, dml, null);
     }
 
-    public boolean isJoinByParentSlaveTableForeignKey() {
-        if (isIndexMainTable()) {
-            return false;
-        } else {
-            return !schemaItem.isJoinByParentPrimaryKey();
-        }
+    public Dependent(SchemaItem schemaItem, int index,
+                     Dml dml, Boolean effect) {
+        this.schemaItem = schemaItem;
+        this.index = index;
+        this.dml = dml;
+        this.effect = effect;
+    }
+
+    public boolean isJoinByMainTablePrimaryKey() {
+        return isIndexMainTable() || schemaItem.isJoinByMainTablePrimaryKey();
+    }
+
+    public boolean isJoinBySlaveTableForeignKey() {
+        return !isJoinByMainTablePrimaryKey();
     }
 
     public List<SchemaItem.TableItem> getNestedSlaveTableList(String tableName) {
         List<SchemaItem.TableItem> list = new ArrayList<>();
-        for (SchemaItem.TableItem tableItem : nestedSlaveTableList) {
+        for (SchemaItem.TableItem tableItem : getNestedSlaveTableList()) {
             if (tableName.equalsIgnoreCase(tableItem.getTableName())) {
                 list.add(tableItem);
             }
@@ -54,13 +43,31 @@ public class Dependent {
         return list;
     }
 
+    public Map<String, Object> getDataMap() {
+        if (!ESSyncUtil.isEmpty(dml.getData()) && index < dml.getData().size()) {
+            return dml.getData().get(index);
+        } else {
+            return null;
+        }
+    }
+
+    public Map<String, Object> getOldMap() {
+        if (!ESSyncUtil.isEmpty(dml.getOld()) && index < dml.getOld().size()) {
+            return dml.getOld().get(index);
+        } else {
+            return null;
+        }
+    }
+
     public Map<String, Object> getMergeDataMap() {
         Map<String, Object> mergeDataMap = new HashMap<>();
-        if (!ESSyncUtil.isEmpty(dml.getOld()) && index < dml.getOld().size()) {
-            mergeDataMap.putAll(dml.getOld().get(index));
+        Map<String, Object> oldMap = getOldMap();
+        if (oldMap != null) {
+            mergeDataMap.putAll(oldMap);
         }
-        if (!ESSyncUtil.isEmpty(dml.getData()) && index < dml.getData().size()) {
-            mergeDataMap.putAll(dml.getData().get(index));
+        Map<String, Object> dataMap = getDataMap();
+        if (dataMap != null) {
+            mergeDataMap.putAll(dataMap);
         }
         return mergeDataMap;
     }
@@ -77,24 +84,73 @@ public class Dependent {
         return index;
     }
 
+    /**
+     * 索引主表
+     */
     public SchemaItem.TableItem getIndexMainTable() {
-        return indexMainTable;
+        return schemaItem.getObjectField().getEsMapping().getSchemaItem().getMainTable();
     }
 
+    /**
+     * 嵌套文档主表
+     */
     public SchemaItem.TableItem getNestedMainTable() {
-        return nestedMainTable;
+        return schemaItem.getObjectField().getSchemaItem().getMainTable();
     }
 
+    /**
+     * 嵌套文档从表
+     */
     public List<SchemaItem.TableItem> getNestedSlaveTableList() {
-        return nestedSlaveTableList;
+        return schemaItem.getObjectField().getSchemaItem().getSlaveTableList();
+    }
+
+    /**
+     * DML是否影响了文档
+     *
+     * @return true
+     */
+    public boolean isEffect() {
+        if (effect == null) {
+            boolean effect;
+            if (dml.isTypeInit()) {
+                effect = true;
+            } else if (dml.isTypeUpdate()) {
+                Map<String, Object> oldMap = getOldMap();
+                effect = oldMap != null && !oldMap.isEmpty() && schemaItem.existTableColumn(dml.getTable(), oldMap.keySet());
+            } else if (dml.isTypeInsert()) {
+                effect = schemaItem.existTableColumn(dml.getTable(), null);
+            } else if (dml.isTypeDelete()) {
+                effect = schemaItem.existTableColumn(dml.getTable(), null);
+            } else {
+                effect = false;
+            }
+            this.effect = effect;
+        }
+        return effect;
     }
 
     @Override
     public String toString() {
         List<Map<String, Object>> oldList = dml.getOld();
+        List<Map<String, Object>> dataList = dml.getData();
         Map<String, Object> old = oldList != null ? oldList.get(index) : null;
+        Map<String, Object> data = dataList != null ? dataList.get(index) : null;
         String oldString = old == null ? "" : old.keySet().toString();
-        return dml.getType() + "(" + oldString + ")." + dml.getTable() + "(" + schemaItem + ")";
+        Collection<String> pkNames = dml.getPkNames();
+        StringJoiner pkJoiner = null;
+        if (pkNames != null && !pkNames.isEmpty()) {
+            pkJoiner = new StringJoiner(",");
+            for (String pkName : pkNames) {
+                Object pkValue = old != null ? old.get(pkName) : null;
+                if (pkValue == null && data != null) {
+                    pkValue = data.get(pkName);
+                }
+                pkJoiner.add(String.valueOf(pkValue));
+            }
+        }
+        return dml.getType() + "#" + (pkJoiner == null ? "" : pkJoiner) +
+                "{" + dml.getTable() + oldString + " -> " + schemaItem + "}";
     }
 
     @Override
@@ -120,15 +176,15 @@ public class Dependent {
     }
 
     public boolean isIndexMainTable() {
-        return dml.getTable().equalsIgnoreCase(indexMainTable.getTableName());
+        return schemaItem.isIndexMainTable(dml.getTable());
     }
 
     public boolean isNestedMainTable() {
-        return dml.getTable().equalsIgnoreCase(nestedMainTable.getTableName());
+        return dml.getTable().equalsIgnoreCase(getNestedMainTable().getTableName());
     }
 
     public boolean isNestedSlaveTable() {
-        for (SchemaItem.TableItem tableItem : nestedSlaveTableList) {
+        for (SchemaItem.TableItem tableItem : getNestedSlaveTableList()) {
             if (dml.getTable().equalsIgnoreCase(tableItem.getTableName())) {
                 return true;
             }

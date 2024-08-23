@@ -5,6 +5,7 @@ import org.joda.time.DateTimeZone;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.concurrent.CustomizableThreadFactory;
+import org.springframework.util.LinkedCaseInsensitiveMap;
 
 import java.io.File;
 import java.io.PrintWriter;
@@ -12,12 +13,12 @@ import java.io.StringWriter;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.URL;
+import java.nio.charset.Charset;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
-import java.util.Date;
-import java.util.Enumeration;
-import java.util.Objects;
-import java.util.TimeZone;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.BiFunction;
 import java.util.stream.Stream;
@@ -26,6 +27,8 @@ public class Util {
 
     public final static String timeZone;    // 当前时区
     private static final Logger logger = LoggerFactory.getLogger(Util.class);
+    private static final char[] DIGITS_LOWER;
+    private static final char[] DIGITS_UPPER;
     public static Integer port;
     private static DateTimeZone dateTimeZone;
     private static String ipAddress;
@@ -47,10 +50,35 @@ public class Util {
         TimeZone.setDefault(TimeZone.getTimeZone("GMT" + timeZone));
     }
 
+    static {
+        DIGITS_LOWER = new char[]{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
+        DIGITS_UPPER = new char[]{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
+    }
+
     public static <E extends Throwable> void sneakyThrows(Throwable t) throws E {
         throw (E) t;
     }
 
+    public static String encodeBasicAuth(String username, String password, Charset charset) {
+        String credentialsString = username + ":" + password;
+        byte[] encodedBytes = Base64.getEncoder().encode(credentialsString.getBytes(charset));
+        return new String(encodedBytes, charset);
+    }
+
+    public static String filterNonAscii(String str) {
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < str.length(); i++) {
+            char c = str.charAt(i);
+            if (c == '"') {
+                builder.append('\'');
+            } else if (c == ':') {
+                builder.append('-');
+            } else if (c >= 32 && c <= 126) {
+                builder.append(c);
+            }
+        }
+        return builder.toString();
+    }
 
     public static String getStackTrace(Throwable throwable) {
         StringWriter sw = new StringWriter();
@@ -77,7 +105,6 @@ public class Util {
         return dir;
     }
 
-
     public static boolean isBlank(String str) {
         int strLen;
         if (str != null && (strLen = str.length()) != 0) {
@@ -97,15 +124,15 @@ public class Util {
         return !isBlank(str);
     }
 
-    public static String getIPAddress() {
+    public static String getIPAddressPort() {
         if (port != null && port > 0) {
-            return getIPAddress0() + ":" + port;
+            return getIPAddress() + ":" + port;
         } else {
-            return getIPAddress0();
+            return getIPAddress();
         }
     }
 
-    public static String getIPAddress0() {
+    public static String getIPAddress() {
         if (ipAddress != null) {
             return ipAddress;
         } else {
@@ -356,4 +383,51 @@ public class Util {
 
         return null;
     }
+
+    public static <V> Map<String, V> newLinkedCaseInsensitiveMap() {
+        return new LinkedCaseInsensitiveMap<>();
+    }
+
+    public static Set<String> newLinkedCaseInsensitiveSet() {
+        return Collections.newSetFromMap(new LinkedCaseInsensitiveMap<>());
+    }
+
+    public static <V> Map<String, V> newLinkedCaseInsensitiveMap(Map<String, V> map) {
+        Map<String, V> map1 = new LinkedCaseInsensitiveMap<>(map.size());
+        map1.putAll(map);
+        return map1;
+    }
+
+    public static Set<String> newLinkedCaseInsensitiveSet(Collection<String> list) {
+        Set<String> strings = Collections.newSetFromMap(new LinkedCaseInsensitiveMap<>(list.size()));
+        strings.addAll(list);
+        return strings;
+    }
+
+    public static String md5(byte[] bytes) {
+        try {
+            MessageDigest md5 = MessageDigest.getInstance("MD5");
+            byte[] digest = md5.digest(bytes);
+
+            char[] chars = encodeHex(digest, DIGITS_LOWER);
+            return new String(chars);
+        } catch (NoSuchAlgorithmException e) {
+            sneakyThrows(e);
+            return null;
+        }
+    }
+
+    protected static char[] encodeHex(byte[] data, char[] toDigits) {
+        int l = data.length;
+        char[] out = new char[l << 1];
+        int i = 0;
+
+        for (int j = 0; i < l; ++i) {
+            out[j++] = toDigits[(240 & data[i]) >>> 4];
+            out[j++] = toDigits[15 & data[i]];
+        }
+
+        return out;
+    }
+
 }

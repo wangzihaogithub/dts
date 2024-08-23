@@ -63,7 +63,7 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
             }
             case 1: {
                 T first = sqlList.iterator().next();
-                return Collections.singletonList(newNoMerge(new ArrayList<>(sqlList), first));
+                return Collections.singletonList(newNoMerge(new ArrayList<>(sqlList), first, groupBy));
             }
             default: {
                 Map<String, List<T>> groupByExprSqlMap = sqlList.stream()
@@ -73,7 +73,7 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
                 for (List<T> valueList : groupByExprSqlMap.values()) {
                     T first = valueList.iterator().next();
                     if (valueList.size() == 1) {
-                        result.add(newNoMerge(valueList, first));
+                        result.add(newNoMerge(valueList, first, groupBy));
                     } else {
                         List<List<T>> partitionList = Lists.partition(valueList, maxIdInCount);
                         for (List<T> partition : partitionList) {
@@ -92,7 +92,7 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
                                         needGroupBy));
                             } else {
                                 for (T value : partition) {
-                                    result.add(newNoMerge(Collections.singletonList(value), value));
+                                    result.add(newNoMerge(Collections.singletonList(value), value, groupBy));
                                 }
                             }
                         }
@@ -103,9 +103,12 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
         }
     }
 
-    private static <T extends JdbcTemplateSQL> MergeJdbcTemplateSQL<T> newNoMerge(List<T> mergeList, T value) {
+    private static <T extends JdbcTemplateSQL> MergeJdbcTemplateSQL<T> newNoMerge(List<T> mergeList, T value, boolean groupBy) {
+        Collection<SchemaItem.ColumnItem> needGroupBy = value.getNeedGroupBy();
+        String exprSql = groupBy && needGroupBy != null && !needGroupBy.isEmpty() ?
+                SqlParser.setGroupBy(value.getExprSql(), value.getNeedGroupBy()) : value.getExprSql();
         return new MergeJdbcTemplateSQL<>(
-                value.getExprSql(), value.getArgs(),
+                exprSql, value.getArgs(),
                 value.getDataSourceKey(),
                 null, null,
                 mergeList,

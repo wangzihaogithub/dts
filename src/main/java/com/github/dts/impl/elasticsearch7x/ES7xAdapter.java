@@ -1,5 +1,9 @@
 package com.github.dts.impl.elasticsearch7x;
 
+import com.github.dts.cluster.DiscoveryService;
+import com.github.dts.cluster.MessageTypeEnum;
+import com.github.dts.cluster.SdkInstanceClient;
+import com.github.dts.cluster.SdkMessage;
 import com.github.dts.impl.elasticsearch7x.basic.ESSyncConfigSQL;
 import com.github.dts.util.*;
 import org.slf4j.Logger;
@@ -11,6 +15,7 @@ import org.springframework.core.annotation.AnnotationAwareOrderComparator;
 import java.sql.Timestamp;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 
@@ -22,7 +27,6 @@ public class ES7xAdapter implements Adapter {
     private final Map<String, ESSyncConfig> esSyncConfig = new ConcurrentHashMap<>(); // 文件名对应配置
     private final Map<String, Map<String, ESSyncConfig>> dbTableEsSyncConfig = new ConcurrentHashMap<>(); // schema-table对应配置
     private final List<ESSyncServiceListener> listenerList = new ArrayList<>();
-    private final Set<String> allIndices = new LinkedHashSet<>();
     private CacheMap cacheMap;
     private ES7xConnection esConnection;
     private CanalConfig.OuterAdapterConfig configuration;
@@ -35,15 +39,20 @@ public class ES7xAdapter implements Adapter {
     @Value("${spring.profiles.active:}")
     private String env;
     private boolean refresh = true;
-    private boolean autoUpdateChildren = false;
+    private boolean onlyEffect = true;
     private int refreshThreshold = 10;
     private int joinUpdateSize = 10;
     private int streamChunkSize = 10000;
     private int maxIdIn = 1000;
+    private RealtimeListener connectorCommitListener;
 
     @Override
-    public void init(CanalConfig.CanalAdapter canalAdapter, CanalConfig.OuterAdapterConfig configuration, Properties envProperties) {
+    public void init(CanalConfig.CanalAdapter canalAdapter,
+                     CanalConfig.OuterAdapterConfig configuration, Properties envProperties,
+                     DiscoveryService discoveryService) {
         this.configuration = configuration;
+        this.connectorCommitListener = discoveryService == null ? null : new RealtimeListener(discoveryService, configuration.getEs7x().getCommitEventPublishScheduledTickMs(), configuration.getEs7x().getCommitEventPublishMaxBlockCount());
+        this.onlyEffect = configuration.getEs7x().isOnlyEffect();
         this.cacheMap = new CacheMap(configuration.getEs7x().getMaxQueryCacheSize());
         this.joinUpdateSize = configuration.getEs7x().getJoinUpdateSize();
         this.streamChunkSize = configuration.getEs7x().getStreamChunkSize();
@@ -71,9 +80,6 @@ public class ES7xAdapter implements Adapter {
         this.listenerList.sort(AnnotationAwareOrderComparator.INSTANCE);
         this.listenerList.forEach(item -> item.init(esSyncConfig));
         this.nestedFieldWriter = new NestedFieldWriter(configuration.getEs7x().getNestedFieldThreads(), esSyncConfig, esTemplate, cacheMap);
-        for (ESSyncConfig value : esSyncConfig.values()) {
-            allIndices.add(value.getEsMapping().get_index());
-        }
     }
 
     public Map<String, ESSyncConfig> getEsSyncConfigByIndex(String index) {
@@ -102,23 +108,26 @@ public class ES7xAdapter implements Adapter {
 
     @Override
     public CompletableFuture<Void> sync(List<Dml> dmls) {
-        return sync(dmls, refresh, autoUpdateChildren, false, joinUpdateSize, null);
+        return sync(dmls, refresh, onlyEffect, false, joinUpdateSize, null, connectorCommitListener);
     }
 
-    public CompletableFuture<Void> sync(List<Dml> dmls, boolean refresh, boolean autoUpdateChildren,
-                                        boolean onlyCurrentIndex, int joinUpdateSize, Collection<String> onlyFieldName) {
+    public <L extends EsDependentCommitListener & ESTemplate.RefreshListener> CompletableFuture<Void> sync(List<Dml> dmls, boolean refresh, boolean onlyEffect,
+                                                                                                           boolean onlyCurrentIndex, int joinUpdateSize,
+                                                                                                           Collection<String> onlyFieldName,
+                                                                                                           L commitListener) {
         if (dmls == null || dmls.isEmpty()) {
             return CompletableFuture.completedFuture(null);
         }
 
-        CompletableFuture<Void> future = new CompletableFuture<>();
         ESTemplate.BulkRequestList bulkRequestList = esTemplate.newBulkRequestList(BulkPriorityEnum.HIGH);
         List<Dml> syncDmlList = dmls.stream().filter(e -> !Boolean.TRUE.equals(e.getIsDdl())).collect(Collectors.toList());
         String tables = syncDmlList.stream().map(Dml::getTable).distinct().collect(Collectors.joining(","));
         Dml max = syncDmlList.stream().filter(e -> e.getEs() != null).max(Comparator.comparing(Dml::getEs)).orElse(null);
-        Timestamp maxTimestamp = max == null ? null : new Timestamp(max.getEs());
+        Timestamp maxSqlEsTimestamp = max == null ? null : new Timestamp(max.getEs());
 
-        Set<String> indices = new LinkedHashSet<>();
+        // basic field change
+        BasicFieldWriter.WriteResult writeResult = new BasicFieldWriter.WriteResult();
+        Timestamp startTimestamp = new Timestamp(System.currentTimeMillis());
         long timestamp = System.currentTimeMillis();
         long basicFieldWriterCost;
         try {
@@ -132,87 +141,130 @@ public class ES7xAdapter implements Adapter {
                     }
                 }
             }
-            List<ESSyncConfigSQL> configSQLList = new ArrayList<>();
             for (Map.Entry<Map<String, ESSyncConfig>, List<Dml>> entry : groupByMap.entrySet()) {
-                List<ESSyncConfigSQL> item = basicFieldWriter.writeEsReturnSql(entry.getKey().values(), entry.getValue(), bulkRequestList);
-                configSQLList.addAll(item);
-                if (!item.isEmpty() || !bulkRequestList.isEmpty()) {
-                    for (ESSyncConfig value : entry.getKey().values()) {
-                        indices.add(value.getEsMapping().get_index());
-                    }
-                }
+                BasicFieldWriter.WriteResult item = basicFieldWriter.writeEsReturnSql(entry.getKey().values(), entry.getValue(), bulkRequestList);
+                writeResult.add(item);
             }
-            BasicFieldWriter.executeUpdate(configSQLList, maxIdIn);
+            BasicFieldWriter.executeUpdate(writeResult.getSqlList(), maxIdIn);
         } finally {
             basicFieldWriterCost = System.currentTimeMillis() - timestamp;
             cacheMap.cacheClear();
-            bulkRequestList.commit(esTemplate);
-
-            // refresh
+            bulkRequestList.commit(esTemplate, null);
             if (refresh) {
-                esTemplate.refresh(indices);
+                refresh(writeResult.getIndices(), commitListener);
             }
         }
 
         timestamp = System.currentTimeMillis();
-        DependentGroup dependentGroup = nestedFieldWriter.convertToDependentGroup(syncDmlList, onlyCurrentIndex);
+        DependentGroup dependentGroup = nestedFieldWriter.convertToDependentGroup(syncDmlList, onlyCurrentIndex, onlyEffect);
 
-        List<CompletableFuture<?>> futures = asyncRunDependent(maxTimestamp, joinUpdateSize,
-                dependentGroup.getMainTableJoinDependentList(), dependentGroup.getSlaveTableDependentList());
+        // join async change
+        List<CompletableFuture<?>> futures = asyncRunDependent(maxSqlEsTimestamp, joinUpdateSize,
+                bulkRequestList, dependentGroup.selectMainTableJoinDependentList(), dependentGroup.selectSlaveTableDependentList());
 
-        try {
-            // nested type ： main table change
-            List<Dependent> mainTableDependentList = dependentGroup.getMainTableDependentList();
-            List<Dependent> filterMainTableDependentList = onlyFieldName == null ?
-                    mainTableDependentList : onlyFieldName.isEmpty() ? Collections.emptyList() : mainTableDependentList.stream().filter(e -> e.containsObjectField(onlyFieldName)).collect(Collectors.toList());
-            nestedFieldWriter.writeMainTable(filterMainTableDependentList, bulkRequestList, autoUpdateChildren);
-        } finally {
-            log.info("sync(dml[{}]).BasicFieldWriter={}ms, NestedFieldWriter={}ms, {}, table={}",
-                    syncDmlList.size(),
-                    basicFieldWriterCost,
-                    System.currentTimeMillis() - timestamp,
-                    maxTimestamp, tables);
-            cacheMap.cacheClear();
-            bulkRequestList.commit(esTemplate);
+        // nested type ： main table change
+        List<Dependent> mainTableDependentList = dependentGroup.selectMainTableDependentList(onlyFieldName);
+        boolean changeNestedFieldMainTable = !mainTableDependentList.isEmpty();
+        if (changeNestedFieldMainTable) {
+            try {
+                nestedFieldWriter.writeMainTable(mainTableDependentList, bulkRequestList, maxIdIn);
+            } finally {
+                log.info("sync(dml[{}]).BasicFieldWriter={}ms, NestedFieldWriter={}ms, {}, table={}",
+                        syncDmlList.size(),
+                        basicFieldWriterCost,
+                        System.currentTimeMillis() - timestamp,
+                        maxSqlEsTimestamp, tables);
+                cacheMap.cacheClear();
+                bulkRequestList.commit(esTemplate, null);
+            }
         }
 
         // call listeners
-        if (!listenerList.isEmpty()) {
+        boolean changeListenerList = !listenerList.isEmpty();
+        if (changeListenerList) {
             try {
                 invokeAllListener(syncDmlList, bulkRequestList);
             } catch (InterruptedException | ExecutionException e) {
                 Util.sneakyThrows(e);
             } finally {
                 cacheMap.cacheClear();
-                bulkRequestList.commit(esTemplate); // 批次统一提交
+                bulkRequestList.commit(esTemplate, null); // 批次统一提交
             }
         }
 
+        // future
+        CompletableFuture<Void> future = allOfCompleted(futures, commitListener, dependentGroup, writeResult, startTimestamp, maxSqlEsTimestamp, refresh);
+        // refresh
+        if (refresh && dmls.size() < refreshThreshold) {
+            if (changeListenerList || changeNestedFieldMainTable) {
+                refresh(dependentGroup.getIndices(), commitListener);
+            }
+        }
+        return future;
+    }
+
+    private <L extends EsDependentCommitListener & ESTemplate.RefreshListener> CompletableFuture<Void> allOfCompleted(
+            List<CompletableFuture<?>> futures, L commitListener, DependentGroup dependentGroup,
+            BasicFieldWriter.WriteResult writeResult,
+            Timestamp startTimestamp, Timestamp sqlEsTimestamp,
+            boolean refresh) {
         if (futures.isEmpty()) {
-            future.complete(null);
+            if (commitListener != null) {
+                commitListener.done(new EsDependentCommitListener.CommitEvent(writeResult, dependentGroup.getMainTableDependentList(),
+                        dependentGroup.getMainTableJoinDependentList(),
+                        dependentGroup.getSlaveTableDependentList(),
+                        startTimestamp,
+                        sqlEsTimestamp
+                ));
+            }
+            return CompletableFuture.completedFuture(null);
         } else {
-            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+            if (commitListener != null) {
+                commitListener.done(new EsDependentCommitListener.CommitEvent(writeResult, dependentGroup.getMainTableDependentList(),
+                        Collections.emptyList(),
+                        Collections.emptyList(),
+                        startTimestamp,
+                        sqlEsTimestamp
+                ));
+            }
+            CompletableFuture<Void> future = new CompletableFuture<>();
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[futures.size()]))
                     .whenComplete((unused, throwable) -> {
                         if (throwable != null) {
                             future.completeExceptionally(throwable);
                         } else {
                             future.complete(null);
+                            if (commitListener != null) {
+                                commitListener.done(new EsDependentCommitListener.CommitEvent(null, Collections.emptyList(),
+                                        dependentGroup.getMainTableJoinDependentList(),
+                                        dependentGroup.getSlaveTableDependentList(),
+                                        startTimestamp,
+                                        sqlEsTimestamp
+                                ));
+                            }
                             if (refresh) {
-                                esTemplate.refresh(allIndices);
+                                refresh(dependentGroup.getIndices(), commitListener);
                             }
                         }
                     });
+            return future;
         }
+    }
 
-        // refresh
-        if (refresh && dmls.size() < refreshThreshold) {
-            esTemplate.refresh(allIndices);
+    private void refresh(Collection<String> indices, ESTemplate.RefreshListener listener) {
+        if (indices.isEmpty()) {
+            return;
         }
-        return future;
+        esTemplate.refresh(indices).whenComplete((response, throwable) -> {
+            if (throwable != null) {
+                listener.done(response);
+            }
+        });
     }
 
     private List<CompletableFuture<?>> asyncRunDependent(Timestamp maxTimestamp,
                                                          int joinUpdateSize,
+                                                         ESTemplate.BulkRequestList bulkRequestList,
                                                          List<Dependent> mainTableJoinDependentList,
                                                          List<Dependent> slaveTableDependentList) {
         List<CompletableFuture<?>> futures = new ArrayList<>();
@@ -221,6 +273,8 @@ public class ES7xAdapter implements Adapter {
         if (!mainTableJoinDependentList.isEmpty()) {
             NestedMainJoinTableRunnable runnable = new NestedMainJoinTableRunnable(
                     mainTableJoinDependentList, esTemplate,
+                    bulkRequestList,
+                    null,
                     joinUpdateSize, streamChunkSize, maxTimestamp);
             futures.add(runnable);
             mainJoinTableExecutor.execute(runnable);
@@ -233,6 +287,8 @@ public class ES7xAdapter implements Adapter {
         if (!slaveTableList.isEmpty()) {
             NestedSlaveTableRunnable runnable = new NestedSlaveTableRunnable(
                     slaveTableList, esTemplate,
+                    bulkRequestList,
+                    null,
                     cacheMap.getMaxValueSize(), maxTimestamp, maxIdIn, streamChunkSize);
             futures.add(runnable);
             slaveTableExecutor.execute(runnable);
@@ -281,12 +337,12 @@ public class ES7xAdapter implements Adapter {
         return esTemplate;
     }
 
-    public boolean isAutoUpdateChildren() {
-        return autoUpdateChildren;
+    public boolean isOnlyEffect() {
+        return onlyEffect;
     }
 
-    public void setAutoUpdateChildren(boolean autoUpdateChildren) {
-        this.autoUpdateChildren = autoUpdateChildren;
+    public void setOnlyEffect(boolean onlyEffect) {
+        this.onlyEffect = onlyEffect;
     }
 
     public boolean isRefresh() {
@@ -311,6 +367,171 @@ public class ES7xAdapter implements Adapter {
             }
         }
         return list;
+    }
+
+    static class RealtimeListener implements ESTemplate.RefreshListener, EsDependentCommitListener, Runnable {
+        private static final Function<String, List<Dependent>> MAPPING_FUNCTION = k -> new ArrayList<>();
+        private static volatile ScheduledExecutorService SCHEDULED;
+        private final DiscoveryService discoveryService;
+        private final LinkedBlockingQueue<CommitEvent> eventList;
+
+        RealtimeListener(DiscoveryService discoveryService, int commitEventPublishScheduledTickMs, int commitEventPublishMaxBlockCount) {
+            this.discoveryService = discoveryService;
+            this.eventList = new LinkedBlockingQueue<>(commitEventPublishMaxBlockCount);
+            getScheduled().scheduleWithFixedDelay(this, commitEventPublishScheduledTickMs, commitEventPublishMaxBlockCount, TimeUnit.MILLISECONDS);
+        }
+
+        public static ScheduledExecutorService getScheduled() {
+            if (SCHEDULED == null) {
+                synchronized (RealtimeListener.class) {
+                    if (SCHEDULED == null) {
+                        SCHEDULED = Util.newScheduled(1, "RealtimeListener", true);
+                    }
+                }
+            }
+            return SCHEDULED;
+        }
+
+        @Override
+        public void done(CommitEvent event) {
+            try {
+                eventList.put(event);
+            } catch (InterruptedException e) {
+                Util.sneakyThrows(e);
+            }
+        }
+
+        @Override
+        public void done(ESBulkRequest.EsRefreshResponse response) {
+            run();
+        }
+
+        private List<CommitEvent> drainTo() {
+            ArrayList<CommitEvent> list = new ArrayList<>(eventList.size());
+            eventList.drainTo(list, 10000);
+            return list;
+        }
+
+        @Override
+        public void run() {
+            if (eventList.isEmpty()) {
+                return;
+            }
+            try (ReferenceCounted<List<SdkInstanceClient>> sdkListRef = discoveryService.getSdkListRef()) {
+                List<SdkInstanceClient> clientList = sdkListRef.get();
+                if (clientList.isEmpty()) {
+                    return;
+                }
+
+                DiscoveryService.MessageIdIncrementer messageIdIncrementer = discoveryService.getMessageIdIncrementer();
+                Map<Dml, Map<Integer, List<Dependent>>> dmlListMap = groupByDml(drainTo());
+                List<DmlDTO> dmlDTO = convert(dmlListMap);
+                try {
+                    for (DmlDTO dto : dmlDTO) {
+                        long id = messageIdIncrementer.incrementId(dmlDTO.size());
+                        SdkMessage sdkMessage = new SdkMessage(id, MessageTypeEnum.ES_DML, dto);
+                        for (SdkInstanceClient client : clientList) {
+                            client.write(sdkMessage);
+                        }
+                    }
+                } finally {
+                    for (SdkInstanceClient client : clientList) {
+                        client.flush();
+                    }
+                }
+            }
+        }
+
+        private String dependentKey(Dependent dependent) {
+            return dependent.getDml() + "_" + dependent.getIndex();
+        }
+
+        private Map<Dml, Map<Integer, List<Dependent>>> groupByDml(List<CommitEvent> list) {
+            Map<String, List<Dependent>> dependentMap = new IdentityHashMap<>();
+            for (CommitEvent event : list) {
+                for (Dependent dependent : event.mainTableDependentList) {
+                    dependentMap.computeIfAbsent(dependentKey(dependent), MAPPING_FUNCTION)
+                            .add(dependent);
+                }
+                for (Dependent dependent : event.mainTableJoinDependentList) {
+                    dependentMap.computeIfAbsent(dependentKey(dependent), MAPPING_FUNCTION)
+                            .add(dependent);
+                }
+                for (Dependent dependent : event.slaveTableDependentList) {
+                    dependentMap.computeIfAbsent(dependentKey(dependent), MAPPING_FUNCTION)
+                            .add(dependent);
+                }
+                BasicFieldWriter.WriteResult writeResult = event.writeResult;
+                if (writeResult != null) {
+                    for (ESSyncConfigSQL configSQL : writeResult.getSqlList()) {
+                        Dependent dependent = configSQL.getDependent();
+                        dependentMap.computeIfAbsent(dependentKey(dependent), MAPPING_FUNCTION)
+                                .add(dependent);
+                    }
+                    for (Dependent dependent : writeResult.getInsertList()) {
+                        dependentMap.computeIfAbsent(dependentKey(dependent), MAPPING_FUNCTION)
+                                .add(dependent);
+                    }
+                    for (Dependent dependent : writeResult.getUpdateList()) {
+                        dependentMap.computeIfAbsent(dependentKey(dependent), MAPPING_FUNCTION)
+                                .add(dependent);
+                    }
+                    for (Dependent dependent : writeResult.getDeleteList()) {
+                        dependentMap.computeIfAbsent(dependentKey(dependent), MAPPING_FUNCTION)
+                                .add(dependent);
+                    }
+                }
+            }
+            Map<Dml, Map<Integer, List<Dependent>>> dmlListMap = new IdentityHashMap<>();
+            for (List<Dependent> value : dependentMap.values()) {
+                Dependent dependent = value.get(0);
+                dmlListMap.computeIfAbsent(dependent.getDml(), k -> new LinkedHashMap<>())
+                        .computeIfAbsent(dependent.getIndex(), k -> new ArrayList<>())
+                        .addAll(value);
+            }
+            return dmlListMap;
+        }
+
+        private static Boolean isEffect(List<Dependent> list) {
+            for (Dependent dependent : list) {
+                if (dependent.isEffect()) {
+                    return Boolean.TRUE;
+                }
+            }
+            return Boolean.FALSE;
+        }
+
+        private List<DmlDTO> convert(Map<Dml, Map<Integer, List<Dependent>>> dmlListMap) {
+            List<DmlDTO> list = new ArrayList<>();
+            for (Map.Entry<Dml, Map<Integer, List<Dependent>>> entry : dmlListMap.entrySet()) {
+                Dml dml = entry.getKey();
+                for (Map.Entry<Integer, List<Dependent>> entry1 : entry.getValue().entrySet()) {
+                    List<Dependent> dependentList = entry1.getValue();
+                    Dependent f = dependentList.get(0);
+                    Set<String> desc = new LinkedHashSet<>();
+                    Set<String> indexs = new LinkedHashSet<>();
+                    for (Dependent dependent : dependentList) {
+                        SchemaItem schemaItem = dependent.getSchemaItem();
+                        indexs.add(schemaItem.getEsMapping().get_index());
+                        desc.add(schemaItem.getDesc());
+                    }
+                    DmlDTO dmlDTO = new DmlDTO();
+                    dmlDTO.setTableName(dml.getTable());
+                    dmlDTO.setDatabase(dml.getDatabase());
+                    dmlDTO.setPkNames(dml.getPkNames());
+                    dmlDTO.setEs(dml.getEs());
+                    dmlDTO.setTs(dml.getTs());
+                    dmlDTO.setType(dml.getType());
+                    dmlDTO.setOld(f.getOldMap());
+                    dmlDTO.setData(f.getDataMap());
+                    dmlDTO.setIndexNames(new ArrayList<>(indexs));
+                    dmlDTO.setDesc(new ArrayList<>(desc));
+                    dmlDTO.setEffect(isEffect(dependentList));
+                    list.add(dmlDTO);
+                }
+            }
+            return list;
+        }
     }
 
 }

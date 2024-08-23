@@ -45,7 +45,7 @@ public abstract class AbstractMessageService {
     public abstract Map send(String title, String content);
 
     public Map sendDingtalk(String title, String content, String token, String secret) {
-        title = title + "(" + Util.getIPAddress() + " " + env + ")";
+        title = title + "(" + Util.getIPAddressPort() + " " + env + ")";
 
         HttpHeaders headers = new HttpHeaders();
         headers.set("Content-Type", "application/json; charset=utf-8");

@@ -94,20 +94,17 @@ public class NestedFieldWriter {
         }
 
         int size = Math.max(oldList.size(), dataList.size());
-        DependentGroup dependentGroup = new DependentGroup();
+        DependentGroup dependentGroup = null;
         for (SchemaItem schemaItem : schemaItemList) {
-            SchemaItem.TableItem indexMainTable = schemaItem.getObjectField().getEsMapping().getSchemaItem().getMainTable();
-            SchemaItem.TableItem nestedMainTable = schemaItem.getObjectField().getSchemaItem().getMainTable();
-            List<SchemaItem.TableItem> nestedSlaveTableList = schemaItem.getObjectField().getSchemaItem().getSlaveTableList();
-
             for (int i = 0; i < size; i++) {
-                Dependent dependent = new Dependent(schemaItem, i,
-                        indexMainTable, nestedMainTable, nestedSlaveTableList,
-                        dml);
+                Dependent dependent = new Dependent(schemaItem, i, dml);
+                if (dependentGroup == null) {
+                    dependentGroup = new DependentGroup();
+                }
                 if (dependent.isIndexMainTable()) {
                     dependentGroup.addMain(dependent);
                 } else if (dependent.isNestedMainTable()) {
-                    if (dependent.getSchemaItem().isJoinByParentPrimaryKey()) {
+                    if (dependent.getSchemaItem().isJoinByMainTablePrimaryKey()) {
                         dependentGroup.addMain(dependent);
                     } else {
                         dependentGroup.addMainJoin(dependent);
@@ -178,29 +175,26 @@ public class NestedFieldWriter {
         MergeJdbcTemplateSQL.executeQueryList(sqlList, cacheMap, (sql, list) -> executeEsTemplateUpdate(bulkRequestList, esTemplate, sql, list));
     }
 
-    public DependentGroup convertToDependentGroup(List<Dml> dmls, boolean onlyCurrentIndex) {
-        DependentGroup dependentGroup = new DependentGroup();
+    public DependentGroup convertToDependentGroup(List<Dml> dmls, boolean onlyCurrentIndex, boolean onlyEffect) {
+        List<DependentGroup> groupList = new ArrayList<>(dmls.size());
         for (Dml dml : dmls) {
-            if (Boolean.TRUE.equals(dml.getIsDdl())) {
-                continue;
-            }
             Map<String, List<SchemaItem>> map = onlyCurrentIndex ? onlyCurrentIndexSchemaItemMap : schemaItemMap;
             DependentGroup dmlDependentGroup = getDependentList(map.get(dml.getTable()), dml);
             if (dmlDependentGroup != null) {
-                dependentGroup.add(dmlDependentGroup);
+                groupList.add(dmlDependentGroup);
             }
         }
-        return dependentGroup;
+        return new DependentGroup(groupList, onlyEffect);
     }
 
     public void writeMainTable(List<Dependent> mainTableDependentList,
                                ESTemplate.BulkRequestList bulkRequestList,
-                               boolean autoUpdateChildren) {
+                               int maxIdIn) {
         if (mainTableDependentList.isEmpty()) {
             return;
         }
         Set<DependentSQL> sqlList = convertToSql(mainTableDependentList);
-        List<MergeJdbcTemplateSQL<DependentSQL>> mergeSqlList = MergeJdbcTemplateSQL.merge(sqlList, 1000);
+        List<MergeJdbcTemplateSQL<DependentSQL>> mergeSqlList = MergeJdbcTemplateSQL.merge(sqlList, maxIdIn);
         if (mainTableListenerExecutor == null) {
             executeEsTemplateUpdate(mergeSqlList, bulkRequestList, cacheMap, esTemplate);
         } else {
@@ -247,8 +241,8 @@ public class NestedFieldWriter {
             String columnName;
             if (dependent.isIndexMainTable()) {
                 columnName = objectField.getEsMapping().getSchemaItem().getIdField().getColumnName();
-            } else if (dependent.getSchemaItem().isJoinByParentPrimaryKey()) {
-                columnName = objectField.getParentDocumentId();
+            } else if (dependent.getSchemaItem().isJoinByMainTablePrimaryKey()) {
+                columnName = objectField.getJoinTableColumnName();
             } else {
                 columnName = null;
             }

@@ -17,13 +17,18 @@ public class ESSyncConfig {
     private String dataSourceKey;   // 数据源key
     private String destination;     // canal destination
     private ESMapping esMapping;
+    private String md5;
 
     @Override
     public String toString() {
         return dataSourceKey + "." + destination + "." + esMapping;
     }
 
-    public void init() {
+    public String getMd5() {
+        return md5;
+    }
+
+    public void init(String md5) {
         if (esMapping._index == null) {
             throw new NullPointerException("esMapping._index");
         }
@@ -33,7 +38,7 @@ public class ESSyncConfig {
         if (esMapping.sql == null) {
             throw new NullPointerException("esMapping.sql");
         }
-
+        this.md5 = md5;
         esMapping.setConfig(this);
 
         SchemaItem schemaItem = SqlParser.parse(esMapping.getSql());
@@ -56,8 +61,8 @@ public class ESSyncConfig {
                 }
                 objectField.setSchemaItem(schemaItem1);
             }
-            if (Util.isBlank(objectField.getParentDocumentId())) {
-                objectField.setParentDocumentId(objectField.parentDocumentId());
+            if (Util.isBlank(objectField.getJoinTableColumnName())) {
+                objectField.setJoinTableColumnName(objectField.joinTableColumnName());
             }
         }
     }
@@ -140,6 +145,10 @@ public class ESSyncConfig {
 
         public void setIndexUpdatedTime(String indexUpdatedTime) {
             this.indexUpdatedTime = indexUpdatedTime;
+        }
+
+        public boolean isSetIndexUpdatedTime() {
+            return indexUpdatedTime != null && !indexUpdatedTime.isEmpty();
         }
 
         public boolean isWriteNull() {
@@ -301,9 +310,12 @@ public class ESSyncConfig {
         private String sql;
         private String method;
         private String split = "";
-        private String onParentChangeWhereSql;
-        private String onChildChangeWhereSql;
-        private String parentDocumentId;
+        private String onMainTableChangeWhereSql;
+        private String onSlaveTableChangeWhereSql;
+        /**
+         * 取这个 #{xxx}
+         */
+        private String joinTableColumnName;
         private SchemaItem schemaItem;
         private ESMapping esMapping;
         private transient StaticMethodAccessor<ESStaticMethodParam> staticMethodAccessor;
@@ -388,24 +400,24 @@ public class ESSyncConfig {
             this.method = method;
         }
 
-        public String getParentDocumentId() {
-            return parentDocumentId;
+        public String getJoinTableColumnName() {
+            return joinTableColumnName;
         }
 
-        public void setParentDocumentId(String parentDocumentId) {
-            this.parentDocumentId = parentDocumentId;
+        public void setJoinTableColumnName(String joinTableColumnName) {
+            this.joinTableColumnName = joinTableColumnName;
         }
 
         public String[] groupByIdColumns() {
             return SqlParser.getGroupByIdColumns(sql);
         }
 
-        String parentDocumentId() {
+        String joinTableColumnName() {
             if (type != null && !type.isSqlType()) {
                 return null;
             }
             SchemaItem.TableItem mainTable = schemaItem.getMainTable();
-            List<String> mainColumnList = SqlParser.getVarColumnList(onChildChangeWhereSql).stream()
+            List<String> mainColumnList = SqlParser.getVarColumnList(onSlaveTableChangeWhereSql).stream()
                     .filter(e -> e.isOwner(mainTable.getAlias()))
                     .map(SqlParser.BinaryOpExpr::getName)
                     .collect(Collectors.toList());
@@ -414,33 +426,48 @@ public class ESSyncConfig {
             }
             LinkedHashSet<String> mainColumnSet = new LinkedHashSet<>(mainColumnList);
             if (mainColumnSet.size() != 1) {
-                throw new IllegalArgumentException("parentDocumentId is only support single var column. find " + mainColumnSet);
+                throw new IllegalArgumentException("joinTableColumnName is only support single var column. find " + mainColumnSet);
             }
             return mainColumnSet.iterator().next();
         }
 
-        public String getOnChildChangeWhereSql() {
-            return onChildChangeWhereSql;
+        public String getOnSlaveTableChangeWhereSql() {
+            return onSlaveTableChangeWhereSql;
         }
 
-        public void setOnChildChangeWhereSql(String onChildChangeWhereSql) {
-            this.onChildChangeWhereSql = onChildChangeWhereSql;
+        public void setOnSlaveTableChangeWhereSql(String onSlaveTableChangeWhereSql) {
+            this.onSlaveTableChangeWhereSql = onSlaveTableChangeWhereSql;
         }
 
-        public String getOnParentChangeWhereSql() {
-            return onParentChangeWhereSql;
+        @Deprecated
+        public void setParentDocumentId(String joinTableColumnName) {
+            this.joinTableColumnName = joinTableColumnName;
         }
 
-        public void setOnParentChangeWhereSql(String onParentChangeWhereSql) {
-            this.onParentChangeWhereSql = onParentChangeWhereSql;
+        @Deprecated
+        public void setOnChildChangeWhereSql(String onSlaveTableChangeWhereSql) {
+            this.onSlaveTableChangeWhereSql = onSlaveTableChangeWhereSql;
         }
 
-        public String getFullSql(boolean isParentChange) {
+        @Deprecated
+        public void setOnParentChangeWhereSql(String onMainTableChangeWhereSql) {
+            this.onMainTableChangeWhereSql = onMainTableChangeWhereSql;
+        }
+
+        public String getOnMainTableChangeWhereSql() {
+            return onMainTableChangeWhereSql;
+        }
+
+        public void setOnMainTableChangeWhereSql(String onMainTableChangeWhereSql) {
+            this.onMainTableChangeWhereSql = onMainTableChangeWhereSql;
+        }
+
+        public String getFullSql(boolean isMainTable) {
             String sql1 = sql();
-            if (isParentChange) {
-                return sql1 + " " + onParentChangeWhereSql;
+            if (isMainTable) {
+                return sql1 + " " + onMainTableChangeWhereSql;
             } else {
-                return sql1 + " " + onChildChangeWhereSql;
+                return sql1 + " " + onSlaveTableChangeWhereSql;
             }
         }
 
@@ -508,6 +535,10 @@ public class ESSyncConfig {
 
             public boolean isSqlType() {
                 return this == Type.OBJECT_SQL || this == Type.ARRAY_SQL;
+            }
+
+            public boolean isSingleJoinType() {
+                return this == Type.OBJECT_SQL;
             }
         }
     }

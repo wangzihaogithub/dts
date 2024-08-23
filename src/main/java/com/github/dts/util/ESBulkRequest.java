@@ -1,9 +1,6 @@
 package com.github.dts.util;
 
-import org.elasticsearch.script.Script;
-
 import java.util.Collection;
-import java.util.Map;
 
 public interface ESBulkRequest {
 
@@ -25,9 +22,6 @@ public interface ESBulkRequest {
 
     interface ESIndexRequest extends ESRequest {
 
-        ESIndexRequest setSource(Map<String, ?> source);
-
-        ESIndexRequest setRouting(String routing);
     }
 
     interface ESUpdateByQueryRequest extends ESRequest {
@@ -37,13 +31,6 @@ public interface ESBulkRequest {
 
     interface ESUpdateRequest extends ESRequest {
 
-        ESUpdateRequest setDoc(Map source);
-
-        ESUpdateRequest setDocAsUpsert(boolean shouldUpsertDoc);
-
-        ESUpdateRequest setRouting(String routing);
-
-        ESUpdateRequest setScript(Script script);
     }
 
     interface ESRequest {
@@ -53,7 +40,7 @@ public interface ESBulkRequest {
     }
 
     interface EsRefreshResponse {
-
+        String[] getIndices();
     }
 
     interface ESBulkResponse {

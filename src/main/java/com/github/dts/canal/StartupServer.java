@@ -1,5 +1,6 @@
 package com.github.dts.canal;
 
+import com.github.dts.cluster.DiscoveryService;
 import com.github.dts.impl.elasticsearch7x.ES7xAdapter;
 import com.github.dts.impl.rds.RDSAdapter;
 import com.github.dts.util.AbstractMessageService;
@@ -9,6 +10,7 @@ import com.github.dts.util.Util;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.BeanFactory;
+import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
@@ -25,6 +27,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @Order(Integer.MIN_VALUE)
 public class StartupServer implements ApplicationRunner {
@@ -32,7 +35,7 @@ public class StartupServer implements ApplicationRunner {
     private final Map<String, List<ThreadRef>> canalThreadMap = new HashMap<>();
     private final Map<String, Adapter> adapterMap = new ConcurrentHashMap<>();
     @Autowired
-    private BeanFactory beanFactory;
+    private ListableBeanFactory beanFactory;
     @Autowired
     private AbstractMessageService messageService;
     @Resource
@@ -40,6 +43,12 @@ public class StartupServer implements ApplicationRunner {
     private volatile boolean running = false;
     @Value("${spring.profiles.active:}")
     private String env;
+    @Autowired(required = false)
+    private DiscoveryService discoveryService;
+
+    public DiscoveryService getDiscoveryService() {
+        return discoveryService;
+    }
 
     public String getEnv() {
         return env;
@@ -88,19 +97,26 @@ public class StartupServer implements ApplicationRunner {
         return list;
     }
 
-    public void start(CanalConfig canalClientConfig) {
+    public void start(CanalConfig canalConfig) {
         // 初始化canal-client的适配器
-        if (canalClientConfig.getCanalAdapters() == null) {
+        if (canalConfig.getCanalAdapters() == null) {
             log.info("adapter for canal is empty config");
+            return;
+        }
+        Collection<CanalConfig.CanalAdapter> canalAdapterList = canalConfig.getCanalAdapters().stream().filter(CanalConfig.CanalAdapter::isEnable).collect(Collectors.toList());
+        if (canalAdapterList.isEmpty()) {
+            log.info("adapter for canal is not enable config");
             return;
         }
 
         Environment env = beanFactory.getBean(Environment.class);
-        for (CanalConfig.CanalAdapter canalAdapter : canalClientConfig.getCanalAdapters()) {
-            if (!canalAdapter.isEnable()) {
-                continue;
-            }
+        if (discoveryService != null) {
+            discoveryService.registerServerInstance();
+        } else {
+            log.info("discoveryService is disabled");
+        }
 
+        for (CanalConfig.CanalAdapter canalAdapter : canalAdapterList) {
             String metaPrefix = canalAdapter.getRedisMetaPrefix();
             if (metaPrefix != null) {
                 canalAdapter.setRedisMetaPrefix(env.resolvePlaceholders(metaPrefix));
@@ -110,12 +126,12 @@ public class StartupServer implements ApplicationRunner {
                 for (CanalConfig.OuterAdapterConfig config : connectorGroup.getOuterAdapters()) {
                     config.setCanalAdapter(canalAdapter);
                     config.setConnectorGroup(connectorGroup);
-                    adapterList.add(loadAdapter(canalAdapter, config, env));
+                    adapterList.add(loadAdapter(canalAdapter, config, discoveryService, env));
                 }
             }
 
             String clientIdentity = canalAdapter.clientIdentity();
-            ThreadRef thread = new ThreadRef(canalClientConfig,
+            ThreadRef thread = new ThreadRef(canalConfig,
                     canalAdapter, adapterList, messageService, this);
             canalThreadMap.computeIfAbsent(clientIdentity, e -> new ArrayList<>())
                     .add(thread);
@@ -123,7 +139,10 @@ public class StartupServer implements ApplicationRunner {
         }
     }
 
-    private Adapter loadAdapter(CanalConfig.CanalAdapter canalAdapter, CanalConfig.OuterAdapterConfig config, Environment env) {
+    private Adapter loadAdapter(CanalConfig.CanalAdapter canalAdapter,
+                                CanalConfig.OuterAdapterConfig config,
+                                DiscoveryService discoveryService,
+                                Environment env) {
         try {
             Properties evnProperties = null;
             if (env instanceof StandardEnvironment) {
@@ -152,7 +171,7 @@ public class StartupServer implements ApplicationRunner {
                     throw new IllegalArgumentException("adapter");
                 }
                 adapterMap.put(name, adapter);
-                adapter.init(canalAdapter, config, evnProperties);
+                adapter.init(canalAdapter, config, evnProperties, discoveryService);
                 log.info("Load canal adapter: {} succeed", config.getName());
             }
             return adapter;

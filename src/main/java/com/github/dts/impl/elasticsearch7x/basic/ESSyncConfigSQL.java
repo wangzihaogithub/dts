@@ -2,6 +2,7 @@ package com.github.dts.impl.elasticsearch7x.basic;
 
 import com.github.dts.impl.elasticsearch7x.nested.JdbcTemplateSQL;
 import com.github.dts.impl.elasticsearch7x.nested.SQL;
+import com.github.dts.util.Dependent;
 import com.github.dts.util.Dml;
 import com.github.dts.util.ESSyncConfig;
 import com.github.dts.util.ESTemplate;
@@ -16,10 +17,11 @@ public abstract class ESSyncConfigSQL extends JdbcTemplateSQL {
     private final Map<String, Object> old;
     private final ESTemplate.BulkRequestList bulkRequestList;
     private final ESTemplate esTemplate;
+    private final Dependent dependent;
 
     ESSyncConfigSQL(SQL sql, ESSyncConfig config, Dml dml,
                     Map<String, Object> data, Map<String, Object> old,
-                    ESTemplate.BulkRequestList bulkRequestList, ESTemplate esTemplate) {
+                    ESTemplate.BulkRequestList bulkRequestList, int index, ESTemplate esTemplate) {
         super(sql.getExprSql(), sql.getArgs(), sql.getArgsMap(), config.getDataSourceKey(), config.getEsMapping().getSchemaItem().getGroupByIdColumns());
         this.config = config;
         this.dml = dml;
@@ -27,6 +29,11 @@ public abstract class ESSyncConfigSQL extends JdbcTemplateSQL {
         this.old = old;
         this.bulkRequestList = bulkRequestList;
         this.esTemplate = esTemplate;
+        this.dependent = new Dependent(config.getEsMapping().getSchemaItem(), index, dml, Boolean.TRUE);
+    }
+
+    public Dependent getDependent() {
+        return dependent;
     }
 
     public ESTemplate getEsTemplate() {

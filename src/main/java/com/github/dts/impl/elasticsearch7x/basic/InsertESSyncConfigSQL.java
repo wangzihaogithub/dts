@@ -13,8 +13,8 @@ import java.util.Map;
 public class InsertESSyncConfigSQL extends ESSyncConfigSQL {
 
     public InsertESSyncConfigSQL(SQL sql, ESSyncConfig config, Dml dml,
-                                 Map<String, Object> data, ESTemplate.BulkRequestList bulkRequestList, ESTemplate esTemplate) {
-        super(sql, config, dml, data, null, bulkRequestList, esTemplate);
+                                 Map<String, Object> data, ESTemplate.BulkRequestList bulkRequestList, int index,ESTemplate esTemplate) {
+        super(sql, config, dml, data, null, bulkRequestList, index,esTemplate);
     }
 
     @Override

@@ -18,9 +18,9 @@ public class SubTableSimpleFieldESSyncConfigSQL extends ESSyncConfigSQL {
 
     public SubTableSimpleFieldESSyncConfigSQL(SQL sql, ESSyncConfig config,
                                               Dml dml, Map<String, Object> data, Map<String, Object> old,
-                                              ESTemplate.BulkRequestList bulkRequestList, ESTemplate esTemplate,
+                                              int index, ESTemplate.BulkRequestList bulkRequestList, ESTemplate esTemplate,
                                               SchemaItem.TableItem tableItem) {
-        super(sql, config, dml, data, old, bulkRequestList, esTemplate);
+        super(sql, config, dml, data, old, bulkRequestList, index, esTemplate);
         this.tableItem = tableItem;
     }
 

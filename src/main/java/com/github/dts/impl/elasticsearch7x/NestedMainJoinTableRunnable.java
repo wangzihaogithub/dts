@@ -22,19 +22,28 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
     private final Timestamp maxTimestamp;
     private final NestedMainJoinTableRunnable oldRun;
     private final NestedMainJoinTableRunnable newRun;
+    private final ESTemplate.BulkRequestList bulkRequestList;
+
+    private final ESTemplate.CommitListener commitListener;
 
     NestedMainJoinTableRunnable(List<Dependent> dmlList, ES7xTemplate es7xTemplate,
+                                ESTemplate.BulkRequestList bulkRequestList,
+                                ESTemplate.CommitListener commitListener,
                                 int maxIdInCount, int streamChunkSize, Timestamp maxTimestamp) {
-        this(dmlList, es7xTemplate, maxIdInCount, streamChunkSize, maxTimestamp, null, null);
+        this(dmlList, es7xTemplate, bulkRequestList, commitListener, maxIdInCount, streamChunkSize, maxTimestamp, null, null);
     }
 
     NestedMainJoinTableRunnable(List<Dependent> dmlList, ES7xTemplate es7xTemplate,
+                                ESTemplate.BulkRequestList bulkRequestList,
+                                ESTemplate.CommitListener commitListener,
                                 int maxIdInCount, int streamChunkSize, Timestamp maxTimestamp,
                                 NestedMainJoinTableRunnable oldRun,
                                 NestedMainJoinTableRunnable newRun) {
         this.dmlList = dmlList;
         this.es7xTemplate = es7xTemplate;
+        this.commitListener = commitListener;
         this.maxIdInCount = maxIdInCount;
+        this.bulkRequestList = bulkRequestList;
         this.streamChunkSize = streamChunkSize;
         this.maxTimestamp = maxTimestamp;
         this.oldRun = oldRun;
@@ -46,6 +55,8 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
         dmlList.addAll(oldRun.dmlList);
         dmlList.addAll(newRun.dmlList);
         return new NestedMainJoinTableRunnable(dmlList, oldRun.es7xTemplate,
+                oldRun.bulkRequestList.fork(newRun.bulkRequestList),
+                ESTemplate.merge(oldRun.commitListener, newRun.commitListener),
                 oldRun.maxIdInCount, oldRun.streamChunkSize, oldRun.maxTimestamp,
                 oldRun, newRun);
     }
@@ -62,14 +73,14 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
         StringBuilder condition = new StringBuilder();
         String and = " AND ";
 
-        if (dependent.getSchemaItem().getObjectField().getType() == ESSyncConfig.ObjectField.Type.OBJECT_SQL) {
-            Set<String> pkNames = SQL.convertToSql(dependent.getSchemaItem().getObjectField().getOnParentChangeWhereSql(), Collections.emptyMap()).getArgsMap().keySet();
+        if (dependent.getSchemaItem().getObjectField().getType().isSingleJoinType()) {
+            Set<String> pkNames = dependent.getSchemaItem().getOnMainTableChangeWhereSqlVarList();
             List<String> dmlPkNames = dml.getPkNames();
             String pkName = pkNames.iterator().next();
-            ESSyncUtil.appendConditionByExpr(condition, "#{" + dmlPkNames.get(0) + "}", tableItem.getAlias(), pkName, and);
+            ESSyncUtil.appendConditionByExpr(condition, SQL.wrapPlaceholder(dmlPkNames.get(0)), tableItem.getAlias(), pkName, and);
         } else {
-            String parentDocumentId = dependent.getSchemaItem().getObjectField().getParentDocumentId();
-            ESSyncUtil.appendConditionByExpr(condition, "#{" + parentDocumentId + "}", tableItem.getAlias(), parentDocumentId, and);
+            String joinTableColumnName = dependent.getSchemaItem().getObjectField().getJoinTableColumnName();
+            ESSyncUtil.appendConditionByExpr(condition, SQL.wrapPlaceholder(joinTableColumnName), tableItem.getAlias(), joinTableColumnName, and);
         }
 
         int len = condition.length();
@@ -101,7 +112,7 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
 
             List<MergeJdbcTemplateSQL<DependentSQL>> mergeNestedMainSqlList = MergeJdbcTemplateSQL.merge(parentSqlList, maxIdInCount);
             List<MergeJdbcTemplateSQL<DependentSQL>> childrenMergeSqlList = MergeJdbcTemplateSQL.merge(childrenSqlList, maxIdInCount);
-            ESTemplate.BulkRequestList bulkRequestList = es7xTemplate.newBulkRequestList(BulkPriorityEnum.LOW);
+            ESTemplate.BulkRequestList bulkRequestList = this.bulkRequestList.fork(BulkPriorityEnum.LOW);
 
             Map<Dependent, List<Map<String, Object>>> parentGetterMap = MergeJdbcTemplateSQL.toMap(mergeNestedMainSqlList, DependentSQL::getDependent);
             for (MergeJdbcTemplateSQL<DependentSQL> children : childrenMergeSqlList) {

@@ -60,8 +60,9 @@ public class ESSyncUtil {
             if (!Objects.equals(env, config.getEsMapping().getEnv())) {
                 continue;
             }
+            String md5 = Util.md5(content);
             try {
-                config.init();
+                config.init(md5);
             } catch (Exception e) {
                 throw new RuntimeException("ERROR Config: " + fileName + " " + e, e);
             }
@@ -790,11 +791,14 @@ public class ESSyncUtil {
         }
     }
 
-    public static Map<String, Object> convertType(Map<String, Object> mysqlData, Map<String, Object> esFieldType) {
-        if (mysqlData == null || mysqlData.isEmpty()) {
-            return mysqlData;
+    public static Map<String, Object> copyAndConvertType(Map<String, Object> mysqlData, Map<String, Object> esFieldType) {
+        if (mysqlData == null) {
+            return null;
         }
-        Map<String, Object> result = new HashMap<>();
+        if (mysqlData.isEmpty()) {
+            return new LinkedHashMap<>();
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
         for (Map.Entry<String, Object> entry : mysqlData.entrySet()) {
             String k = entry.getKey();
             Object val = entry.getValue();
@@ -812,13 +816,13 @@ public class ESSyncUtil {
                     }
                     res = parseDate(k, null, dateTime, esFieldType);
                 } else if (val instanceof Map) {
-                    res = convertType((Map<String, Object>) val, (Map) (esFieldType instanceof ESFieldTypesCache ? ((ESFieldTypesCache) esFieldType).getProperties(k, "properties") : Collections.emptyMap()));
+                    res = copyAndConvertType((Map<String, Object>) val, (Map) (esFieldType instanceof ESFieldTypesCache ? ((ESFieldTypesCache) esFieldType).getProperties(k, "properties") : Collections.emptyMap()));
                 } else if (val instanceof ArrayList) {
                     List list = (List) val;
                     List reslist = new ArrayList();
                     for (Object temp : list) {
                         if (temp instanceof Map) {
-                            reslist.add(convertType((Map<String, Object>) temp, esFieldType));
+                            reslist.add(copyAndConvertType((Map<String, Object>) temp, esFieldType));
                         } else {
                             reslist.add(temp);
                         }

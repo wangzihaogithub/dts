@@ -22,11 +22,11 @@ import static com.github.dts.util.BeanUtil.*;
  */
 public class DifferentComparatorUtil {
 
-    public static <E> ListDiffResult<E> listDiff(List<E> before, List<E> after) {
+    public static <E> ListDiffResult<E> listDiff(Collection<E> before, Collection<E> after) {
         return listDiff(before, after, e -> e);
     }
 
-    public static <E, ID> ListDiffResult<E> listDiff(List<? extends E> before, List<? extends E> after, Function<E, ID> idFunction) {
+    public static <E, ID> ListDiffResult<E> listDiff(Collection<? extends E> before, Collection<? extends E> after, Function<E, ID> idFunction) {
         if (before == null) {
             before = Collections.emptyList();
         }
@@ -180,7 +180,8 @@ public class DifferentComparatorUtil {
                 Object rightValue = rightMap.get(fieldName);
 
                 PropertyDescriptor leftDescriptor, rightDescriptor;
-                Annotation[] leftAnnotations = null, rightAnnotations = null;
+                Annotation[] leftAnnotations, rightAnnotations;
+                List<Annotation> leftAnnotationList = new ArrayList<>(), rightAnnotationList = new ArrayList<>();
                 Field leftField = null, rightField = null;
                 Method leftReadMethod = null, rightReadMethod = null;
 
@@ -188,22 +189,28 @@ public class DifferentComparatorUtil {
                     leftAnnotations = BeanMap.getFieldDeclaredAnnotations(leftDescriptor);
                     leftField = BeanMap.getField(leftDescriptor);
                     leftReadMethod = leftDescriptor.getReadMethod();
-                    if (leftAnnotations == null && leftReadMethod != null) {
-                        leftAnnotations = leftReadMethod.getDeclaredAnnotations();
+                    if (leftAnnotations != null) {
+                        leftAnnotationList.addAll(Arrays.asList(leftAnnotations));
+                    }
+                    if (leftReadMethod != null) {
+                        leftAnnotationList.addAll(Arrays.asList(leftReadMethod.getDeclaredAnnotations()));
                     }
                 }
                 if (rightBeanMap != null && (rightDescriptor = rightBeanMap.getPropertyDescriptor(fieldName)) != null) {
                     rightAnnotations = BeanMap.getFieldDeclaredAnnotations(rightDescriptor);
                     rightField = BeanMap.getField(rightDescriptor);
                     rightReadMethod = rightDescriptor.getReadMethod();
-                    if (rightAnnotations == null && rightReadMethod != null) {
-                        rightAnnotations = rightReadMethod.getDeclaredAnnotations();
+                    if (rightAnnotations != null) {
+                        rightAnnotationList.addAll(Arrays.asList(rightAnnotations));
+                    }
+                    if (rightReadMethod != null) {
+                        rightAnnotationList.addAll(Arrays.asList(rightReadMethod.getDeclaredAnnotations()));
                     }
                 }
 
                 Pair pair = new BeanOrMapPair(
-                        new Value(left, leftHas, leftValue, leftAnnotations, leftField, leftReadMethod, prevLeft),
-                        new Value(right, rightHas, rightValue, rightAnnotations, rightField, rightReadMethod, prevRight),
+                        new Value(left, leftHas, leftValue, leftAnnotationList.toArray(new Annotation[0]), leftField, leftReadMethod, prevLeft),
+                        new Value(right, rightHas, rightValue, leftAnnotationList.toArray(new Annotation[]{}), rightField, rightReadMethod, prevRight),
                         (String) fieldName);
                 path.add(pair);
                 addDiffDepth(diffList, path, leftHas, rightHas, leftValue, rightValue, depth + 1, maxDepth, beanPackages);
@@ -234,23 +241,19 @@ public class DifferentComparatorUtil {
     }
 
     public static class ListDiffResult<E> {
-        private List<E> insertList = new ArrayList<>();
-        private List<E> deleteList = new ArrayList<>();
+        private final List<E> insertList = new ArrayList<>();
+        private final List<E> deleteList = new ArrayList<>();
 
         public List<E> getInsertList() {
             return insertList;
-        }
-
-        public void setInsertList(List<E> insertList) {
-            this.insertList = insertList;
         }
 
         public List<E> getDeleteList() {
             return deleteList;
         }
 
-        public void setDeleteList(List<E> deleteList) {
-            this.deleteList = deleteList;
+        public boolean isEmpty() {
+            return insertList.isEmpty() && deleteList.isEmpty();
         }
     }
 
