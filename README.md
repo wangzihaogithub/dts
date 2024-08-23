@@ -167,7 +167,7 @@ https://github.com/wangzihaogithub/dts-demo
         @Autowired
         private DtsSdkClient dtsSdkClient;
         @PostMapping("/save")
-        public CompletableFuture<Integer> save(@RequestBody OrderRequest request) {
+        public CompletableFuture<AjaxResult> save(@RequestBody OrderRequest request) {
             Integer orderId = orderService.save(request);
             return dtsSdkClient.listenEs("cnwy_order_test_index_alias", orderId, 500)
                     .handle((listenEsResponse, throwable) -> AjaxResult.success(orderId));
