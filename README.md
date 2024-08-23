@@ -136,3 +136,40 @@ https://github.com/wangzihaogithub/dts-demo
 
  - 启动springboot 项目用mysql执行SQL： show processlist， 即可看到 binlog dump 线程已启动
 
+
+### dts-sdk使用
+
+```xml
+<!-- https://github.com/wangzihaogithub/dts-sdk -->
+<!-- https://mvnrepository.com/artifact/com.github.wangzihaogithub/dts-sdk -->
+<dependency>
+  <groupId>com.github.wangzihaogithub</groupId>
+  <artifactId>dts-sdk</artifactId>
+  <version>1.1.9</version>
+</dependency>
+```
+
+-  1.仅导入上面的maven包就行
+
+   yaml配置
+
+        server:
+          dts:
+            sdk:
+              cluster:
+                discovery: redis
+        spring:
+          redis:
+            host: localhost
+            password: xxx
+    
+
+        @Autowired
+        private DtsSdkClient dtsSdkClient;
+        @PostMapping("/save")
+        public CompletableFuture<Integer> save(@RequestBody OrderRequest request) {
+            Integer orderId = orderService.save(request);
+            return dtsSdkClient.listenEs("cnwy_order_test_index_alias", orderId, 500)
+                    .handle((listenEsResponse, throwable) -> AjaxResult.success(orderId));
+        }
+
