@@ -260,6 +260,18 @@ public class SchemaItem {
         this.selectFields = selectFields;
     }
 
+    public boolean existTable(String tableName) {
+        if (objectField != null && objectField.isSqlType()) {
+            TableItem mainTable = objectField.getSchemaItem().getMainTable();
+            if (tableName.equalsIgnoreCase(mainTable.getTableName())) {
+                return true;
+            } else if (isIndexMainTable(tableName)) {
+                return true;
+            }
+        }
+        return getTableItemAliases().containsKey(tableName);
+    }
+
     public boolean existTableColumn(String tableName, Collection<String> columnNames) {
         // HashSet 快速搜索
         Set<String> columnNameSet = columnNames == null ? null : Util.newLinkedCaseInsensitiveSet(columnNames);
@@ -311,10 +323,10 @@ public class SchemaItem {
         if (tableItemAliases == null) {
             synchronized (SchemaItem.class) {
                 if (tableItemAliases == null) {
-                    tableItemAliases = new LinkedHashMap<>();
+                    tableItemAliases = Util.newLinkedCaseInsensitiveMap();
                     aliasTableItems.forEach((alias, tableItem) -> {
                         List<TableItem> aliases = tableItemAliases
-                                .computeIfAbsent(tableItem.getTableName().toLowerCase(), k -> new ArrayList<>());
+                                .computeIfAbsent(tableItem.getTableName(), k -> new ArrayList<>());
                         aliases.add(tableItem);
                     });
                 }
@@ -337,7 +349,7 @@ public class SchemaItem {
         if (columnFields == null) {
             synchronized (SchemaItem.class) {
                 if (columnFields == null) {
-                    columnFields = new LinkedHashMap<>();
+                    columnFields = Util.newLinkedCaseInsensitiveMap();
                     getSelectFields()
                             .forEach((fieldName, fieldItem) -> fieldItem.getColumnItems().forEach(columnItem -> {
                                 // TableItem tableItem = getAliasTableItems().get(columnItem.getOwner());

@@ -79,7 +79,7 @@ public class NestedFieldWriter {
      * @param dml dml数据
      * @return Dependent
      */
-    private static DependentGroup getDependentList(List<SchemaItem> schemaItemList, Dml dml, boolean onlyEffect) {
+    private static DependentGroup getDependentList(List<SchemaItem> schemaItemList, Dml dml) {
         if (schemaItemList == null || schemaItemList.isEmpty()) {
             return null;
         }
@@ -96,12 +96,8 @@ public class NestedFieldWriter {
         int size = Math.max(oldList.size(), dataList.size());
         DependentGroup dependentGroup = null;
         for (SchemaItem schemaItem : schemaItemList) {
-
             for (int i = 0; i < size; i++) {
                 Dependent dependent = new Dependent(schemaItem, i, dml);
-                if (onlyEffect && !dependent.isEffect()) {
-                    continue;
-                }
                 if (dependentGroup == null) {
                     dependentGroup = new DependentGroup();
                 }
@@ -180,18 +176,15 @@ public class NestedFieldWriter {
     }
 
     public DependentGroup convertToDependentGroup(List<Dml> dmls, boolean onlyCurrentIndex, boolean onlyEffect) {
-        DependentGroup dependentGroup = new DependentGroup();
+        List<DependentGroup> groupList = new ArrayList<>(dmls.size());
         for (Dml dml : dmls) {
-            if (Boolean.TRUE.equals(dml.getIsDdl())) {
-                continue;
-            }
             Map<String, List<SchemaItem>> map = onlyCurrentIndex ? onlyCurrentIndexSchemaItemMap : schemaItemMap;
-            DependentGroup dmlDependentGroup = getDependentList(map.get(dml.getTable()), dml, onlyEffect);
+            DependentGroup dmlDependentGroup = getDependentList(map.get(dml.getTable()), dml);
             if (dmlDependentGroup != null) {
-                dependentGroup.add(dmlDependentGroup);
+                groupList.add(dmlDependentGroup);
             }
         }
-        return dependentGroup;
+        return new DependentGroup(groupList, onlyEffect);
     }
 
     public void writeMainTable(List<Dependent> mainTableDependentList,

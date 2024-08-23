@@ -160,7 +160,7 @@ public class ES7xAdapter implements Adapter {
 
         // join async change
         List<CompletableFuture<?>> futures = asyncRunDependent(maxSqlEsTimestamp, joinUpdateSize,
-                bulkRequestList, dependentGroup.getMainTableJoinDependentList(), dependentGroup.getSlaveTableDependentList());
+                bulkRequestList, dependentGroup.selectMainTableJoinDependentList(), dependentGroup.selectSlaveTableDependentList());
 
         // nested type ： main table change
         List<Dependent> mainTableDependentList = dependentGroup.selectMainTableDependentList(onlyFieldName);
@@ -370,6 +370,7 @@ public class ES7xAdapter implements Adapter {
     }
 
     static class RealtimeListener implements ESTemplate.RefreshListener, EsDependentCommitListener, Runnable {
+        private static final Function<String, List<Dependent>> MAPPING_FUNCTION = k -> new ArrayList<>();
         private static volatile ScheduledExecutorService SCHEDULED;
         private final DiscoveryService discoveryService;
         private final LinkedBlockingQueue<CommitEvent> eventList;
@@ -447,37 +448,36 @@ public class ES7xAdapter implements Adapter {
 
         private Map<Dml, Map<Integer, List<Dependent>>> groupByDml(List<CommitEvent> list) {
             Map<String, List<Dependent>> dependentMap = new IdentityHashMap<>();
-            Function<String, List<Dependent>> mappingFunction = k -> new ArrayList<>();
             for (CommitEvent event : list) {
                 for (Dependent dependent : event.mainTableDependentList) {
-                    dependentMap.computeIfAbsent(dependentKey(dependent), mappingFunction)
+                    dependentMap.computeIfAbsent(dependentKey(dependent), MAPPING_FUNCTION)
                             .add(dependent);
                 }
                 for (Dependent dependent : event.mainTableJoinDependentList) {
-                    dependentMap.computeIfAbsent(dependentKey(dependent), mappingFunction)
+                    dependentMap.computeIfAbsent(dependentKey(dependent), MAPPING_FUNCTION)
                             .add(dependent);
                 }
                 for (Dependent dependent : event.slaveTableDependentList) {
-                    dependentMap.computeIfAbsent(dependentKey(dependent), mappingFunction)
+                    dependentMap.computeIfAbsent(dependentKey(dependent), MAPPING_FUNCTION)
                             .add(dependent);
                 }
                 BasicFieldWriter.WriteResult writeResult = event.writeResult;
                 if (writeResult != null) {
                     for (ESSyncConfigSQL configSQL : writeResult.getSqlList()) {
                         Dependent dependent = configSQL.getDependent();
-                        dependentMap.computeIfAbsent(dependentKey(dependent), mappingFunction)
+                        dependentMap.computeIfAbsent(dependentKey(dependent), MAPPING_FUNCTION)
                                 .add(dependent);
                     }
                     for (Dependent dependent : writeResult.getInsertList()) {
-                        dependentMap.computeIfAbsent(dependentKey(dependent), mappingFunction)
+                        dependentMap.computeIfAbsent(dependentKey(dependent), MAPPING_FUNCTION)
                                 .add(dependent);
                     }
                     for (Dependent dependent : writeResult.getUpdateList()) {
-                        dependentMap.computeIfAbsent(dependentKey(dependent), mappingFunction)
+                        dependentMap.computeIfAbsent(dependentKey(dependent), MAPPING_FUNCTION)
                                 .add(dependent);
                     }
                     for (Dependent dependent : writeResult.getDeleteList()) {
-                        dependentMap.computeIfAbsent(dependentKey(dependent), mappingFunction)
+                        dependentMap.computeIfAbsent(dependentKey(dependent), MAPPING_FUNCTION)
                                 .add(dependent);
                     }
                 }
@@ -492,16 +492,25 @@ public class ES7xAdapter implements Adapter {
             return dmlListMap;
         }
 
+        private static Boolean isEffect(List<Dependent> list) {
+            for (Dependent dependent : list) {
+                if (dependent.isEffect()) {
+                    return Boolean.TRUE;
+                }
+            }
+            return Boolean.FALSE;
+        }
+
         private List<DmlDTO> convert(Map<Dml, Map<Integer, List<Dependent>>> dmlListMap) {
             List<DmlDTO> list = new ArrayList<>();
             for (Map.Entry<Dml, Map<Integer, List<Dependent>>> entry : dmlListMap.entrySet()) {
                 Dml dml = entry.getKey();
                 for (Map.Entry<Integer, List<Dependent>> entry1 : entry.getValue().entrySet()) {
-                    List<Dependent> value = entry1.getValue();
-                    Dependent f = value.get(0);
+                    List<Dependent> dependentList = entry1.getValue();
+                    Dependent f = dependentList.get(0);
                     Set<String> desc = new LinkedHashSet<>();
                     Set<String> indexs = new LinkedHashSet<>();
-                    for (Dependent dependent : value) {
+                    for (Dependent dependent : dependentList) {
                         SchemaItem schemaItem = dependent.getSchemaItem();
                         indexs.add(schemaItem.getEsMapping().get_index());
                         desc.add(schemaItem.getDesc());
@@ -517,6 +526,7 @@ public class ES7xAdapter implements Adapter {
                     dmlDTO.setData(f.getDataMap());
                     dmlDTO.setIndexNames(new ArrayList<>(indexs));
                     dmlDTO.setDesc(new ArrayList<>(desc));
+                    dmlDTO.setEffect(isEffect(dependentList));
                     list.add(dmlDTO);
                 }
             }

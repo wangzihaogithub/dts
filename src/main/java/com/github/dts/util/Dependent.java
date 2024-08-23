@@ -10,12 +10,19 @@ public class Dependent {
     private final SchemaItem schemaItem;
     private final int index;
     private transient String dmlKey;
+    private Boolean effect;
 
     public Dependent(SchemaItem schemaItem, int index,
                      Dml dml) {
+        this(schemaItem, index, dml, null);
+    }
+
+    public Dependent(SchemaItem schemaItem, int index,
+                     Dml dml, Boolean effect) {
         this.schemaItem = schemaItem;
         this.index = index;
         this.dml = dml;
+        this.effect = effect;
     }
 
     public boolean isJoinByMainTablePrimaryKey() {
@@ -104,18 +111,23 @@ public class Dependent {
      * @return true
      */
     public boolean isEffect() {
-        if (dml.isTypeInit()) {
-            return true;
-        } else if (dml.isTypeUpdate()) {
-            Map<String, Object> oldMap = getOldMap();
-            return oldMap != null && !oldMap.isEmpty() && schemaItem.existTableColumn(dml.getTable(), oldMap.keySet());
-        } else if (dml.isTypeInsert()) {
-            return schemaItem.existTableColumn(dml.getTable(), null);
-        } else if (dml.isTypeDelete()) {
-            return schemaItem.existTableColumn(dml.getTable(), null);
-        } else {
-            return false;
+        if (effect == null) {
+            boolean effect;
+            if (dml.isTypeInit()) {
+                effect = true;
+            } else if (dml.isTypeUpdate()) {
+                Map<String, Object> oldMap = getOldMap();
+                effect = oldMap != null && !oldMap.isEmpty() && schemaItem.existTableColumn(dml.getTable(), oldMap.keySet());
+            } else if (dml.isTypeInsert()) {
+                effect = schemaItem.existTableColumn(dml.getTable(), null);
+            } else if (dml.isTypeDelete()) {
+                effect = schemaItem.existTableColumn(dml.getTable(), null);
+            } else {
+                effect = false;
+            }
+            this.effect = effect;
         }
+        return effect;
     }
 
     @Override

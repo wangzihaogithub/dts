@@ -14,6 +14,15 @@ public class DmlDTO {
     private Map<String, Object> data;
     private List<String> indexNames;
     private List<String> desc;
+    private Boolean effect;
+
+    public Boolean getEffect() {
+        return effect;
+    }
+
+    public void setEffect(Boolean effect) {
+        this.effect = effect;
+    }
 
     public List<String> getDesc() {
         return desc;

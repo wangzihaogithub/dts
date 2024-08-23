@@ -4,9 +4,29 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 public class DependentGroup {
-    private final List<Dependent> mainTableDependentList = new ArrayList<>();
-    private final List<Dependent> mainTableJoinDependentList = new ArrayList<>();
-    private final List<Dependent> slaveTableDependentList = new ArrayList<>();
+    private final boolean onlyEffect;
+    private final List<Dependent> mainTableDependentList;
+    private final List<Dependent> mainTableJoinDependentList;
+    private final List<Dependent> slaveTableDependentList;
+
+    public DependentGroup() {
+        this.onlyEffect = false;
+        this.mainTableDependentList = new ArrayList<>();
+        this.mainTableJoinDependentList = new ArrayList<>();
+        this.slaveTableDependentList = new ArrayList<>();
+    }
+
+    public DependentGroup(List<DependentGroup> list, boolean onlyEffect) {
+        this.onlyEffect = onlyEffect;
+        this.mainTableDependentList = new ArrayList<>(list.stream().mapToInt(e -> e.mainTableDependentList.size()).sum());
+        this.mainTableJoinDependentList = new ArrayList<>(list.stream().mapToInt(e -> e.mainTableJoinDependentList.size()).sum());
+        this.slaveTableDependentList = new ArrayList<>(list.stream().mapToInt(e -> e.slaveTableDependentList.size()).sum());
+        for (DependentGroup group : list) {
+            mainTableDependentList.addAll(group.mainTableDependentList);
+            mainTableJoinDependentList.addAll(group.mainTableJoinDependentList);
+            slaveTableDependentList.addAll(group.slaveTableDependentList);
+        }
+    }
 
     public Collection<String> getIndices() {
         Set<String> indices = new LinkedHashSet<>();
@@ -22,30 +42,44 @@ public class DependentGroup {
         return indices;
     }
 
+    public List<Dependent> getMainTableDependentList() {
+        return Collections.unmodifiableList(mainTableDependentList);
+    }
+
+    public List<Dependent> getSlaveTableDependentList() {
+        return Collections.unmodifiableList(slaveTableDependentList);
+    }
+
+    public List<Dependent> getMainTableJoinDependentList() {
+        return Collections.unmodifiableList(mainTableJoinDependentList);
+    }
+
     public List<Dependent> selectMainTableDependentList(Collection<String> onlyFieldName) {
+        List<Dependent> result;
         if (onlyFieldName == null) {
-            return mainTableDependentList;
+            result = mainTableDependentList;
         } else {
             if (onlyFieldName.isEmpty()) {
-                return Collections.emptyList();
+                result = Collections.emptyList();
             } else {
-                return mainTableDependentList.stream()
+                result = mainTableDependentList.stream()
                         .filter(e -> e.containsObjectField(onlyFieldName))
                         .collect(Collectors.toList());
             }
         }
+        return Collections.unmodifiableList(filterEffect(result));
     }
 
-    public List<Dependent> getMainTableDependentList() {
-        return mainTableDependentList;
+    public List<Dependent> selectSlaveTableDependentList() {
+        return Collections.unmodifiableList(filterEffect(slaveTableDependentList));
     }
 
-    public List<Dependent> getSlaveTableDependentList() {
-        return slaveTableDependentList;
+    public List<Dependent> selectMainTableJoinDependentList() {
+        return Collections.unmodifiableList(filterEffect(mainTableJoinDependentList));
     }
 
-    public List<Dependent> getMainTableJoinDependentList() {
-        return mainTableJoinDependentList;
+    private List<Dependent> filterEffect(List<Dependent> list) {
+        return onlyEffect ? list.stream().filter(Dependent::isEffect).collect(Collectors.toList()) : list;
     }
 
     public void addMain(Dependent dependent) {
@@ -64,10 +98,6 @@ public class DependentGroup {
         mainTableDependentList.addAll(dependentGroup.mainTableDependentList);
         mainTableJoinDependentList.addAll(dependentGroup.mainTableJoinDependentList);
         slaveTableDependentList.addAll(dependentGroup.slaveTableDependentList);
-    }
-
-    public boolean isEmpty() {
-        return mainTableDependentList.isEmpty() && mainTableJoinDependentList.isEmpty() && slaveTableDependentList.isEmpty();
     }
 
     @Override

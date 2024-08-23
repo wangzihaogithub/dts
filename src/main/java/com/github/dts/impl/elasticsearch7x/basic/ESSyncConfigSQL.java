@@ -29,7 +29,7 @@ public abstract class ESSyncConfigSQL extends JdbcTemplateSQL {
         this.old = old;
         this.bulkRequestList = bulkRequestList;
         this.esTemplate = esTemplate;
-        this.dependent = new Dependent(config.getEsMapping().getSchemaItem(), index, dml);
+        this.dependent = new Dependent(config.getEsMapping().getSchemaItem(), index, dml, Boolean.TRUE);
     }
 
     public Dependent getDependent() {
