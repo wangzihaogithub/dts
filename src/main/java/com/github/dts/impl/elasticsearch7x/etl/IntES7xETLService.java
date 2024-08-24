@@ -737,7 +737,7 @@ public class IntES7xETLService {
         List<Map<String, Object>> jobList = selectList(jdbcTemplate, minId, limit, tableName, idColumnName);
         List<Dml> dmlList = new ArrayList<>();
         for (Map<String, Object> row : jobList) {
-            dmlList.addAll(Dml.convertInsert(Arrays.asList(row), Arrays.asList(idColumnName), tableName, catalog, new String[]{config.getDestination()}));
+            dmlList.addAll(Dml.convertInsert(Collections.singletonList(row), Collections.singletonList(idColumnName), tableName, catalog, new String[]{config.getDestination()}));
         }
         return dmlList;
     }

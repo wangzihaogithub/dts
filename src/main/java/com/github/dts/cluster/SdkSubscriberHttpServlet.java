@@ -1,5 +1,8 @@
 package com.github.dts.cluster;
 
+import com.github.dts.conf.ConfigSdkLoginService;
+import com.github.dts.util.CanalConfig;
+
 import javax.servlet.*;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
@@ -12,10 +15,12 @@ import java.util.List;
 public class SdkSubscriberHttpServlet extends HttpServlet {
     private final SdkSubscriber sdkSubscriber;
     private final DiscoveryService discoveryService;
+    private final ConfigSdkLoginService configSdkLoginService;
 
-    public SdkSubscriberHttpServlet(SdkSubscriber sdkSubscriber, DiscoveryService discoveryService) {
+    public SdkSubscriberHttpServlet(SdkSubscriber sdkSubscriber, CanalConfig canalConfig, DiscoveryService discoveryService) {
         this.sdkSubscriber = sdkSubscriber;
         this.discoveryService = discoveryService;
+        this.configSdkLoginService = new ConfigSdkLoginService(canalConfig);
     }
 
     @Override
@@ -26,7 +31,7 @@ public class SdkSubscriberHttpServlet extends HttpServlet {
         }
         String fetch = req.getHeader("Authorization-fetch");
 
-        Principal principal = "true".equalsIgnoreCase(fetch) ? discoveryService.fetchSdk(authorization) : discoveryService.loginSdk(authorization);
+        Principal principal = "true".equalsIgnoreCase(fetch) ? fetchSdk(authorization) : loginSdk(authorization);
         if (principal == null) {
             resp.setHeader("WWW-Authenticate", "Basic realm=\"SdkSubscriberHttpServlet\"");
             resp.sendError(HttpServletResponse.SC_UNAUTHORIZED);
@@ -42,6 +47,22 @@ public class SdkSubscriberHttpServlet extends HttpServlet {
             asyncContext.addListener(new CloseAsyncListener(channel, sdkSubscriber));
             sdkSubscriber.add(channel);
         }
+    }
+
+    protected Principal loginSdk(String authorization) {
+        Principal principal = configSdkLoginService.loginSdk(authorization);
+        if (principal == null && discoveryService != null) {
+            principal = discoveryService.loginSdk(authorization);
+        }
+        return principal;
+    }
+
+    protected Principal fetchSdk(String authorization) {
+        Principal principal = configSdkLoginService.fetchSdk(authorization);
+        if (principal == null && discoveryService != null) {
+            principal = discoveryService.fetchSdk(authorization);
+        }
+        return principal;
     }
 
     private static class HttpSdkChannel implements SdkChannel {

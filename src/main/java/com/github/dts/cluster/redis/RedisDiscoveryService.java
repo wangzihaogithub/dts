@@ -513,19 +513,6 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
 
     public Map<String, SdkInstance> getSdkInstanceMap(RedisConnection connection) {
         Map<String, SdkInstance> map = new LinkedHashMap<>();
-        List<CanalConfig.SdkAccount> sdkAccount = clusterConfig.getSdkAccount();
-        if (sdkAccount != null) {
-            for (CanalConfig.SdkAccount account : sdkAccount) {
-                SdkInstance row = new SdkInstance();
-                row.setIp(serverInstance.getIp());
-                row.setPort(serverInstance.getPort());
-                row.setDeviceId(serverInstance.getDeviceId());
-                row.setAccount(account.getAccount());
-                row.setPassword(account.getPassword());
-                map.put(account.getAccount(), row);
-            }
-        }
-
         try (Cursor<byte[]> cursor = connection.scan(keySdkSetScanOptions)) {
             while (cursor.hasNext()) {
                 byte[] key = cursor.next();
