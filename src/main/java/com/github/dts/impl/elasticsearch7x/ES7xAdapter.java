@@ -492,15 +492,6 @@ public class ES7xAdapter implements Adapter {
             return dmlListMap;
         }
 
-        private static Boolean isEffect(List<Dependent> list) {
-            for (Dependent dependent : list) {
-                if (dependent.isEffect()) {
-                    return Boolean.TRUE;
-                }
-            }
-            return Boolean.FALSE;
-        }
-
         private List<DmlDTO> convert(Map<Dml, Map<Integer, List<Dependent>>> dmlListMap) {
             List<DmlDTO> list = new ArrayList<>();
             for (Map.Entry<Dml, Map<Integer, List<Dependent>>> entry : dmlListMap.entrySet()) {
@@ -508,12 +499,14 @@ public class ES7xAdapter implements Adapter {
                 for (Map.Entry<Integer, List<Dependent>> entry1 : entry.getValue().entrySet()) {
                     List<Dependent> dependentList = entry1.getValue();
                     Dependent f = dependentList.get(0);
-                    Set<String> desc = new LinkedHashSet<>();
-                    Set<String> indexs = new LinkedHashSet<>();
+                    List<DmlDTO.Dependent> descList = new ArrayList<>();
                     for (Dependent dependent : dependentList) {
                         SchemaItem schemaItem = dependent.getSchemaItem();
-                        indexs.add(schemaItem.getEsMapping().get_index());
-                        desc.add(schemaItem.getDesc());
+                        DmlDTO.Dependent desc = new DmlDTO.Dependent();
+                        desc.setEffect(dependent.isEffect());
+                        desc.setName(schemaItem.getDesc());
+                        desc.setEsIndex(schemaItem.getEsMapping().get_index());
+                        descList.add(desc);
                     }
                     DmlDTO dmlDTO = new DmlDTO();
                     dmlDTO.setTableName(dml.getTable());
@@ -524,9 +517,7 @@ public class ES7xAdapter implements Adapter {
                     dmlDTO.setType(dml.getType());
                     dmlDTO.setOld(f.getOldMap());
                     dmlDTO.setData(f.getDataMap());
-                    dmlDTO.setIndexNames(new ArrayList<>(indexs));
-                    dmlDTO.setDesc(new ArrayList<>(desc));
-                    dmlDTO.setEffect(isEffect(dependentList));
+                    dmlDTO.setDependents(descList);
                     list.add(dmlDTO);
                 }
             }

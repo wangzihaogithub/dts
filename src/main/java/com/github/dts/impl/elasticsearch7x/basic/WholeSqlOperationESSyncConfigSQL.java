@@ -18,9 +18,9 @@ public class WholeSqlOperationESSyncConfigSQL extends ESSyncConfigSQL {
 
     public WholeSqlOperationESSyncConfigSQL(SQL sql, ESSyncConfig config, Dml dml,
                                             Map<String, Object> data, Map<String, Object> old,
-                                            int index,   ESTemplate.BulkRequestList bulkRequestList, ESTemplate esTemplate,
+                                            int index, ESTemplate.BulkRequestList bulkRequestList, ESTemplate esTemplate,
                                             TableItem tableItem) {
-        super(sql, config, dml, data, old, bulkRequestList,index, esTemplate);
+        super(sql, config, dml, data, old, bulkRequestList, index, esTemplate);
         this.tableItem = tableItem;
     }
 
@@ -33,6 +33,7 @@ public class WholeSqlOperationESSyncConfigSQL extends ESSyncConfigSQL {
         Map<String, Object> old = getOld();
         ESTemplate.BulkRequestList bulkRequestList = getBulkRequestList();
 
+        Boolean eff = Boolean.FALSE;
         for (Map<String, Object> row : rowList) {
             Map<String, Object> esFieldData = new LinkedHashMap<>();
             for (FieldItem fieldItem : tableItem.getRelationSelectFieldItems()) {
@@ -89,7 +90,11 @@ public class WholeSqlOperationESSyncConfigSQL extends ESSyncConfigSQL {
                 }
             }
 
-            esTemplate.updateByQuery(config, paramsTmp, esFieldData, bulkRequestList);
+            if (!paramsTmp.isEmpty() && !esFieldData.isEmpty()) {
+                eff = Boolean.TRUE;
+                esTemplate.updateByQuery(config, paramsTmp, esFieldData, bulkRequestList);
+            }
         }
+        getDependent().setEffect(eff);
     }
 }

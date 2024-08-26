@@ -200,6 +200,7 @@ public class BasicFieldWriter {
                 if (schemaItem.getAliasTableItems().size() == 1 && schemaItem.isAllFieldsSimple()) {
                     // ------单表 & 所有字段都为简单字段------
                     result.updateList.add(singleTableSimpleFiledUpdate(config, dml, data, old, index, bulkRequestList));
+                    add = true;
                 } else {
                     // ------主表 查询sql来更新------
                     ESMapping mapping = config.getEsMapping();
@@ -323,9 +324,11 @@ public class BasicFieldWriter {
             // ------是主表------
             if (isMainTable(schemaItem, dml.getTable())) {
                 Object pkVal = esTemplate.getIdValFromRS(mapping, data);
-                esTemplate.delete(mapping, pkVal, bulkRequestList);
-                result.deleteList.add(new Dependent(schemaItem, index, dml, Boolean.TRUE));
-                add = true;
+                if (pkVal != null && !"".equals(pkVal)) {
+                    esTemplate.delete(mapping, pkVal, bulkRequestList);
+                    result.deleteList.add(new Dependent(schemaItem, index, dml, Boolean.TRUE));
+                    add = true;
+                }
             }
 
             // 从表的操作
@@ -405,7 +408,7 @@ public class BasicFieldWriter {
         Map<String, Object> esFieldData = new LinkedHashMap<>();
         Object idVal = esTemplate.getESDataFromDmlData(mapping, data, old, esFieldData, dml.getTable());
         esTemplate.update(mapping, idVal, esFieldData, bulkRequestList);
-        return new Dependent(config.getEsMapping().getSchemaItem(), index, dml, Boolean.TRUE);
+        return new Dependent(config.getEsMapping().getSchemaItem(), index, dml, esFieldData.isEmpty() ? Boolean.FALSE : Boolean.TRUE);
     }
 
     /**

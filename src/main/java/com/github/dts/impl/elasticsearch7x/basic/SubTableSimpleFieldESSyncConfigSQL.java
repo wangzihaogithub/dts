@@ -33,6 +33,7 @@ public class SubTableSimpleFieldESSyncConfigSQL extends ESSyncConfigSQL {
         Map<String, Object> old = getOld();
         ESTemplate.BulkRequestList bulkRequestList = getBulkRequestList();
 
+        Boolean eff = Boolean.FALSE;
         boolean onceFlag = false;
         for (Map<String, Object> row : rowList) {
             onceFlag = true;
@@ -78,8 +79,12 @@ public class SubTableSimpleFieldESSyncConfigSQL extends ESSyncConfigSQL {
                 }
             }
 
-            esTemplate.updateByQuery(config, paramsTmp, esFieldData, bulkRequestList);
+            if (!paramsTmp.isEmpty() && !esFieldData.isEmpty()) {
+                eff = Boolean.TRUE;
+                esTemplate.updateByQuery(config, paramsTmp, esFieldData, bulkRequestList);
+            }
         }
+        getDependent().setEffect(eff);
         if (!onceFlag) {
             Dml dml = getDml();
             log.error("有事件，无数据：destination:{}, table: {}, index: {}, sql: {}，data：{},old:{}",

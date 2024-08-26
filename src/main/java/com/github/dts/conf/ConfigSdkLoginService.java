@@ -49,7 +49,6 @@ public class ConfigSdkLoginService implements SdkLoginService {
         String password = accountAndPassword[1];
         List<CanalConfig.SdkAccount> sdkAccountList = sdkAccountMap.get(account);
         if (sdkAccountList == null || sdkAccountList.isEmpty()) {
-            log.info("loginSdk fail by account is not exist. account={}", account);
             return null;
         }
         for (CanalConfig.SdkAccount sdkAccount : sdkAccountList) {
