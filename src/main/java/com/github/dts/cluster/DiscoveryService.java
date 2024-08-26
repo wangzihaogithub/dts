@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
-public interface DiscoveryService {
+public interface DiscoveryService extends SdkLoginService {
 
     static DiscoveryService newInstance(CanalConfig.ClusterConfig config,
                                         SdkSubscriber sdkSubscriber,
@@ -54,10 +54,6 @@ public interface DiscoveryService {
     }
 
     Principal loginServer(String authorization);
-
-    Principal loginSdk(String authorization);
-
-    Principal fetchSdk(String authorization);
 
     void registerServerInstance();
 

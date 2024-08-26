@@ -238,6 +238,15 @@ public class CanalConfig {
         private String account;
         private String password;
 
+        public void validate() {
+            if (account == null || account.isEmpty()) {
+                throw new IllegalArgumentException("account is empty");
+            }
+            if (password == null || password.isEmpty()) {
+                throw new IllegalArgumentException("password is empty");
+            }
+        }
+
         public String getAccount() {
             return account;
         }

@@ -110,11 +110,6 @@ public class ESSyncConfig {
         // 对象字段, 例: objFields:
         // - _labels: array:;
         private Map<String, ObjectField> objFields = new LinkedHashMap<>();
-        private int commitBatch = 1000;
-        private String etlCondition;
-        private boolean syncByTimestamp = false;                // 是否按时间戳定时同步
-        private boolean detectNoop = true;                     // 文档无变化时是否刷新文档（同步词库的时候，有时文档无变化，那么索引可能不会重建）
-        private Long syncInterval;                           // 同步时间间隔
         private SchemaItem schemaItem;                             // sql解析结果模型
         private ESSyncConfig config;
 
@@ -165,14 +160,6 @@ public class ESSyncConfig {
 
         public void setEnv(String env) {
             this.env = env;
-        }
-
-        public boolean isDetectNoop() {
-            return detectNoop;
-        }
-
-        public void setDetectNoop(boolean detectNoop) {
-            this.detectNoop = detectNoop;
         }
 
         public boolean isEnable() {
@@ -254,38 +241,6 @@ public class ESSyncConfig {
 
         public void setSql(String sql) {
             this.sql = sql;
-        }
-
-        public int getCommitBatch() {
-            return commitBatch;
-        }
-
-        public void setCommitBatch(int commitBatch) {
-            this.commitBatch = commitBatch;
-        }
-
-        public String getEtlCondition() {
-            return etlCondition;
-        }
-
-        public void setEtlCondition(String etlCondition) {
-            this.etlCondition = etlCondition;
-        }
-
-        public Long getSyncInterval() {
-            return syncInterval;
-        }
-
-        public void setSyncInterval(Long syncInterval) {
-            this.syncInterval = syncInterval;
-        }
-
-        public boolean isSyncByTimestamp() {
-            return syncByTimestamp;
-        }
-
-        public void setSyncByTimestamp(boolean syncByTimestamp) {
-            this.syncByTimestamp = syncByTimestamp;
         }
 
         public SchemaItem getSchemaItem() {

@@ -275,9 +275,9 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
         }, true);
         updateServerInstance(serverInstanceMap);
 
-        this.updateSdkInstanceScheduledFuture = scheduledUpdateSdkInstance();
-        this.updateServerInstanceScheduledFuture = scheduledUpdateServerInstance();
-        this.serverHeartbeatScheduledFuture = scheduledServerHeartbeat();
+        scheduledUpdateSdkInstance();
+        scheduledUpdateServerInstance();
+        scheduledServerHeartbeat();
     }
 
     @Override
@@ -302,32 +302,35 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
         }
     }
 
-    private ScheduledFuture<?> scheduledUpdateServerInstance() {
-        if (updateInstanceTimerMs <= 0) {
-            return null;
-        }
+    private void scheduledUpdateServerInstance() {
         ScheduledFuture<?> scheduledFuture = this.updateServerInstanceScheduledFuture;
         if (scheduledFuture != null) {
             scheduledFuture.cancel(false);
+            this.updateServerInstanceScheduledFuture = null;
         }
-        return getScheduled().scheduleWithFixedDelay(() -> updateServerInstance(getServerInstanceMap()), updateInstanceTimerMs, updateInstanceTimerMs, TimeUnit.MILLISECONDS);
+        if (updateInstanceTimerMs <= 0) {
+            return;
+        }
+        this.updateServerInstanceScheduledFuture = getScheduled().scheduleWithFixedDelay(() -> updateServerInstance(getServerInstanceMap()), updateInstanceTimerMs, updateInstanceTimerMs, TimeUnit.MILLISECONDS);
     }
 
-    private ScheduledFuture<?> scheduledUpdateSdkInstance() {
-        if (updateInstanceTimerMs <= 0) {
-            return null;
-        }
+    private void scheduledUpdateSdkInstance() {
         ScheduledFuture<?> scheduledFuture = this.updateSdkInstanceScheduledFuture;
         if (scheduledFuture != null) {
             scheduledFuture.cancel(false);
+            this.updateSdkInstanceScheduledFuture = null;
         }
-        return getScheduled().scheduleWithFixedDelay(() -> updateSdkInstance(getSdkInstanceMap()), updateInstanceTimerMs, updateInstanceTimerMs, TimeUnit.MILLISECONDS);
+        if (updateInstanceTimerMs <= 0) {
+            return;
+        }
+        this.updateSdkInstanceScheduledFuture = getScheduled().scheduleWithFixedDelay(() -> updateSdkInstance(getSdkInstanceMap()), updateInstanceTimerMs, updateInstanceTimerMs, TimeUnit.MILLISECONDS);
     }
 
-    private ScheduledFuture<?> scheduledServerHeartbeat() {
+    private synchronized void scheduledServerHeartbeat() {
         ScheduledFuture<?> scheduledFuture = this.serverHeartbeatScheduledFuture;
         if (scheduledFuture != null) {
             scheduledFuture.cancel(false);
+            this.serverHeartbeatScheduledFuture = null;
         }
         int delay;
         if (redisInstanceExpireSec == MIN_REDIS_INSTANCE_EXPIRE_SEC) {
@@ -335,7 +338,7 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
         } else {
             delay = (redisInstanceExpireSec * 1000) / 3;
         }
-        return getScheduled().scheduleWithFixedDelay(() -> {
+        this.serverHeartbeatScheduledFuture = getScheduled().scheduleWithFixedDelay(() -> {
             redisTemplate.execute(connection -> {
                 // 续期过期时间
                 Boolean success = connection.expire(keyServerSetBytes, redisInstanceExpireSec);
@@ -513,19 +516,6 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
 
     public Map<String, SdkInstance> getSdkInstanceMap(RedisConnection connection) {
         Map<String, SdkInstance> map = new LinkedHashMap<>();
-        List<CanalConfig.SdkAccount> sdkAccount = clusterConfig.getSdkAccount();
-        if (sdkAccount != null) {
-            for (CanalConfig.SdkAccount account : sdkAccount) {
-                SdkInstance row = new SdkInstance();
-                row.setIp(serverInstance.getIp());
-                row.setPort(serverInstance.getPort());
-                row.setDeviceId(serverInstance.getDeviceId());
-                row.setAccount(account.getAccount());
-                row.setPassword(account.getPassword());
-                map.put(account.getAccount(), row);
-            }
-        }
-
         try (Cursor<byte[]> cursor = connection.scan(keySdkSetScanOptions)) {
             while (cursor.hasNext()) {
                 byte[] key = cursor.next();

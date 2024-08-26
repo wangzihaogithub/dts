@@ -130,6 +130,10 @@ public class Dependent {
         return effect;
     }
 
+    public void setEffect(Boolean effect) {
+        this.effect = effect;
+    }
+
     @Override
     public String toString() {
         List<Map<String, Object>> oldList = dml.getOld();

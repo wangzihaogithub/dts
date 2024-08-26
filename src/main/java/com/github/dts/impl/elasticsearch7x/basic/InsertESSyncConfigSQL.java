@@ -13,8 +13,8 @@ import java.util.Map;
 public class InsertESSyncConfigSQL extends ESSyncConfigSQL {
 
     public InsertESSyncConfigSQL(SQL sql, ESSyncConfig config, Dml dml,
-                                 Map<String, Object> data, ESTemplate.BulkRequestList bulkRequestList, int index,ESTemplate esTemplate) {
-        super(sql, config, dml, data, null, bulkRequestList, index,esTemplate);
+                                 Map<String, Object> data, ESTemplate.BulkRequestList bulkRequestList, int index, ESTemplate esTemplate) {
+        super(sql, config, dml, data, null, bulkRequestList, index, esTemplate);
     }
 
     @Override
@@ -25,6 +25,7 @@ public class InsertESSyncConfigSQL extends ESSyncConfigSQL {
         Map<String, Object> data = getData();
         ESTemplate.BulkRequestList bulkRequestList = getBulkRequestList();
 
+        getDependent().setEffect(rowList.isEmpty() ? Boolean.FALSE : Boolean.TRUE);
         for (Map<String, Object> row : rowList) {
             Map<String, Object> esFieldData = new LinkedHashMap<>();
             Object idVal = esTemplate.getESDataFromRS(mapping, row, esFieldData, data);

@@ -18,7 +18,6 @@ package com.lmax.disruptor.util;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 
-
 import static java.lang.invoke.MethodType.methodType;
 
 /**

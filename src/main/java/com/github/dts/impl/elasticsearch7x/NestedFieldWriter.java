@@ -155,12 +155,17 @@ public class NestedFieldWriter {
     private static Set<DependentSQL> convertToSql(List<Dependent> mainTableDependentList) {
         Set<DependentSQL> sqlList = new LinkedHashSet<>();
         for (Dependent dependent : mainTableDependentList) {
+            boolean indexMainTable = dependent.isIndexMainTable();
             ESSyncConfig.ObjectField objectField = dependent.getSchemaItem().getObjectField();
             Map<String, Object> mergeDataMap = dependent.getMergeDataMap();
             if (mergeDataMap.isEmpty()) {
                 continue;
             }
-            String fullSql = objectField.getFullSql(dependent.isIndexMainTable());
+            // 主表删除，nested字段会自动删除，无需处理
+            if (dependent.getDml().isTypeDelete() && indexMainTable) {
+                continue;
+            }
+            String fullSql = objectField.getFullSql(indexMainTable);
             SQL sql = SQL.convertToSql(fullSql, mergeDataMap);
 
             sqlList.add(new DependentSQL(sql, dependent, objectField.getSchemaItem().getGroupByIdColumns()));

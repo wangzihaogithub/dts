@@ -12,24 +12,14 @@ public class DmlDTO {
     private String type;
     private Map<String, Object> old;
     private Map<String, Object> data;
-    private List<String> indexNames;
-    private List<String> desc;
-    private Boolean effect;
+    private List<Dependent> dependents;
 
-    public Boolean getEffect() {
-        return effect;
+    public List<Dependent> getDependents() {
+        return dependents;
     }
 
-    public void setEffect(Boolean effect) {
-        this.effect = effect;
-    }
-
-    public List<String> getDesc() {
-        return desc;
-    }
-
-    public void setDesc(List<String> desc) {
-        this.desc = desc;
+    public void setDependents(List<Dependent> dependents) {
+        this.dependents = dependents;
     }
 
     public String getTableName() {
@@ -96,11 +86,42 @@ public class DmlDTO {
         this.data = data;
     }
 
-    public List<String> getIndexNames() {
-        return indexNames;
-    }
+    public static class Dependent {
+        private String name;
+        private Boolean effect;
+        private String esIndex;
 
-    public void setIndexNames(List<String> indexNames) {
-        this.indexNames = indexNames;
+        @Override
+        public String toString() {
+            return "Dependent{" +
+                    "name='" + name + '\'' +
+                    ", effect=" + effect +
+                    ", esIndex='" + esIndex + '\'' +
+                    '}';
+        }
+
+        public String getEsIndex() {
+            return esIndex;
+        }
+
+        public void setEsIndex(String esIndex) {
+            this.esIndex = esIndex;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+
+        public Boolean getEffect() {
+            return effect;
+        }
+
+        public void setEffect(Boolean effect) {
+            this.effect = effect;
+        }
     }
 }
