@@ -4,6 +4,7 @@ import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.env.Environment;
 import org.springframework.scheduling.concurrent.CustomizableThreadFactory;
 import org.springframework.util.LinkedCaseInsensitiveMap;
 
@@ -403,7 +404,7 @@ public class Util {
         }
     }
 
-    protected static char[] encodeHex(byte[] data, char[] toDigits) {
+    private static char[] encodeHex(byte[] data, char[] toDigits) {
         int l = data.length;
         char[] out = new char[l << 1];
         int i = 0;
@@ -416,4 +417,22 @@ public class Util {
         return out;
     }
 
+    public static boolean isDefaultRedisProps(Environment env) {
+        String[] props = new String[]{
+                "spring.redis.url",
+                "spring.redis.host",
+                "spring.redis.port",
+                "spring.redis.database",
+                "spring.redis.username",
+                "spring.redis.password",
+                "spring.redis.cluster.nodes",
+                "spring.redis.sentinel.nodes"
+        };
+        for (String prop : props) {
+            if (env.containsProperty(prop)) {
+                return false;
+            }
+        }
+        return true;
+    }
 }

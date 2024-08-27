@@ -19,21 +19,22 @@ public interface DiscoveryService extends SdkLoginService {
         if (discoveryEnum == CanalConfig.DiscoveryEnum.AUTO) {
             if (!Objects.toString(config.getNacos().getServerAddr(), "").isEmpty()) {
                 discoveryEnum = CanalConfig.DiscoveryEnum.NACOS;
-            } else if (PlatformDependentUtil.isSupportSpringframeworkRedis() && beanFactory.getBeanNamesForType(PlatformDependentUtil.REDIS_CONNECTION_FACTORY_CLASS).length > 0) {
+            } else if (PlatformDependentUtil.isSupportSpringframeworkRedis()
+                    && beanFactory.getBeanNamesForType(PlatformDependentUtil.REDIS_CONNECTION_FACTORY_CLASS).length > 0
+                    && !Util.isDefaultRedisProps(beanFactory.getBean(Environment.class))) {
                 discoveryEnum = CanalConfig.DiscoveryEnum.REDIS;
             } else {
                 discoveryEnum = CanalConfig.DiscoveryEnum.DISABLE;
             }
         }
-        if (discoveryEnum == CanalConfig.DiscoveryEnum.DISABLE) {
-            return null;
-        }
-
-        Environment env = beanFactory.getBean(Environment.class);
-        String ip = Util.getIPAddress();
-        Integer port = env.getProperty("server.port", Integer.class, 8080);
         switch (discoveryEnum) {
+            case DISABLE: {
+                return null;
+            }
             case REDIS: {
+                Environment env = beanFactory.getBean(Environment.class);
+                String ip = Util.getIPAddress();
+                Integer port = env.getProperty("server.port", Integer.class, 8080);
                 CanalConfig.ClusterConfig.Redis redis = config.getRedis();
                 String redisKeyRootPrefix = redis.getRedisKeyRootPrefix();
                 if (redisKeyRootPrefix != null) {
