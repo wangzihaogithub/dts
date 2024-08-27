@@ -53,8 +53,8 @@ public class SdkSubscriber {
             channelList.add(channel);
         }
 
-        public void remove(SdkChannel channel) {
-            channelList.remove(channel);
+        public boolean remove(SdkChannel channel) {
+            return channelList.remove(channel);
         }
 
         public boolean isOpen() {

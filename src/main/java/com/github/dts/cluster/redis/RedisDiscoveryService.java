@@ -47,6 +47,7 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
     private final byte[] serverInstanceBytes;
     private final RedisMessageIdIncrementer messageIdIncrementer;
     private final int updateInstanceTimerMs;
+    private final List<RedisSdkInstanceClient> configSdkClientUnmodifiableList;
     private long serverHeartbeatCount;
     private Map<String, ServerInstance> serverInstanceMap = new LinkedHashMap<>();
     private Map<String, SdkInstance> sdkInstanceMap = new LinkedHashMap<>();
@@ -130,6 +131,23 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
 
         // sdk : sub, get
         subscribeSdk();
+
+        // config sdk
+        List<RedisSdkInstanceClient> configSdkInstanceClientList = new ArrayList<>();
+        List<CanalConfig.SdkAccount> configSdkAccountList = clusterConfig.getSdkAccount();
+        if (configSdkAccountList != null) {
+            int i = 0;
+            for (CanalConfig.SdkAccount sdkAccount : clusterConfig.getSdkAccount()) {
+                SdkInstance sdkInstance = new SdkInstance();
+                sdkInstance.setIp(ip);
+                sdkInstance.setPort(port);
+                sdkInstance.setDeviceId(DEVICE_ID);
+                sdkInstance.setAccount(sdkAccount.getAccount());
+                sdkInstance.setPassword(sdkAccount.getPassword());
+                configSdkInstanceClientList.add(new RedisSdkInstanceClient(i++, configSdkAccountList.size(), false, sdkInstance, clusterConfig, sdkSubscriber));
+            }
+        }
+        this.configSdkClientUnmodifiableList = Collections.unmodifiableList(configSdkInstanceClientList);
     }
 
     private static ScheduledExecutorService getScheduled() {
@@ -300,6 +318,11 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
 
             }
         }
+    }
+
+    @Override
+    public List<RedisSdkInstanceClient> getConfigSdkUnmodifiableList() {
+        return configSdkClientUnmodifiableList;
     }
 
     private void scheduledUpdateServerInstance() {

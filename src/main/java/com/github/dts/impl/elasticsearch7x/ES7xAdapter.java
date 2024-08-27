@@ -417,9 +417,10 @@ public class ES7xAdapter implements Adapter {
             if (eventList.isEmpty()) {
                 return;
             }
+            List<SdkInstanceClient> configSdkUnmodifiableList = discoveryService.getConfigSdkUnmodifiableList();
             try (ReferenceCounted<List<SdkInstanceClient>> sdkListRef = discoveryService.getSdkListRef()) {
                 List<SdkInstanceClient> clientList = sdkListRef.get();
-                if (clientList.isEmpty()) {
+                if (clientList.isEmpty() && configSdkUnmodifiableList.isEmpty()) {
                     return;
                 }
 
@@ -433,9 +434,15 @@ public class ES7xAdapter implements Adapter {
                         for (SdkInstanceClient client : clientList) {
                             client.write(sdkMessage);
                         }
+                        for (SdkInstanceClient client : configSdkUnmodifiableList) {
+                            client.write(sdkMessage);
+                        }
                     }
                 } finally {
                     for (SdkInstanceClient client : clientList) {
+                        client.flush();
+                    }
+                    for (SdkInstanceClient client : configSdkUnmodifiableList) {
                         client.flush();
                     }
                 }

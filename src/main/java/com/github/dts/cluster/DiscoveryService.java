@@ -61,6 +61,8 @@ public interface DiscoveryService extends SdkLoginService {
 
     <E extends SdkInstanceClient> ReferenceCounted<List<E>> getSdkListRef();
 
+    <E extends SdkInstanceClient> List<E> getConfigSdkUnmodifiableList();
+
     void addServerListener(ServerListener serverListener);
 
     void addSdkListener(SdkListener serverListener);
