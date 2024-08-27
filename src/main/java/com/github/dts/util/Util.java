@@ -177,21 +177,14 @@ public class Util {
                 new CustomizableThreadFactory(name) {
                     @Override
                     public Thread newThread(Runnable runnable) {
-                        Thread thread = super.newThread(new Runnable() {
-                            @Override
-                            public void run() {
-                                if (wrapper) {
-                                    try {
-                                        runnable.run();
-                                    } catch (Exception e) {
-                                        logger.warn("Scheduled error {}", e.toString(), e);
-                                        throw e;
-                                    }
-                                } else {
-                                    runnable.run();
-                                }
+                        Thread thread = super.newThread(wrapper ? () -> {
+                            try {
+                                runnable.run();
+                            } catch (Exception e) {
+                                logger.warn("Scheduled error {}", e.toString(), e);
+                                throw e;
                             }
-                        });
+                        } : runnable);
                         thread.setDaemon(true);
                         return thread;
                     }
@@ -232,21 +225,14 @@ public class Util {
                 new CustomizableThreadFactory(name) {
                     @Override
                     public Thread newThread(Runnable runnable) {
-                        return super.newThread(new Runnable() {
-                            @Override
-                            public void run() {
-                                if (wrapper) {
-                                    try {
-                                        runnable.run();
-                                    } catch (Exception e) {
-                                        logger.warn("error {}", e.toString(), e);
-                                        throw e;
-                                    }
-                                } else {
-                                    runnable.run();
-                                }
+                        return super.newThread(wrapper ? () -> {
+                            try {
+                                runnable.run();
+                            } catch (Exception e) {
+                                logger.warn("error {}", e.toString(), e);
+                                throw e;
                             }
-                        });
+                        } : runnable);
                     }
                 }, new ThreadPoolExecutor.CallerRunsPolicy());
         executor.allowCoreThreadTimeOut(allowCoreThreadTimeOut);

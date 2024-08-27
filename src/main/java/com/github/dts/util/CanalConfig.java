@@ -616,8 +616,8 @@ public class CanalConfig {
             private int joinUpdateSize = 10;
             private int streamChunkSize = 10000;
             private int maxIdIn = 1000;
-            private int commitEventPublishScheduledTickMs = 1000;
-            private int commitEventPublishMaxBlockCount = 1000;
+            private int commitEventPublishScheduledTickMs = 100;
+            private int commitEventPublishMaxBlockCount = 50000;
             private boolean onlyEffect = true;// 只更新受到影响的字段
 
             public boolean isOnlyEffect() {

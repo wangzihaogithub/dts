@@ -378,7 +378,7 @@ public class ES7xAdapter implements Adapter {
         RealtimeListener(DiscoveryService discoveryService, int commitEventPublishScheduledTickMs, int commitEventPublishMaxBlockCount) {
             this.discoveryService = discoveryService;
             this.eventList = new LinkedBlockingQueue<>(commitEventPublishMaxBlockCount);
-            getScheduled().scheduleWithFixedDelay(this, commitEventPublishScheduledTickMs, commitEventPublishMaxBlockCount, TimeUnit.MILLISECONDS);
+            getScheduled().scheduleWithFixedDelay(this, commitEventPublishScheduledTickMs, commitEventPublishScheduledTickMs, TimeUnit.MILLISECONDS);
         }
 
         public static ScheduledExecutorService getScheduled() {
@@ -408,7 +408,7 @@ public class ES7xAdapter implements Adapter {
 
         private List<CommitEvent> drainTo() {
             ArrayList<CommitEvent> list = new ArrayList<>(eventList.size());
-            eventList.drainTo(list, 10000);
+            eventList.drainTo(list);
             return list;
         }
 
