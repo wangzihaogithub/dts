@@ -16,15 +16,17 @@ public interface DiscoveryService extends SdkLoginService {
                                         SdkSubscriber sdkSubscriber,
                                         ListableBeanFactory beanFactory) {
         CanalConfig.DiscoveryEnum discoveryEnum = config.getDiscovery();
-        if (discoveryEnum == CanalConfig.DiscoveryEnum.DISABLE) {
-            return null;
-        }
         if (discoveryEnum == CanalConfig.DiscoveryEnum.AUTO) {
             if (!Objects.toString(config.getNacos().getServerAddr(), "").isEmpty()) {
                 discoveryEnum = CanalConfig.DiscoveryEnum.NACOS;
             } else if (PlatformDependentUtil.isSupportSpringframeworkRedis() && beanFactory.getBeanNamesForType(PlatformDependentUtil.REDIS_CONNECTION_FACTORY_CLASS).length > 0) {
                 discoveryEnum = CanalConfig.DiscoveryEnum.REDIS;
+            } else {
+                discoveryEnum = CanalConfig.DiscoveryEnum.DISABLE;
             }
+        }
+        if (discoveryEnum == CanalConfig.DiscoveryEnum.DISABLE) {
+            return null;
         }
 
         Environment env = beanFactory.getBean(Environment.class);
@@ -46,7 +48,9 @@ public interface DiscoveryService extends SdkLoginService {
                         sdkSubscriber,
                         config, ip, port);
             }
-            case NACOS:
+            case NACOS: {
+                throw new IllegalArgumentException("ServiceDiscoveryService newInstance fail! future support nacos, current version no support nacos!");
+            }
             default: {
                 throw new IllegalArgumentException("ServiceDiscoveryService newInstance fail! remote discovery config is empty!");
             }

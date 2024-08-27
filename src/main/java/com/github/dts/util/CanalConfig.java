@@ -268,7 +268,7 @@ public class CanalConfig {
         private final Redis redis = new Redis();
         private final Nacos nacos = new Nacos();
         private int testSocketTimeoutMs = 500;
-        private DiscoveryEnum discovery = DiscoveryEnum.DISABLE;
+        private DiscoveryEnum discovery = DiscoveryEnum.AUTO;
         private String groupName = "def";
         private List<SdkAccount> sdkAccount;
 

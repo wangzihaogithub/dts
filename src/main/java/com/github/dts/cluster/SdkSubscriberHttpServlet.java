@@ -10,7 +10,7 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.security.Principal;
 import java.util.ArrayList;
-import java.util.List;
+import java.util.concurrent.LinkedBlockingQueue;
 
 public class SdkSubscriberHttpServlet extends HttpServlet {
     private final SdkSubscriber sdkSubscriber;
@@ -68,16 +68,16 @@ public class SdkSubscriberHttpServlet extends HttpServlet {
     private static class HttpSdkChannel implements SdkChannel {
         private final Principal principal;
         private final AsyncContext asyncContext;
-        private final HttpServletRequest request;
-        private final HttpServletResponse response;
-        private final List<SdkMessage> writeMessageList = new ArrayList<>();
+        private final ServletRequest request;
+        private final ServletResponse response;
+        private final LinkedBlockingQueue<SdkMessage> writeMessageList = new LinkedBlockingQueue<>();
         private volatile boolean close;
 
         private HttpSdkChannel(Principal principal, AsyncContext asyncContext) {
             this.principal = principal;
             this.asyncContext = asyncContext;
-            this.request = (HttpServletRequest) asyncContext.getRequest();
-            this.response = (HttpServletResponse) asyncContext.getResponse();
+            this.request = asyncContext.getRequest();
+            this.response = asyncContext.getResponse();
         }
 
         @Override
@@ -97,13 +97,17 @@ public class SdkSubscriberHttpServlet extends HttpServlet {
 
         @Override
         public void flush() throws IOException {
-            if (writeMessageList.isEmpty()) {
+            int size = writeMessageList.size();
+            if (size == 0) {
                 return;
             }
 
+            ArrayList<SdkMessage> list = new ArrayList<>(size);
+            writeMessageList.drainTo(list);
+
             ServletOutputStream outputStream = response.getOutputStream();
             synchronized (this) {
-                for (SdkMessage sdkMessage : writeMessageList) {
+                for (SdkMessage sdkMessage : list) {
                     outputStream.write(sdkMessage.toSseBytes());
                 }
             }

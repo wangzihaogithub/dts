@@ -1,7 +1,5 @@
 package com.github.dts.canal;
 
-import com.github.dts.cluster.DiscoveryService;
-import com.github.dts.cluster.ServerInstanceClient;
 import com.github.dts.util.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,6 +25,7 @@ public class CanalThread extends Thread {
     private final CanalConfig.CanalAdapter config;
     private final AbstractMessageService messageService;
     private final String name;
+    private final StartupServer startupServer;
     protected String groupId = null;                                                  // groupId
     protected CanalConfig canalConfig;                                               // 配置
     protected volatile ExecutorService executorService;                                       // 组内工作线程池
@@ -35,7 +34,6 @@ public class CanalThread extends Thread {
     protected UncaughtExceptionHandler handler = (t, e) -> logger.error("parse events has an error", e);
     private boolean suspend;
     private CompletableFuture<Void>[] lastFutureList = new CompletableFuture[0];
-    private final StartupServer startupServer;
 
     public CanalThread(CanalConfig canalConfig, CanalConfig.CanalAdapter config,
                        List<Adapter> adapterList, AbstractMessageService messageService,
@@ -94,20 +92,6 @@ public class CanalThread extends Thread {
         Exception exception = null;
         long lastErrorTimestamp = 0;
 
-        DiscoveryService discoveryService = startupServer.getDiscoveryService();
-        if (discoveryService != null) {
-            discoveryService.addServerListener(new DiscoveryService.ServerListener() {
-                @Override
-                public <E extends ServerInstanceClient> void onChange(ReferenceCounted<DiscoveryService.ServerChangeEvent<E>> eventRef) {
-                    try (ReferenceCounted<DiscoveryService.ServerChangeEvent<E>> ref = eventRef.open()) {
-                        DiscoveryService.ServerChangeEvent<E> event = ref.get();
-                        List<E> insertList = event.diff.getInsertList();
-                        int size = event.after.size();
-
-                    }
-                }
-            });
-        }
         while (running) {
             try {
                 logger.info("=============> Start to connect destination: {} <=============", this.name);
