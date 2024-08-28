@@ -7,7 +7,6 @@ import org.springframework.core.env.Environment;
 
 import java.security.Principal;
 import java.util.List;
-import java.util.Objects;
 import java.util.stream.Collectors;
 
 public interface DiscoveryService extends SdkLoginService {
@@ -17,9 +16,7 @@ public interface DiscoveryService extends SdkLoginService {
                                         ListableBeanFactory beanFactory) {
         CanalConfig.DiscoveryEnum discoveryEnum = config.getDiscovery();
         if (discoveryEnum == CanalConfig.DiscoveryEnum.AUTO) {
-            if (!Objects.toString(config.getNacos().getServerAddr(), "").isEmpty()) {
-                discoveryEnum = CanalConfig.DiscoveryEnum.NACOS;
-            } else if (PlatformDependentUtil.isSupportSpringframeworkRedis()
+            if (PlatformDependentUtil.isSupportSpringframeworkRedis()
                     && beanFactory.getBeanNamesForType(PlatformDependentUtil.REDIS_CONNECTION_FACTORY_CLASS).length > 0
                     && !Util.isDefaultRedisProps(beanFactory.getBean(Environment.class))) {
                 discoveryEnum = CanalConfig.DiscoveryEnum.REDIS;
