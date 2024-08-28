@@ -81,6 +81,9 @@ public class ES7xTemplate implements ESTemplate {
      */
     @Override
     public void insert(ESMapping mapping, Object pkVal, Map<String, Object> esFieldData, BulkRequestList bulkRequestList) {
+        if (pkVal == null || "".equals(pkVal)) {
+            return;
+        }
         setterIndexUpdatedTime(mapping, esFieldData);
 
         esFieldData = copyAndConvertType(esFieldData, mapping);
