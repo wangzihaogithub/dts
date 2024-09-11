@@ -62,6 +62,9 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
     private final StartupServer startupServer;
     private final String metaPrefix;
     private final boolean selectAck2;
+    // 最大Canal事件存储内存
+    private final RingBufferSizeMemoryEnum eventStoreMemoryEnum;
+    private final String redisConnectionFactoryBeanName;
     private CanalInstanceWithSpring subscribe;
     private Integer pullSize;
     private Message lastMessage;
@@ -70,9 +73,6 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
     private Consumer<CanalConnector> rebuildConsumer;
     private boolean connect;
     private MetaDataFileMixedMetaManager metaManager;
-    // 最大Canal事件存储内存
-    private final RingBufferSizeMemoryEnum eventStoreMemoryEnum;
-    private final String redisConnectionFactoryBeanName;
 
     public MysqlBinlogCanalConnector(CanalConfig canalConfig,
                                      CanalConfig.CanalAdapter config,
@@ -637,7 +637,7 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
         public void start() {
             super.start();
             if (metaDataRepository != null) {
-                scheduled = Util.newScheduled(1, metaDataRepository.name(), true);
+                scheduled = Util.newScheduled(1, metaDataRepository::name, e -> log.warn("Scheduled error {}", e.toString(), e));
                 scheduled.scheduleAtFixedRate(() -> {
                     if (cursorChange.compareAndSet(true, false)) {
                         Object cursor = this.cursor;

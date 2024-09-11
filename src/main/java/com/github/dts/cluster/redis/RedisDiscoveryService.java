@@ -19,7 +19,10 @@ import org.springframework.data.redis.serializer.StringRedisSerializer;
 
 import java.security.Principal;
 import java.util.*;
-import java.util.concurrent.*;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
     public static final String DEVICE_ID = String.valueOf(SnowflakeIdWorker.INSTANCE.nextId());
@@ -154,11 +157,7 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
         if (scheduled == null) {
             synchronized (RedisDiscoveryService.class) {
                 if (scheduled == null) {
-                    scheduled = new ScheduledThreadPoolExecutor(1, r -> {
-                        Thread result = new Thread(r, "RedisDiscoveryServiceHeartbeat");
-                        result.setDaemon(true);
-                        return result;
-                    });
+                    scheduled = Util.newScheduled(1, () -> "RedisDiscoveryServiceHeartbeat", e -> log.warn("Scheduled error {}", e.toString(), e));
                 }
             }
         }

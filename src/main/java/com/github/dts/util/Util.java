@@ -21,7 +21,10 @@ import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 public class Util {
@@ -172,33 +175,38 @@ public class Util {
         }
     }
 
-    public static ScheduledExecutorService newScheduled(int nThreads, String name, boolean wrapper) {
-        return new ScheduledThreadPoolExecutor(
-                nThreads,
-                new CustomizableThreadFactory(name) {
-                    @Override
-                    public Thread newThread(Runnable runnable) {
-                        Thread thread = super.newThread(wrapper ? () -> {
-                            try {
-                                runnable.run();
-                            } catch (Exception e) {
-                                logger.warn("Scheduled error {}", e.toString(), e);
-                                throw e;
-                            }
-                        } : runnable);
-                        thread.setDaemon(true);
-                        return thread;
+    public static ScheduledThreadPoolExecutor newScheduled(int corePoolSize, Supplier<String> name, Consumer<Throwable> exceptionConsumer) {
+        AtomicInteger id = new AtomicInteger();
+        return new ScheduledThreadPoolExecutor(corePoolSize, r -> {
+            String name1;
+            try {
+                String nameGet = name.get();
+                name1 = nameGet + id.incrementAndGet();
+            } catch (Exception e) {
+                name1 = String.valueOf(name.getClass()) + id.incrementAndGet();
+            }
+            Thread result = new Thread(() -> {
+                try {
+                    r.run();
+                } catch (Throwable e) {
+                    try {
+                        exceptionConsumer.accept(e);
+                    } catch (Throwable t) {
+                        e.printStackTrace();
                     }
-                },
-                (r, exe) -> {
-                    if (!exe.isShutdown()) {
-                        try {
-                            exe.getQueue().put(r);
-                        } catch (InterruptedException e) {
-                            // ignore
-                        }
-                    }
-                });
+                }
+            }, name1);
+            result.setDaemon(true);
+            return result;
+        }, (r, exe) -> {
+            if (!exe.isShutdown()) {
+                try {
+                    exe.getQueue().put(r);
+                } catch (InterruptedException e) {
+                    // ignore
+                }
+            }
+        });
     }
 
     public static ThreadPoolExecutor newFixedThreadPool(int nThreads, long keepAliveTime, String name, boolean wrapper) {

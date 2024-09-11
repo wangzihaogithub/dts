@@ -385,7 +385,7 @@ public class ES7xAdapter implements Adapter {
             if (SCHEDULED == null) {
                 synchronized (RealtimeListener.class) {
                     if (SCHEDULED == null) {
-                        SCHEDULED = Util.newScheduled(1, "RealtimeListener", true);
+                        SCHEDULED = Util.newScheduled(1, () -> "RealtimeListener", e -> log.warn("Scheduled error {}", e.toString(), e));
                     }
                 }
             }
