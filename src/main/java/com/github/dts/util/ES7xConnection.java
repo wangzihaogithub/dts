@@ -340,10 +340,11 @@ public class ES7xConnection {
         private final String index;
         private final String id;
 
-        public ES7xUpdateRequest(String index, String id, Map source, boolean shouldUpsertDoc) {
+        public ES7xUpdateRequest(String index, String id, Map source, boolean shouldUpsertDoc, int retryOnConflict) {
             updateRequest = new UpdateRequest(index, id);
             updateRequest.docAsUpsert(shouldUpsertDoc);
             updateRequest.doc(source);
+            updateRequest.retryOnConflict(retryOnConflict);
             this.index = index;
             this.id = id;
         }

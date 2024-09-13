@@ -88,7 +88,7 @@ public class ES7xTemplate implements ESTemplate {
 
         esFieldData = copyAndConvertType(esFieldData, mapping);
         ESBulkRequest.ESUpdateRequest updateRequest = new ES7xConnection.ES7xUpdateRequest(mapping.get_index(),
-                pkVal.toString(), esFieldData, true);
+                pkVal.toString(), esFieldData, true, mapping.getRetryOnConflict());
         addRequest(updateRequest, bulkRequestList);
     }
 
@@ -404,7 +404,7 @@ public class ES7xTemplate implements ESTemplate {
             String pkToString = pkVal.toString();
             String index = mapping.get_index();
             ES7xConnection.ES7xUpdateRequest esUpdateRequest = new ES7xConnection.ES7xUpdateRequest(index,
-                    pkToString, esFieldData, mapping.isUpsert());
+                    pkToString, esFieldData, mapping.isUpsert(), mapping.getRetryOnConflict());
             trimRemoveIndexUpdateTime(mapping, bulkRequestList, esFieldData, index, pkToString);
             addRequest(esUpdateRequest, bulkRequestList);
         }

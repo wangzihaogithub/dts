@@ -96,6 +96,7 @@ public class ESSyncConfig {
         private String _index;
         private String _id;
         private long mappingMetadataTimeout = 12L * 60L * 60000L;
+        private int retryOnConflict = 5;
         private boolean upsert = false;
         /**
          * 遇到null，是否写入
@@ -116,6 +117,14 @@ public class ESSyncConfig {
         @Override
         public String toString() {
             return env + "[" + _index + "]";
+        }
+
+        public int getRetryOnConflict() {
+            return retryOnConflict;
+        }
+
+        public void setRetryOnConflict(int retryOnConflict) {
+            this.retryOnConflict = retryOnConflict;
         }
 
         public boolean isUpdateByQuerySkipIndexUpdatedTime() {
