@@ -422,24 +422,29 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
     }
 
     public void waitMaxDumpThread() throws InterruptedException {
-        try {
-            while (true) {
-                if (setDiscard) {
-                    setDiscard = false;
-                }
-                List<Map<String, Object>> list = selectShowProcesslist(dataSource);
-                List<Map<String, Object>> dumpThreadList = list.stream()
-                        .filter(e -> Objects.equals(username, e.get("User"))
-                                && Objects.equals(Objects.toString(defaultDatabaseName, ""), Objects.toString(e.get("db"), ""))
-                                && String.valueOf(e.get("Command")).startsWith("Binlog Dump"))
-                        .collect(Collectors.toList());
-                if (dumpThreadList.size() < maxDumpThread) {
-                    break;
-                }
-                Thread.sleep(1000);
+        while (true) {
+            if (setDiscard) {
+                setDiscard = false;
             }
-        } catch (SQLException e) {
-            Util.sneakyThrows(e);
+            List<Map<String, Object>> list;
+            try {
+                list = selectShowProcesslist(dataSource);
+                if (list.isEmpty()) {
+                    Thread.sleep(1000);
+                    list = selectShowProcesslist(dataSource);
+                }
+            } catch (SQLException e) {
+                continue;
+            }
+            List<Map<String, Object>> dumpThreadList = list.stream()
+                    .filter(e -> Objects.equals(username, e.get("User"))
+                            && Objects.equals(Objects.toString(defaultDatabaseName, ""), Objects.toString(e.get("db"), ""))
+                            && String.valueOf(e.get("Command")).startsWith("Binlog Dump"))
+                    .collect(Collectors.toList());
+            if (dumpThreadList.size() < maxDumpThread) {
+                break;
+            }
+            Thread.sleep(1000);
         }
     }
 
