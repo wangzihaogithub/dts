@@ -95,8 +95,9 @@ public class ES7xAdapter implements Adapter {
                 ReferenceCounted<CacheMap> counted = IDENTITY_CACHE_MAP.computeIfAbsent(id, cacheFactory);
                 try {
                     return counted.open();
-                } catch (IllegalStateException ignored) {
-
+                } catch (IllegalStateException e) {
+                    log.warn("newCacheMap counted.open() fail {}", e.toString());
+                    Thread.yield();
                 }
             }
         } else {
