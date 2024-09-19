@@ -27,16 +27,16 @@
         <java.version>1.8</java.version>
         <file_encoding>UTF-8</file_encoding>
 
-        <logback.version>[1.2.12]</logback.version>
-        <jackson.version>[2.13.5]</jackson.version>
-        <springboot.version>[2.7.18]</springboot.version>
-        <elasticsearch.version>[7.16.2]</elasticsearch.version>
-        <spring-jdbc.version>[5.3.31]</spring-jdbc.version>
-        <druid.version>[1.2.17]</druid.version>
-        <canal.version>[1.1.7]</canal.version>
-        <mysql.version>[8.0.21]</mysql.version>
-        <kafka.version>[2.7.2]</kafka.version>
-        <lettuce.version>[6.1.10.RELEASE]</lettuce.version>
+        <logback.version>1.2.12</logback.version>
+        <jackson.version>2.13.5</jackson.version>
+        <springboot.version>2.7.18</springboot.version>
+        <elasticsearch.version>7.16.2</elasticsearch.version>
+        <spring-jdbc.version>5.3.31</spring-jdbc.version>
+        <druid.version>1.2.17</druid.version>
+        <canal.version>1.1.7</canal.version>
+        <mysql.version>8.0.21</mysql.version>
+        <kafka.version>2.7.2</kafka.version>
+        <lettuce.version>6.1.10.RELEASE</lettuce.version>
     </properties>
 
     <licenses>
