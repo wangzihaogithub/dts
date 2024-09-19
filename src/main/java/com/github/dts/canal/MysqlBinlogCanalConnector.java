@@ -106,7 +106,7 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
 
         this.redisConnectionFactoryBeanName = properties.getProperty("redisConnectionFactoryBeanName", "redisConnectionFactory");
         // JVM内存的${maxEventStoreMemoryJvmRate}%，分给Canal事件存储用
-        int maxEventStoreMemoryJvmRate = Integer.parseInt(properties.getProperty("maxEventStoreMemoryJvmRate", "35%").trim().replace("%", "").trim());
+        int maxEventStoreMemoryJvmRate = Integer.parseInt(properties.getProperty("maxEventStoreMemoryJvmRate", "60%").trim().replace("%", "").trim());
         this.eventStoreMemoryEnum = RingBufferSizeMemoryEnum.getByJvmMaxMemoryRate(maxEventStoreMemoryJvmRate);
 
         log.info("binlog used max eventStoreMemory = {}, by jvm memory{}%", eventStoreMemoryEnum, maxEventStoreMemoryJvmRate);

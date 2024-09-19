@@ -20,15 +20,13 @@ public class NestedFieldWriter {
     private final Map<String, List<SchemaItem>> schemaItemMap;
     private final Map<String, List<SchemaItem>> onlyCurrentIndexSchemaItemMap;
     private final ESTemplate esTemplate;
-    private final CacheMap cacheMap;
     private final ExecutorService mainTableListenerExecutor;
     private final int threads;
 
-    public NestedFieldWriter(int nestedFieldThreads, Map<String, ESSyncConfig> map, ESTemplate esTemplate, CacheMap cacheMap) {
+    public NestedFieldWriter(int nestedFieldThreads, Map<String, ESSyncConfig> map, ESTemplate esTemplate) {
         this.schemaItemMap = toListenerMap(map, false);
         this.onlyCurrentIndexSchemaItemMap = toListenerMap(map, true);
         this.esTemplate = esTemplate;
-        this.cacheMap = cacheMap;
         this.threads = nestedFieldThreads;
         this.mainTableListenerExecutor = Util.newFixedThreadPool(
                 1,
@@ -194,7 +192,8 @@ public class NestedFieldWriter {
 
     public void writeMainTable(List<Dependent> mainTableDependentList,
                                ESTemplate.BulkRequestList bulkRequestList,
-                               int maxIdIn) {
+                               int maxIdIn,
+                               CacheMap cacheMap) {
         if (mainTableDependentList.isEmpty()) {
             return;
         }

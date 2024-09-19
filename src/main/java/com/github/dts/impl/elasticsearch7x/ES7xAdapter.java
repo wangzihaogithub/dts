@@ -23,11 +23,11 @@ import java.util.stream.Collectors;
  * ES外部适配器
  */
 public class ES7xAdapter implements Adapter {
+    private static final Map<Object, ReferenceCounted<CacheMap>> IDENTITY_CACHE_MAP = Collections.synchronizedMap(new IdentityHashMap<>());
     private static final Logger log = LoggerFactory.getLogger(ES7xAdapter.class);
     private final Map<String, ESSyncConfig> esSyncConfig = new ConcurrentHashMap<>(); // 文件名对应配置
     private final Map<String, Map<String, ESSyncConfig>> dbTableEsSyncConfig = new ConcurrentHashMap<>(); // schema-table对应配置
     private final List<ESSyncServiceListener> listenerList = new ArrayList<>();
-    private CacheMap cacheMap;
     private ES7xConnection esConnection;
     private CanalConfig.OuterAdapterConfig configuration;
     private ES7xTemplate esTemplate;
@@ -53,7 +53,6 @@ public class ES7xAdapter implements Adapter {
         this.configuration = configuration;
         this.connectorCommitListener = discoveryService == null ? null : new RealtimeListener(discoveryService, configuration.getEs7x().getCommitEventPublishScheduledTickMs(), configuration.getEs7x().getCommitEventPublishMaxBlockCount());
         this.onlyEffect = configuration.getEs7x().isOnlyEffect();
-        this.cacheMap = new CacheMap(configuration.getEs7x().getMaxQueryCacheSize());
         this.joinUpdateSize = configuration.getEs7x().getJoinUpdateSize();
         this.streamChunkSize = configuration.getEs7x().getStreamChunkSize();
         this.refresh = configuration.getEs7x().isRefresh();
@@ -79,7 +78,30 @@ public class ES7xAdapter implements Adapter {
 
         this.listenerList.sort(AnnotationAwareOrderComparator.INSTANCE);
         this.listenerList.forEach(item -> item.init(esSyncConfig));
-        this.nestedFieldWriter = new NestedFieldWriter(configuration.getEs7x().getNestedFieldThreads(), esSyncConfig, esTemplate, cacheMap);
+        this.nestedFieldWriter = new NestedFieldWriter(configuration.getEs7x().getNestedFieldThreads(), esSyncConfig, esTemplate);
+    }
+
+    private ReferenceCounted<CacheMap> newCacheMap(Object id) {
+        Function<Object, ReferenceCounted<CacheMap>> cacheFactory = k -> {
+            ReferenceCounted<CacheMap> counted = new ReferenceCounted<>(new CacheMap(configuration.getEs7x().getMaxQueryCacheSize()));
+            counted.destroy(e -> {
+                IDENTITY_CACHE_MAP.remove(k);
+                e.cacheClear();
+            });
+            return counted;
+        };
+        if (configuration.getEs7x().isShareAdapterCache()) {
+            while (true) {
+                ReferenceCounted<CacheMap> counted = IDENTITY_CACHE_MAP.computeIfAbsent(id, cacheFactory);
+                try {
+                    return counted.open();
+                } catch (IllegalStateException ignored) {
+
+                }
+            }
+        } else {
+            return cacheFactory.apply(id);
+        }
     }
 
     public Map<String, ESSyncConfig> getEsSyncConfigByIndex(String index) {
@@ -119,88 +141,95 @@ public class ES7xAdapter implements Adapter {
             return CompletableFuture.completedFuture(null);
         }
 
-        ESTemplate.BulkRequestList bulkRequestList = esTemplate.newBulkRequestList(BulkPriorityEnum.HIGH);
-        List<Dml> syncDmlList = dmls.stream().filter(e -> !Boolean.TRUE.equals(e.getIsDdl())).collect(Collectors.toList());
-        String tables = syncDmlList.stream().map(Dml::getTable).distinct().collect(Collectors.joining(","));
-        Dml max = syncDmlList.stream().filter(e -> e.getEs() != null).max(Comparator.comparing(Dml::getEs)).orElse(null);
-        Timestamp maxSqlEsTimestamp = max == null ? null : new Timestamp(max.getEs());
-
-        // basic field change
-        BasicFieldWriter.WriteResult writeResult = new BasicFieldWriter.WriteResult();
-        Timestamp startTimestamp = new Timestamp(System.currentTimeMillis());
-        long timestamp = System.currentTimeMillis();
-        long basicFieldWriterCost;
+        // share Adapter Cache
+        ReferenceCounted<CacheMap> cacheMapRef = newCacheMap(dmls);
+        CacheMap cacheMap = cacheMapRef.get();
         try {
-            Map<Map<String, ESSyncConfig>, List<Dml>> groupByMap = new IdentityHashMap<>(dbTableEsSyncConfig.size());
-            for (Dml dml : syncDmlList) {
-                for (String s : dml.getDestination()) {
-                    String key = ESSyncUtil.getEsSyncConfigKey(s, dml.getDatabase(), dml.getTable());
-                    Map<String, ESSyncConfig> configMap = dbTableEsSyncConfig.get(key);
-                    if (configMap != null) {
-                        groupByMap.computeIfAbsent(configMap, e -> new ArrayList<>()).add(dml);
+            ESTemplate.BulkRequestList bulkRequestList = esTemplate.newBulkRequestList(BulkPriorityEnum.HIGH);
+            List<Dml> syncDmlList = dmls.stream().filter(e -> !Boolean.TRUE.equals(e.getIsDdl())).collect(Collectors.toList());
+            String tables = syncDmlList.stream().map(Dml::getTable).distinct().collect(Collectors.joining(","));
+            Dml max = syncDmlList.stream().filter(e -> e.getEs() != null).max(Comparator.comparing(Dml::getEs)).orElse(null);
+            Timestamp maxSqlEsTimestamp = max == null ? null : new Timestamp(max.getEs());
+
+            // basic field change
+            BasicFieldWriter.WriteResult writeResult = new BasicFieldWriter.WriteResult();
+            Timestamp startTimestamp = new Timestamp(System.currentTimeMillis());
+            long timestamp = System.currentTimeMillis();
+            long basicFieldWriterCost;
+            try {
+                Map<Map<String, ESSyncConfig>, List<Dml>> groupByMap = new IdentityHashMap<>(dbTableEsSyncConfig.size());
+                for (Dml dml : syncDmlList) {
+                    for (String s : dml.getDestination()) {
+                        String key = ESSyncUtil.getEsSyncConfigKey(s, dml.getDatabase(), dml.getTable());
+                        Map<String, ESSyncConfig> configMap = dbTableEsSyncConfig.get(key);
+                        if (configMap != null) {
+                            groupByMap.computeIfAbsent(configMap, e -> new ArrayList<>()).add(dml);
+                        }
                     }
                 }
-            }
-            for (Map.Entry<Map<String, ESSyncConfig>, List<Dml>> entry : groupByMap.entrySet()) {
-                BasicFieldWriter.WriteResult item = basicFieldWriter.writeEsReturnSql(entry.getKey().values(), entry.getValue(), bulkRequestList);
-                writeResult.add(item);
-            }
-            BasicFieldWriter.executeUpdate(writeResult.getSqlList(), maxIdIn);
-        } finally {
-            basicFieldWriterCost = System.currentTimeMillis() - timestamp;
-            cacheMap.cacheClear();
-            bulkRequestList.commit(esTemplate, null);
-            if (refresh) {
-                refresh(writeResult.getIndices(), commitListener);
-            }
-        }
-
-        timestamp = System.currentTimeMillis();
-        DependentGroup dependentGroup = nestedFieldWriter.convertToDependentGroup(syncDmlList, onlyCurrentIndex, onlyEffect);
-
-        // join async change
-        List<CompletableFuture<?>> futures = asyncRunDependent(maxSqlEsTimestamp, joinUpdateSize,
-                bulkRequestList, dependentGroup.selectMainTableJoinDependentList(), dependentGroup.selectSlaveTableDependentList());
-
-        // nested type ： main table change
-        List<Dependent> mainTableDependentList = dependentGroup.selectMainTableDependentList(onlyFieldName);
-        boolean changeNestedFieldMainTable = !mainTableDependentList.isEmpty();
-        if (changeNestedFieldMainTable) {
-            try {
-                nestedFieldWriter.writeMainTable(mainTableDependentList, bulkRequestList, maxIdIn);
+                for (Map.Entry<Map<String, ESSyncConfig>, List<Dml>> entry : groupByMap.entrySet()) {
+                    BasicFieldWriter.WriteResult item = basicFieldWriter.writeEsReturnSql(entry.getKey().values(), entry.getValue(), bulkRequestList);
+                    writeResult.add(item);
+                }
+                BasicFieldWriter.executeUpdate(writeResult.getSqlList(), maxIdIn);
             } finally {
-                log.info("sync(dml[{}]).BasicFieldWriter={}ms, NestedFieldWriter={}ms, {}, table={}",
-                        syncDmlList.size(),
-                        basicFieldWriterCost,
-                        System.currentTimeMillis() - timestamp,
-                        maxSqlEsTimestamp, tables);
-                cacheMap.cacheClear();
+                basicFieldWriterCost = System.currentTimeMillis() - timestamp;
                 bulkRequestList.commit(esTemplate, null);
+                if (refresh) {
+                    refresh(writeResult.getIndices(), commitListener);
+                }
             }
-        }
 
-        // call listeners
-        boolean changeListenerList = !listenerList.isEmpty();
-        if (changeListenerList) {
-            try {
-                invokeAllListener(syncDmlList, bulkRequestList);
-            } catch (InterruptedException | ExecutionException e) {
-                Util.sneakyThrows(e);
-            } finally {
-                cacheMap.cacheClear();
-                bulkRequestList.commit(esTemplate, null); // 批次统一提交
-            }
-        }
+            timestamp = System.currentTimeMillis();
+            DependentGroup dependentGroup = nestedFieldWriter.convertToDependentGroup(syncDmlList, onlyCurrentIndex, onlyEffect);
 
-        // future
-        CompletableFuture<Void> future = allOfCompleted(futures, commitListener, dependentGroup, writeResult, startTimestamp, maxSqlEsTimestamp, refresh);
-        // refresh
-        if (refresh && dmls.size() < refreshThreshold) {
-            if (changeListenerList || changeNestedFieldMainTable) {
-                refresh(dependentGroup.getIndices(), commitListener);
+            // join async change
+            List<CompletableFuture<?>> futures = asyncRunDependent(maxSqlEsTimestamp, joinUpdateSize,
+                    bulkRequestList, dependentGroup.selectMainTableJoinDependentList(), dependentGroup.selectSlaveTableDependentList(), cacheMap);
+
+            // nested type ： main table change
+            List<Dependent> mainTableDependentList = dependentGroup.selectMainTableDependentList(onlyFieldName);
+            boolean changeNestedFieldMainTable = !mainTableDependentList.isEmpty();
+            if (changeNestedFieldMainTable) {
+                try {
+                    nestedFieldWriter.writeMainTable(mainTableDependentList, bulkRequestList, maxIdIn, cacheMap);
+                } finally {
+                    log.info("sync(dml[{}]).BasicFieldWriter={}ms, NestedFieldWriter={}ms, {}, table={}",
+                            syncDmlList.size(),
+                            basicFieldWriterCost,
+                            System.currentTimeMillis() - timestamp,
+                            maxSqlEsTimestamp, tables);
+                    bulkRequestList.commit(esTemplate, null);
+                }
             }
+
+            // call listeners
+            boolean changeListenerList = !listenerList.isEmpty();
+            if (changeListenerList) {
+                try {
+                    invokeAllListener(syncDmlList, bulkRequestList);
+                } catch (InterruptedException | ExecutionException e) {
+                    Util.sneakyThrows(e);
+                } finally {
+                    bulkRequestList.commit(esTemplate, null); // 批次统一提交
+                }
+            }
+
+            // future
+            CompletableFuture<Void> future = allOfCompleted(futures, commitListener, dependentGroup, writeResult, startTimestamp, maxSqlEsTimestamp, refresh);
+            // refresh
+            if (refresh && dmls.size() < refreshThreshold) {
+                if (changeListenerList || changeNestedFieldMainTable) {
+                    refresh(dependentGroup.getIndices(), commitListener);
+                }
+            }
+            // close cache
+            future.thenAccept(unused -> cacheMapRef.close());
+            return future;
+        } catch (Exception e) {
+            cacheMapRef.close();
+            throw e;
         }
-        return future;
     }
 
     private <L extends EsDependentCommitListener & ESTemplate.RefreshListener> CompletableFuture<Void> allOfCompleted(
@@ -266,7 +295,8 @@ public class ES7xAdapter implements Adapter {
                                                          int joinUpdateSize,
                                                          ESTemplate.BulkRequestList bulkRequestList,
                                                          List<Dependent> mainTableJoinDependentList,
-                                                         List<Dependent> slaveTableDependentList) {
+                                                         List<Dependent> slaveTableDependentList,
+                                                         CacheMap cacheMap) {
         List<CompletableFuture<?>> futures = new ArrayList<>();
 
         // nested type ：main table parent object change
@@ -289,7 +319,7 @@ public class ES7xAdapter implements Adapter {
                     slaveTableList, esTemplate,
                     bulkRequestList,
                     null,
-                    cacheMap.getMaxValueSize(), maxTimestamp, maxIdIn, streamChunkSize);
+                    cacheMap, maxTimestamp, maxIdIn, streamChunkSize);
             futures.add(runnable);
             slaveTableExecutor.execute(runnable);
         }

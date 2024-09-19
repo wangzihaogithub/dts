@@ -3,6 +3,8 @@ package com.github.dts.util;
 import com.alibaba.druid.pool.DruidDataSource;
 import com.github.dts.canal.CanalConnector;
 import com.github.dts.canal.StartupServer;
+import com.github.dts.impl.elasticsearch7x.ES7xAdapter;
+import com.github.dts.impl.rds.RDSAdapter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import javax.sql.DataSource;
@@ -426,7 +428,7 @@ public class CanalConfig {
 
     public static class CanalAdapter {
         private boolean enable = true;
-        private Class<? extends CanalConnector> connector;
+        private Class<? extends CanalConnector> connector = com.github.dts.canal.MysqlBinlogCanalConnector.class;
         private String clientIdentity;
         private String[] destination; // 实例名
         private String[] topics; // mq topics
@@ -551,6 +553,14 @@ public class CanalConfig {
         private CanalAdapter canalAdapter;
         private String name;       // 适配器名称, 如: logger, hbase, es
 
+        public Class<? extends Adapter> adapterClass() {
+            if (es7x.getAddress() != null && es7x.getAddress().length > 0) {
+                return ES7xAdapter.class;
+            } else {
+                return RDSAdapter.class;
+            }
+        }
+
         public Es7x getEs7x() {
             return es7x;
         }
@@ -590,6 +600,14 @@ public class CanalConfig {
             this.name = name;
         }
 
+        public String name() {
+            String name = this.name;
+            if (name == null) {
+                name = adapterClass().getSimpleName();
+            }
+            return name;
+        }
+
         public static class Rds {
 
         }
@@ -612,6 +630,7 @@ public class CanalConfig {
             private int refreshThreshold = 10;
             private int listenerThreads = 50;
             private int maxQueryCacheSize = 10000;//查询缓存大小
+            private boolean shareAdapterCache = true; // Adapter是否共享一个缓存
             private int nestedFieldThreads = 10;
             private int joinUpdateSize = 10;
             private int streamChunkSize = 10000;
@@ -619,6 +638,14 @@ public class CanalConfig {
             private int commitEventPublishScheduledTickMs = 100;
             private int commitEventPublishMaxBlockCount = 50000;
             private boolean onlyEffect = true;// 只更新受到影响的字段
+
+            public boolean isShareAdapterCache() {
+                return shareAdapterCache;
+            }
+
+            public void setShareAdapterCache(boolean shareAdapterCache) {
+                this.shareAdapterCache = shareAdapterCache;
+            }
 
             public boolean isOnlyEffect() {
                 return onlyEffect;

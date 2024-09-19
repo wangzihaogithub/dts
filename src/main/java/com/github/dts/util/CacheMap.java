@@ -39,6 +39,7 @@ public class CacheMap {
         });
         if (valueSize > maxValueSize) {
             cache.clear();
+            this.valueSize = 0;
         }
         return (V) r;
     }

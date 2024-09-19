@@ -1,8 +1,6 @@
 package com.github.dts.canal;
 
 import com.github.dts.cluster.DiscoveryService;
-import com.github.dts.impl.elasticsearch7x.ES7xAdapter;
-import com.github.dts.impl.rds.RDSAdapter;
 import com.github.dts.util.AbstractMessageService;
 import com.github.dts.util.Adapter;
 import com.github.dts.util.CanalConfig;
@@ -160,23 +158,18 @@ public class StartupServer implements ApplicationRunner {
                 }
             }
 
-            String name = config.getName();
+            String name = config.name();
             Adapter adapter = adapterMap.get(name);
             if (adapter == null) {
-                if (config.getEs7x() != null) {
-                    adapter = beanFactory.getBean(ES7xAdapter.class);
-                } else if (config.getRds() != null) {
-                    adapter = beanFactory.getBean(RDSAdapter.class);
-                } else {
-                    throw new IllegalArgumentException("adapter");
-                }
+                Class<? extends Adapter> adapterClass = config.adapterClass();
+                adapter = beanFactory.getBean(adapterClass);
                 adapterMap.put(name, adapter);
                 adapter.init(canalAdapter, config, evnProperties, discoveryService);
-                log.info("Load canal adapter: {} succeed", config.getName());
+                log.info("Load canal adapter: {} succeed", config.name());
             }
             return adapter;
         } catch (Exception e) {
-            log.error("Load canal adapter: {} failed", config.getName(), e);
+            log.error("Load canal adapter: {} failed", config.name(), e);
             throw e;
         }
     }
