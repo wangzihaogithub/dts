@@ -4,7 +4,6 @@ import com.github.dts.util.ESSyncConfig.ESMapping;
 import com.github.dts.util.SchemaItem.FieldItem;
 import com.google.common.collect.Lists;
 import org.elasticsearch.action.search.SearchResponse;
-import org.elasticsearch.cluster.metadata.MappingMetaData;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.index.query.RangeQueryBuilder;
 import org.elasticsearch.search.SearchHit;
@@ -613,12 +612,12 @@ public class ES7xTemplate implements ESTemplate {
             synchronized (this) {
                 cache = esFieldTypes.get(index);
                 if (cache == null || cache.isTimeout(timeout)) {
-                    CompletableFuture<MappingMetaData> future = esConnection.getMapping(index);
+                    CompletableFuture<Map<String,Object>> future = esConnection.getMapping(index);
                     if (cache == null) {
                         try {
-                            MappingMetaData mappingMetaData = future.get();
+                            Map<String,Object> mappingMetaData = future.get();
                             if (mappingMetaData != null) {
-                                esFieldTypes.put(index, cache = new ESFieldTypesCache(mappingMetaData.getSourceAsMap()));
+                                esFieldTypes.put(index, cache = new ESFieldTypesCache(mappingMetaData));
                             } else {
                                 throw new IllegalArgumentException("Not found the mapping info of index: " + index);
                             }
@@ -628,7 +627,7 @@ public class ES7xTemplate implements ESTemplate {
                     } else {
                         future.whenComplete((mappingMetaData, throwable) -> {
                             if (mappingMetaData != null) {
-                                esFieldTypes.put(index, new ESFieldTypesCache(mappingMetaData.getSourceAsMap()));
+                                esFieldTypes.put(index, new ESFieldTypesCache(mappingMetaData));
                             } else if (throwable != null) {
                                 logger.warn("esConnection.getMapping error {}", throwable.toString(), throwable);
                             }

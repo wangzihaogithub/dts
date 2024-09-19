@@ -23,7 +23,7 @@ import org.elasticsearch.action.update.UpdateRequest;
 import org.elasticsearch.client.*;
 import org.elasticsearch.client.indices.GetMappingsRequest;
 import org.elasticsearch.client.indices.GetMappingsResponse;
-import org.elasticsearch.cluster.metadata.MappingMetaData;
+import org.elasticsearch.cluster.metadata.MappingMetadata;
 import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.index.reindex.BulkByScrollResponse;
@@ -60,7 +60,7 @@ public class ES7xConnection {
     private final int bulkRetryCount;
     private final int minAvailableSpaceHighBulkRequests;
     private final Map<String, CompletableFuture<ESBulkRequest.EsRefreshResponse>> refreshAsyncCache = new ConcurrentHashMap<>(2);
-    private final Map<String, CompletableFuture<MappingMetaData>> getMappingAsyncCache = new ConcurrentHashMap<>(2);
+    private final Map<String, CompletableFuture<Map<String, Object>>> getMappingAsyncCache = new ConcurrentHashMap<>(2);
     private int updateByQueryChunkSize = 1000;
 
     public ES7xConnection(CanalConfig.OuterAdapterConfig.Es7x es7x) {
@@ -142,9 +142,9 @@ public class ES7xConnection {
         });
     }
 
-    public CompletableFuture<MappingMetaData> getMapping(String index) {
+    public CompletableFuture<Map<String, Object>> getMapping(String index) {
         return getMappingAsyncCache.computeIfAbsent(index, cacheKey -> {
-            CompletableFuture<MappingMetaData> future = new CompletableFuture<>();
+            CompletableFuture<Map<String, Object>> future = new CompletableFuture<>();
             GetMappingsRequest request = new GetMappingsRequest();
             request.indices(index);
             restHighLevelClient.indices()
@@ -152,8 +152,8 @@ public class ES7xConnection {
                         @Override
                         public void onResponse(GetMappingsResponse response) {
                             getMappingAsyncCache.remove(cacheKey);
-                            Map<String, MappingMetaData> mappings = response.mappings();
-                            MappingMetaData mappingMetaData = null;
+                            Map<String, MappingMetadata> mappings = response.mappings();
+                            MappingMetadata mappingMetaData = null;
                             for (String key : mappings.keySet()) {
                                 if (key.startsWith(index)) {
                                     mappingMetaData = mappings.get(key);
@@ -164,7 +164,7 @@ public class ES7xConnection {
                                 mappingMetaData = mappings.values().iterator().next();
                             }
                             if (mappingMetaData != null) {
-                                future.complete(mappingMetaData);
+                                future.complete(mappingMetaData.getSourceAsMap());
                             } else {
                                 future.completeExceptionally(new IllegalArgumentException("Not found the mapping info of index: " + index));
                             }
