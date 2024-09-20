@@ -20,6 +20,7 @@ public interface Adapter {
      * @param canalAdapter 适配器参数
      * @param configuration 外部适配器配置信息
      * @param envProperties 环境变量的配置属性
+     * @param discoveryService 服务发现
      */
     void init(CanalConfig.CanalAdapter canalAdapter,
               CanalConfig.OuterAdapterConfig configuration, Properties envProperties,
