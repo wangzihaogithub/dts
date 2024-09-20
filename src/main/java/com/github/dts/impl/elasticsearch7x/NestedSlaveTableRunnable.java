@@ -215,7 +215,7 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
 
         Map<String, List<String>> columnList = dependent.getSchemaItem().getOnSlaveTableChangeWhereSqlColumnList();
         String sql2 = SqlParser.changeSelect(sql1, columnList, true);
-        return SQL.convertToSql(sql2, dependent.getMergeDataMap());
+        return SQL.convertToSql(sql2, dependent.getMergeAfterDataMap());
     }
 
     @Override

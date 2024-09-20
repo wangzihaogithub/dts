@@ -38,7 +38,7 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
             BiConsumer<T, List<Map<String, Object>>> each) {
         for (MergeJdbcTemplateSQL<T> sql : sqlList) {
             try {
-                List<Map<String, Object>> rowList = sql.executeQueryList(sql.isMerge() ? null : cacheMap);
+                List<Map<String, Object>> rowList = sql.executeQueryList(cacheMap);
                 sql.dispatch(rowList, each);
             } catch (RecoverableDataAccessException e) {
                 log.info("retry executeMergeUpdateES. size = {}, cause {}", sqlList.size(), e.toString());

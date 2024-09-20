@@ -155,18 +155,28 @@ public class NestedFieldWriter {
         for (Dependent dependent : mainTableDependentList) {
             boolean indexMainTable = dependent.isIndexMainTable();
             ESSyncConfig.ObjectField objectField = dependent.getSchemaItem().getObjectField();
-            Map<String, Object> mergeDataMap = dependent.getMergeDataMap();
-            if (mergeDataMap.isEmpty()) {
-                continue;
-            }
             // 主表删除，nested字段会自动删除，无需处理
             if (dependent.getDml().isTypeDelete() && indexMainTable) {
                 continue;
             }
-            String fullSql = objectField.getFullSql(indexMainTable);
-            SQL sql = SQL.convertToSql(fullSql, mergeDataMap);
+            if (dependent.getDml().isTypeUpdate()) {
+                // 改之前的数据也要更新
+                Map<String, Object> mergeBeforeDataMap = dependent.getMergeBeforeDataMap();
+                if (!mergeBeforeDataMap.isEmpty()) {
+                    String fullSql = objectField.getFullSql(indexMainTable);
+                    SQL sql = SQL.convertToSql(fullSql, mergeBeforeDataMap);
 
-            sqlList.add(new DependentSQL(sql, dependent, objectField.getSchemaItem().getGroupByIdColumns()));
+                    sqlList.add(new DependentSQL(sql, dependent, objectField.getSchemaItem().getGroupByIdColumns()));
+                }
+            }
+            // 改之后的数据
+            Map<String, Object> mergeAfterDataMap = dependent.getMergeAfterDataMap();
+            if (!mergeAfterDataMap.isEmpty()) {
+                String fullSql = objectField.getFullSql(indexMainTable);
+                SQL sql = SQL.convertToSql(fullSql, mergeAfterDataMap);
+
+                sqlList.add(new DependentSQL(sql, dependent, objectField.getSchemaItem().getGroupByIdColumns()));
+            }
         }
         return sqlList;
     }

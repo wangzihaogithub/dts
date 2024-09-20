@@ -59,7 +59,7 @@ public class Dependent {
         }
     }
 
-    public Map<String, Object> getMergeDataMap() {
+    public Map<String, Object> getMergeAfterDataMap() {
         Map<String, Object> mergeDataMap = new HashMap<>();
         Map<String, Object> oldMap = getOldMap();
         if (oldMap != null) {
@@ -68,6 +68,19 @@ public class Dependent {
         Map<String, Object> dataMap = getDataMap();
         if (dataMap != null) {
             mergeDataMap.putAll(dataMap);
+        }
+        return mergeDataMap;
+    }
+
+    public Map<String, Object> getMergeBeforeDataMap() {
+        Map<String, Object> mergeDataMap = new HashMap<>();
+        Map<String, Object> dataMap = getDataMap();
+        if (dataMap != null) {
+            mergeDataMap.putAll(dataMap);
+        }
+        Map<String, Object> oldMap = getOldMap();
+        if (oldMap != null) {
+            mergeDataMap.putAll(oldMap);
         }
         return mergeDataMap;
     }
@@ -86,6 +99,7 @@ public class Dependent {
 
     /**
      * 索引主表
+     * @return 索引主表
      */
     public SchemaItem.TableItem getIndexMainTable() {
         return schemaItem.getObjectField().getEsMapping().getSchemaItem().getMainTable();
@@ -93,6 +107,7 @@ public class Dependent {
 
     /**
      * 嵌套文档主表
+     * @return 嵌套文档主表
      */
     public SchemaItem.TableItem getNestedMainTable() {
         return schemaItem.getObjectField().getSchemaItem().getMainTable();
@@ -100,6 +115,7 @@ public class Dependent {
 
     /**
      * 嵌套文档从表
+     * @return 嵌套文档从表
      */
     public List<SchemaItem.TableItem> getNestedSlaveTableList() {
         return schemaItem.getObjectField().getSchemaItem().getSlaveTableList();

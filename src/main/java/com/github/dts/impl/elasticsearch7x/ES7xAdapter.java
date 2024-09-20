@@ -82,13 +82,15 @@ public class ES7xAdapter implements Adapter {
     }
 
     private ReferenceCounted<CacheMap> newCacheMap(Object id) {
-        Function<Object, ReferenceCounted<CacheMap>> cacheFactory = k -> {
-            ReferenceCounted<CacheMap> counted = new ReferenceCounted<>(new CacheMap(configuration.getEs7x().getMaxQueryCacheSize()));
-            counted.destroy(e -> {
-                IDENTITY_CACHE_MAP.remove(k);
-                e.cacheClear();
-            });
-            return counted;
+        Function<Object, ReferenceCounted<CacheMap>> cacheFactory = k -> new ReferenceCounted<CacheMap>(new CacheMap(configuration.getEs7x().getMaxQueryCacheSize())) {
+            @Override
+            public void close() {
+                super.close();
+                if (refCnt() == 0) {
+                    IDENTITY_CACHE_MAP.remove(k);
+                    get().cacheClear();
+                }
+            }
         };
         if (configuration.getEs7x().isShareAdapterCache()) {
             while (true) {
