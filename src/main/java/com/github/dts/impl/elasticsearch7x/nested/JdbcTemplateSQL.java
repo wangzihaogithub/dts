@@ -7,7 +7,10 @@ import com.github.dts.util.SqlParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.RecoverableDataAccessException;
+import org.springframework.jdbc.core.ColumnMapRowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapperResultSetExtractor;
+import org.springframework.util.LinkedCaseInsensitiveMap;
 
 import java.util.*;
 import java.util.function.Supplier;
@@ -16,6 +19,7 @@ public class JdbcTemplateSQL extends SQL {
     private static final Logger log = LoggerFactory.getLogger(JdbcTemplateSQL.class);
     private final String dataSourceKey;
     private final Collection<SchemaItem.ColumnItem> needGroupBy;
+    private final RowMapperResultSetExtractor<Map<String, Object>> resultSetExtractor = new RowMapperResultSetExtractor<>(new ColumnMapRowMapper());
 
     public JdbcTemplateSQL(String exprSql, Object[] args, Map<String, Object> argsMap, String dataSourceKey, Collection<SchemaItem.ColumnItem> needGroupBy) {
         super(exprSql, args, argsMap);
@@ -38,7 +42,10 @@ public class JdbcTemplateSQL extends SQL {
             boolean page = pageNo != null || pageSize != null;
             String sql = page ? SqlParser.changePage(exprSql, pageNo, pageSize) : exprSql;
             Object[] args = getArgs();
-            List<Map<String, Object>> list = getJdbcTemplate().queryForList(sql, args);
+            List<Map<String, Object>> list = getJdbcTemplate().query(sql, resultSetExtractor, args);
+            if (list == null) {
+                list = Collections.emptyList();
+            }
             if (page) {
                 log.info("executeQueryPage({},{}) {}/ms, listSize={}, {}", pageNo, pageSize, System.currentTimeMillis() - ts, list.size(), SQL.toString(sql, args));
             } else {
@@ -46,12 +53,32 @@ public class JdbcTemplateSQL extends SQL {
             }
             return list;
         };
+        List<Map<String, Object>> list;
         if (cacheMap == null) {
-            return supplier.get();
+            list = supplier.get();
         } else {
             String cacheKey = getExprSql() + "_" + Arrays.toString(getArgs()) + "_" + pageNo + "_" + pageSize;
-            return cacheMap.cacheComputeIfAbsent(cacheKey, supplier);
+            list = cacheMap.cacheComputeIfAbsent(cacheKey, supplier);
         }
+        return copy(list);
+    }
+
+    private List<Map<String, Object>> copy(List<Map<String, Object>> sourceList) {
+        List<Map<String, Object>> result = new ArrayList<>(sourceList.size());
+        for (Map<String, Object> row : sourceList) {
+            Map<String, Object> copy;
+            if (row instanceof LinkedCaseInsensitiveMap) {
+                LinkedCaseInsensitiveMap e = (LinkedCaseInsensitiveMap) row;
+                copy = e.clone();
+            } else if (row instanceof HashMap) {
+                HashMap e = (HashMap) row;
+                copy = (Map<String, Object>) e.clone();
+            } else {
+                copy = new LinkedHashMap<>(row);
+            }
+            result.add(copy);
+        }
+        return result;
     }
 
     public List<Map<String, Object>> executeQueryListRetry(CacheMap cacheMap, int pageSize) {
