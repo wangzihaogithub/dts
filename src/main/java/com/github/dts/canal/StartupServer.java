@@ -21,17 +21,17 @@ import org.springframework.core.env.StandardEnvironment;
 import javax.annotation.PreDestroy;
 import javax.annotation.Resource;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 @Order(Integer.MIN_VALUE)
 public class StartupServer implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(StartupServer.class);
-    private final Map<String, List<ThreadRef>> canalThreadMap = new HashMap<>();
-    private final Map<String, Adapter> adapterMap = new ConcurrentHashMap<>();
+    private final Map<String, List<ThreadRef>> canalThreadMap = Util.newLinkedCaseInsensitiveMap();
+    private final Map<String, Adapter> adapterMap = Util.newLinkedCaseInsensitiveMap();
     @Autowired
     private ListableBeanFactory beanFactory;
     @Autowired
@@ -113,7 +113,7 @@ public class StartupServer implements ApplicationRunner {
         } else {
             log.info("discoveryService is disabled");
         }
-
+        Map<String, AtomicInteger> adapterNameCounter = Util.newLinkedCaseInsensitiveMap();
         for (CanalConfig.CanalAdapter canalAdapter : canalAdapterList) {
             String metaPrefix = canalAdapter.getRedisMetaPrefix();
             if (metaPrefix != null) {
@@ -124,7 +124,7 @@ public class StartupServer implements ApplicationRunner {
                 for (CanalConfig.OuterAdapterConfig config : connectorGroup.getOuterAdapters()) {
                     config.setCanalAdapter(canalAdapter);
                     config.setConnectorGroup(connectorGroup);
-                    adapterList.add(loadAdapter(canalAdapter, config, discoveryService, env));
+                    adapterList.add(loadAdapter(canalAdapter, config, discoveryService, env, adapterNameCounter));
                 }
             }
 
@@ -140,7 +140,8 @@ public class StartupServer implements ApplicationRunner {
     private Adapter loadAdapter(CanalConfig.CanalAdapter canalAdapter,
                                 CanalConfig.OuterAdapterConfig config,
                                 DiscoveryService discoveryService,
-                                Environment env) {
+                                Environment env,
+                                Map<String, AtomicInteger> adapterNameCounter) {
         try {
             Properties evnProperties = null;
             if (env instanceof StandardEnvironment) {
@@ -158,18 +159,27 @@ public class StartupServer implements ApplicationRunner {
                 }
             }
 
-            String name = config.name();
+            String name = config.getName();
+            Class<? extends Adapter> adapterClass = config.adapterClass();
+            if (name == null || name.isEmpty()) {
+                name = adapterClass.getSimpleName();
+                int id = adapterNameCounter.computeIfAbsent(name, k -> new AtomicInteger(-1))
+                        .getAndIncrement();
+                if (id != -1) {
+                    name += id;
+                }
+                config.setName(name);
+            }
             Adapter adapter = adapterMap.get(name);
             if (adapter == null) {
-                Class<? extends Adapter> adapterClass = config.adapterClass();
                 adapter = beanFactory.getBean(adapterClass);
                 adapterMap.put(name, adapter);
                 adapter.init(canalAdapter, config, evnProperties, discoveryService);
-                log.info("Load canal adapter: {} succeed", config.name());
+                log.info("Load canal adapter: {} succeed", config.getName());
             }
             return adapter;
         } catch (Exception e) {
-            log.error("Load canal adapter: {} failed", config.name(), e);
+            log.error("Load canal adapter: {} failed", config.getName(), e);
             throw e;
         }
     }
@@ -250,6 +260,13 @@ public class StartupServer implements ApplicationRunner {
 
         public CanalThread getCanalThread() {
             return canalThread;
+        }
+
+        @Override
+        public String toString() {
+            return "ThreadRef{" +
+                    "canalThread=" + canalThread +
+                    '}';
         }
     }
 }

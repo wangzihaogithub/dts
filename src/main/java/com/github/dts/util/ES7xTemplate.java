@@ -817,5 +817,12 @@ public class ES7xTemplate implements ESTemplate {
                     '}';
         }
     }
+    @Override
+    public String toString() {
+        return "ES7xTemplate{" +
+                "esConnection=" + esConnection +
+                ", esBulkRequest=" + esBulkRequest +
+                '}';
+    }
 
 }

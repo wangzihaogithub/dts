@@ -13,6 +13,15 @@ public class DmlDTO {
     private Map<String, Object> old;
     private Map<String, Object> data;
     private List<Dependent> dependents;
+    private String adapterName;
+
+    public String getAdapterName() {
+        return adapterName;
+    }
+
+    public void setAdapterName(String adapterName) {
+        this.adapterName = adapterName;
+    }
 
     public List<Dependent> getDependents() {
         return dependents;

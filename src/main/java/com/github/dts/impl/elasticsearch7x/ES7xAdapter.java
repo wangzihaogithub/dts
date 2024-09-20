@@ -51,7 +51,7 @@ public class ES7xAdapter implements Adapter {
                      CanalConfig.OuterAdapterConfig configuration, Properties envProperties,
                      DiscoveryService discoveryService) {
         this.configuration = configuration;
-        this.connectorCommitListener = discoveryService == null ? null : new RealtimeListener(discoveryService, configuration.getEs7x().getCommitEventPublishScheduledTickMs(), configuration.getEs7x().getCommitEventPublishMaxBlockCount());
+        this.connectorCommitListener = discoveryService == null ? null : new RealtimeListener(discoveryService, configuration.getName(), configuration.getEs7x().getCommitEventPublishScheduledTickMs(), configuration.getEs7x().getCommitEventPublishMaxBlockCount());
         this.onlyEffect = configuration.getEs7x().isOnlyEffect();
         this.joinUpdateSize = configuration.getEs7x().getJoinUpdateSize();
         this.streamChunkSize = configuration.getEs7x().getStreamChunkSize();
@@ -407,9 +407,11 @@ public class ES7xAdapter implements Adapter {
         private static volatile ScheduledExecutorService SCHEDULED;
         private final DiscoveryService discoveryService;
         private final LinkedBlockingQueue<CommitEvent> eventList;
+        private final String adapterName;
 
-        RealtimeListener(DiscoveryService discoveryService, int commitEventPublishScheduledTickMs, int commitEventPublishMaxBlockCount) {
+        RealtimeListener(DiscoveryService discoveryService, String adapterName, int commitEventPublishScheduledTickMs, int commitEventPublishMaxBlockCount) {
             this.discoveryService = discoveryService;
+            this.adapterName = adapterName;
             this.eventList = new LinkedBlockingQueue<>(commitEventPublishMaxBlockCount);
             getScheduled().scheduleWithFixedDelay(this, commitEventPublishScheduledTickMs, commitEventPublishScheduledTickMs, TimeUnit.MILLISECONDS);
         }
@@ -558,6 +560,7 @@ public class ES7xAdapter implements Adapter {
                     dmlDTO.setOld(f.getOldMap());
                     dmlDTO.setData(f.getDataMap());
                     dmlDTO.setDependents(descList);
+                    dmlDTO.setAdapterName(adapterName);
                     list.add(dmlDTO);
                 }
             }
@@ -565,4 +568,16 @@ public class ES7xAdapter implements Adapter {
         }
     }
 
+    @Override
+    public String toString() {
+        return configuration.getName() + "{" +
+                "address='" + Arrays.toString(configuration.getEs7x().getAddress()) + '\'' +
+                ", refresh=" + refresh +
+                ", onlyEffect=" + onlyEffect +
+                ", refreshThreshold=" + refreshThreshold +
+                ", joinUpdateSize=" + joinUpdateSize +
+                ", streamChunkSize=" + streamChunkSize +
+                ", maxIdIn=" + maxIdIn +
+                '}';
+    }
 }

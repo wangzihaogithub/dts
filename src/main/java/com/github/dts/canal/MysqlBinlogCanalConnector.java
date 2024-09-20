@@ -86,22 +86,29 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
         String clientIdentityName = config.clientIdentity();
         this.destination = config.getDestination();
         this.identity = new ClientIdentity(clientIdentityName, (short) 1001);
-        String dataSource = properties.getProperty("dataSource");
         this.maxDumpThread = Integer.parseInt(properties.getProperty("maxDumpThread", String.valueOf(Integer.MAX_VALUE)));
-        if (dataSource != null) {
-            CanalConfig.DatasourceConfig datasourceConfig = canalConfig.getSrcDataSources().get(dataSource);
-            this.username = datasourceConfig.getUsername();
-            this.password = datasourceConfig.getPassword();
-            this.defaultDatabaseName = CanalConfig.DatasourceConfig.getCatalogByUrl(datasourceConfig.getUrl());
-            this.address = parseAddress(CanalConfig.DatasourceConfig.getAddressByUrl(datasourceConfig.getUrl()));
-            this.dataSource = dataSource(datasourceConfig.getUrl(), username, password);
-        } else {
-            String url = properties.getProperty("url");
+        String url = properties.getProperty("url");
+        if (url != null) {
             this.username = properties.getProperty("username");
             this.password = properties.getProperty("password");
             this.defaultDatabaseName = properties.getProperty("defaultDatabaseName", CanalConfig.DatasourceConfig.getAddressByUrl(url));
             this.address = parseAddress(CanalConfig.DatasourceConfig.getAddressByUrl(url));
             this.dataSource = dataSource(url, username, password);
+        } else {
+            String dataSource = properties.getProperty("dataSource");
+            if (dataSource == null) {
+                dataSource = CanalConfig.DatasourceConfig.getDataSourceKey0();
+            }
+            if (dataSource != null) {
+                CanalConfig.DatasourceConfig datasourceConfig = canalConfig.getSrcDataSources().get(dataSource);
+                this.username = datasourceConfig.getUsername();
+                this.password = datasourceConfig.getPassword();
+                this.defaultDatabaseName = CanalConfig.DatasourceConfig.getCatalogByUrl(datasourceConfig.getUrl());
+                this.address = parseAddress(CanalConfig.DatasourceConfig.getAddressByUrl(datasourceConfig.getUrl()));
+                this.dataSource = dataSource(datasourceConfig.getUrl(), username, password);
+            } else {
+                throw new IllegalArgumentException("dataSource is empty");
+            }
         }
 
         this.redisConnectionFactoryBeanName = properties.getProperty("redisConnectionFactoryBeanName", "redisConnectionFactory");

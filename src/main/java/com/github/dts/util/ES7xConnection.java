@@ -61,7 +61,7 @@ public class ES7xConnection {
     private final int minAvailableSpaceHighBulkRequests;
     private final Map<String, CompletableFuture<ESBulkRequest.EsRefreshResponse>> refreshAsyncCache = new ConcurrentHashMap<>(2);
     private final Map<String, CompletableFuture<Map<String, Object>>> getMappingAsyncCache = new ConcurrentHashMap<>(2);
-    private int updateByQueryChunkSize = 1000;
+    private final int updateByQueryChunkSize;
 
     public ES7xConnection(CanalConfig.OuterAdapterConfig.Es7x es7x) {
         String[] elasticsearchUri = es7x.getAddress();
@@ -902,5 +902,16 @@ public class ES7xConnection {
                     ", requests=" + string +
                     '}';
         }
+    }
+
+    @Override
+    public String toString() {
+        return "ES7xConnection{" +
+                "concurrentBulkRequest=" + concurrentBulkRequest +
+                ", bulkCommitSize=" + bulkCommitSize +
+                ", updateByQueryChunkSize=" + updateByQueryChunkSize +
+                ", maxRetryCount=" + maxRetryCount +
+                ", bulkRetryCount=" + bulkRetryCount +
+                '}';
     }
 }

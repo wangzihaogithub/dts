@@ -99,6 +99,14 @@ public class CanalConfig {
             return DATA_SOURCES.get(key);
         }
 
+        public static String getDataSourceKey0() {
+            if (DATA_SOURCES.size() == 1) {
+                return DATA_SOURCES.keySet().iterator().next();
+            } else {
+                return null;
+            }
+        }
+
         public static String getCatalog(String dataSourceKey) {
             DataSource dataSource = getDataSource(dataSourceKey);
             if (dataSource instanceof DruidDataSource) {
@@ -430,7 +438,7 @@ public class CanalConfig {
         private boolean enable = true;
         private Class<? extends CanalConnector> connector = com.github.dts.canal.MysqlBinlogCanalConnector.class;
         private String clientIdentity;
-        private String[] destination; // 实例名
+        private String[] destination = new String[]{"defaultDestination"}; // 实例名
         private String[] topics; // mq topics
         private List<Group> groups;  // 适配器分组列表
         private Properties properties = new Properties();
@@ -598,14 +606,6 @@ public class CanalConfig {
 
         public void setName(String name) {
             this.name = name;
-        }
-
-        public String name() {
-            String name = this.name;
-            if (name == null) {
-                name = adapterClass().getSimpleName();
-            }
-            return name;
         }
 
         public static class Rds {
