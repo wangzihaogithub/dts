@@ -288,6 +288,7 @@ public class KafkaCanalConnector implements CanalConnector {
         } finally {
             seekUndoPos();
         }
+        Dml.compress(dmlList);
         dmlList.sort(Comparator.comparing(Dml::getEs));
         return new ArrayList<>(dmlList);
     }

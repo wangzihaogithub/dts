@@ -154,7 +154,7 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
     }
 
     public static List<Dml> convert(Message message, String[] destination) {
-        if (message.isRaw()) {
+        if (message.getEntries().isEmpty() && !message.getRawEntries().isEmpty()) {
             for (ByteString byteString : message.getRawEntries()) {
                 try {
                     message.addEntry(CanalEntry.Entry.parseFrom(byteString));
@@ -164,8 +164,10 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
             }
             message.setRaw(false);
         }
+        String messageId = String.valueOf(message.getId());
         List<CanalEntry.Entry> entries = message.getEntries();
         List<Dml> msgs = new ArrayList<>(entries.size());
+        long timeMillis = System.currentTimeMillis();
         int index = 0;
         for (CanalEntry.Entry entry : entries) {
             if (entry.getEntryType() == CanalEntry.EntryType.TRANSACTIONBEGIN
@@ -184,16 +186,16 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
             CanalEntry.EventType eventType = rowChange.getEventType();
 
             final Dml msg = new Dml();
-            msg.setIsDdl(rowChange.getIsDdl());
+            msg.setIsDdl(Boolean.valueOf(rowChange.getIsDdl()));
             msg.setDatabase(entry.getHeader().getSchemaName());
             msg.setTable(entry.getHeader().getTableName());
             msg.setType(eventType.toString());
             msg.setEs(entry.getHeader().getExecuteTime());
-            msg.setTs(System.currentTimeMillis());
+            msg.setTs(timeMillis);
             msg.setSql(rowChange.getSql());
             msg.setDestination(destination);
             msg.setIndex(index++);
-            msg.setPacketId(String.valueOf(message.getId()));
+            msg.setPacketId(messageId);
             msg.setEventLength(entry.getHeader().getEventLength());
             msg.setLogfileName(entry.getHeader().getLogfileName());
             msg.setLogfileOffset(entry.getHeader().getLogfileOffset());
@@ -529,6 +531,7 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
             ack();
             return Collections.emptyList();
         } else {
+            Dml.compress(list);
             return list;
         }
     }

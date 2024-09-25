@@ -1,10 +1,7 @@
 package com.github.dts.util;
 
 import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * DML操作转换对象
@@ -68,6 +65,49 @@ public class Dml implements Serializable {
         }
         return dmlList;
     }
+
+    public static void compress(List<Dml> dmlList) {
+        if (dmlList.size() <= 1) {
+            return;
+        }
+        Map<Object, Object> cache = new HashMap<>();
+        for (Dml dml : dmlList) {
+            dml.setMysqlType(cache(dml.getMysqlType(), cache));
+            dml.setPkNames(cache(dml.getPkNames(), cache));
+            dml.setGroupId(cache(dml.getGroupId(), cache));
+            dml.setDatabase(cache(dml.getDatabase(), cache));
+            dml.setTable(cache(dml.getTable(), cache));
+            dml.setType(cache(dml.getType(), cache));
+
+            compressListMap(dml.getData(), cache);
+            compressListMap(dml.getOld(), cache);
+        }
+    }
+
+    private static <T> T cache(T value, Map<Object, Object> cache) {
+        if (value == null) {
+            return null;
+        }
+        return (T) cache.computeIfAbsent(value, k -> k);
+    }
+
+    private static void compressListMap(List<Map<String, Object>> data, Map<Object, Object> cache) {
+        if (data == null) {
+            return;
+        }
+        for (Map<String, Object> dml : data) {
+            if (dml.isEmpty()) {
+                continue;
+            }
+            Map<String, Object> compress = new LinkedHashMap<>();
+            for (Map.Entry<String, Object> entry : dml.entrySet()) {
+                compress.put(cache(entry.getKey(), cache), cache(entry.getValue(), cache));
+            }
+            dml.clear();
+            dml.putAll(compress);
+        }
+    }
+
 
     public Map<String, String> getMysqlType() {
         return mysqlType;
@@ -165,10 +205,6 @@ public class Dml implements Serializable {
         return table;
     }
 
-    public void setTable(String table) {
-        this.table = table;
-    }
-
 //    public List<String> getPkNames() {
 //        return pkNames;
 //    }
@@ -176,6 +212,10 @@ public class Dml implements Serializable {
 //    public void setPkNames(List<String> pkNames) {
 //        this.pkNames = pkNames;
 //    }
+
+    public void setTable(String table) {
+        this.table = table;
+    }
 
     public Boolean getIsDdl() {
         return isDdl;
