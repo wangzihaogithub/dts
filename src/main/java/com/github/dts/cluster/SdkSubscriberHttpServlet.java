@@ -16,11 +16,13 @@ public class SdkSubscriberHttpServlet extends HttpServlet {
     private final SdkSubscriber sdkSubscriber;
     private final DiscoveryService discoveryService;
     private final ConfigSdkLoginService configSdkLoginService;
+    private final int writeCommitSize;
 
     public SdkSubscriberHttpServlet(SdkSubscriber sdkSubscriber, CanalConfig canalConfig, DiscoveryService discoveryService) {
         this.sdkSubscriber = sdkSubscriber;
         this.discoveryService = discoveryService;
         this.configSdkLoginService = new ConfigSdkLoginService(canalConfig);
+        this.writeCommitSize = canalConfig.getCluster().getHttpWriteCommitSize();
     }
 
     @Override
@@ -43,7 +45,7 @@ public class SdkSubscriberHttpServlet extends HttpServlet {
             response.setCharacterEncoding("UTF-8");
             response.setStatus(200);
             response.flushBuffer();
-            HttpSdkChannel channel = new HttpSdkChannel(principal, asyncContext);
+            HttpSdkChannel channel = new HttpSdkChannel(principal, asyncContext, writeCommitSize);
             asyncContext.addListener(new CloseAsyncListener(channel, sdkSubscriber));
             sdkSubscriber.add(channel);
         }
@@ -70,14 +72,17 @@ public class SdkSubscriberHttpServlet extends HttpServlet {
         private final AsyncContext asyncContext;
         private final ServletRequest request;
         private final ServletResponse response;
-        private final LinkedBlockingQueue<SdkMessage> writeMessageList = new LinkedBlockingQueue<>();
+        private final LinkedBlockingQueue<SdkMessage> writeMessageList;
         private volatile boolean close;
 
-        private HttpSdkChannel(Principal principal, AsyncContext asyncContext) {
+        private HttpSdkChannel(Principal principal, AsyncContext asyncContext,
+                               int writeCommitSize
+        ) {
             this.principal = principal;
             this.asyncContext = asyncContext;
             this.request = asyncContext.getRequest();
             this.response = asyncContext.getResponse();
+            this.writeMessageList = new LinkedBlockingQueue<>(writeCommitSize);
         }
 
         @Override
@@ -92,7 +97,13 @@ public class SdkSubscriberHttpServlet extends HttpServlet {
 
         @Override
         public void write(SdkMessage writeMessage) {
-            writeMessageList.add(writeMessage);
+            while (!writeMessageList.offer(writeMessage)) {
+                try {
+                    flush();
+                } catch (IOException ignored) {
+
+                }
+            }
         }
 
         @Override
@@ -107,7 +118,8 @@ public class SdkSubscriberHttpServlet extends HttpServlet {
 
             ServletOutputStream outputStream = response.getOutputStream();
             synchronized (this) {
-                for (SdkMessage sdkMessage : list) {
+                for (int i = 0, lsize = list.size(); i < lsize; i++) {
+                    SdkMessage sdkMessage = list.set(i, null);
                     outputStream.write(sdkMessage.toSseBytes());
                 }
             }
@@ -117,6 +129,7 @@ public class SdkSubscriberHttpServlet extends HttpServlet {
         @Override
         public void close() {
             this.close = true;
+            this.writeMessageList.clear();
         }
     }
 

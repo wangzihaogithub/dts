@@ -278,9 +278,19 @@ public class CanalConfig {
         private final Redis redis = new Redis();
         private final Nacos nacos = new Nacos();
         private int testSocketTimeoutMs = 500;
+        private int httpWriteCommitSize = 100;
+
         private DiscoveryEnum discovery = DiscoveryEnum.AUTO;
         private String groupName = "def";
         private List<SdkAccount> sdkAccount;
+
+        public int getHttpWriteCommitSize() {
+            return httpWriteCommitSize;
+        }
+
+        public void setHttpWriteCommitSize(int httpWriteCommitSize) {
+            this.httpWriteCommitSize = httpWriteCommitSize;
+        }
 
         public List<SdkAccount> getSdkAccount() {
             return sdkAccount;
