@@ -115,10 +115,6 @@ public class CanalThread extends Thread {
                             break;
                         }
                         List<Dml> message = connector.getListWithoutAck(Duration.ofMillis(config.getPullTimeout())); // 获取指定数量的数据
-                        for (Dml dml : message) {
-                            dml.setDestination(config.getDestination());
-                        }
-
                         if (suspend) {
                             Thread.sleep(10_000);
                         } else if (message.isEmpty()) {
