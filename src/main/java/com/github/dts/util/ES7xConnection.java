@@ -102,6 +102,43 @@ public class ES7xConnection {
         this.restHighLevelClient = new RestHighLevelClient(clientBuilder);
     }
 
+    public static void trim(LinkedList<ESBulkRequest.ESRequest> requests) {
+        ESBulkRequest.ESRequest[] snapshotList = new ESBulkRequest.ESRequest[requests.size()];
+        requests.toArray(snapshotList);
+        List<ESBulkRequest.ESRequest> overlapList = new ArrayList<>(2);
+        for (int i = snapshotList.length - 1; i >= 0; i--) {
+            ESBulkRequest.ESRequest request = snapshotList[i];
+            collectOverlap(snapshotList, request, overlapList);
+            if (!overlapList.isEmpty()) {
+                requests.removeIf(e -> {
+                    for (ESBulkRequest.ESRequest esRequest : overlapList) {
+                        if (e == esRequest) {
+                            return true;
+                        }
+                    }
+                    return false;
+                });
+                i -= overlapList.size();
+                requests.toArray(snapshotList);
+                overlapList.clear();
+            }
+        }
+    }
+
+    private static void collectOverlap(ESBulkRequest.ESRequest[] snapshotList, ESBulkRequest.ESRequest curr, List<ESBulkRequest.ESRequest> overlapList) {
+        for (ESBulkRequest.ESRequest row : snapshotList) {
+            if (row == null) {
+                break;
+            }
+            if (row == curr) {
+                break;
+            }
+            if (curr.isOverlap(row)) {
+                overlapList.add(row);
+            }
+        }
+    }
+
     public int getUpdateByQueryChunkSize() {
         return updateByQueryChunkSize;
     }
@@ -178,6 +215,17 @@ public class ES7xConnection {
                     });
             return future;
         });
+    }
+
+    @Override
+    public String toString() {
+        return "ES7xConnection{" +
+                "concurrentBulkRequest=" + concurrentBulkRequest +
+                ", bulkCommitSize=" + bulkCommitSize +
+                ", updateByQueryChunkSize=" + updateByQueryChunkSize +
+                ", maxRetryCount=" + maxRetryCount +
+                ", bulkRetryCount=" + bulkRetryCount +
+                '}';
     }
 
     public static class Es7RefreshResponse implements ESBulkRequest.EsRefreshResponse {
@@ -277,7 +325,6 @@ public class ES7xConnection {
         }
     }
 
-
     public static class ES7xUpdateByQueryRequest implements ESBulkRequest.ESUpdateByQueryRequest {
 
         private final UpdateByQueryRequest updateByQueryRequest;
@@ -339,6 +386,8 @@ public class ES7xConnection {
         private final UpdateRequest updateRequest;
         private final String index;
         private final String id;
+        private final Map source;
+        private final boolean shouldUpsertDoc;
 
         public ES7xUpdateRequest(String index, String id, Map source, boolean shouldUpsertDoc, int retryOnConflict) {
             updateRequest = new UpdateRequest(index, id);
@@ -347,6 +396,33 @@ public class ES7xConnection {
             updateRequest.retryOnConflict(retryOnConflict);
             this.index = index;
             this.id = id;
+            this.source = source;
+            this.shouldUpsertDoc = shouldUpsertDoc;
+        }
+
+        @Override
+        public boolean isOverlap(ESBulkRequest.ESRequest prev) {
+            if (prev instanceof ES7xDeleteRequest) {
+                return false;
+            } else if (prev instanceof ES7xUpdateRequest) {
+                ES7xUpdateRequest that = ((ES7xUpdateRequest) prev);
+                return Objects.equals(this.id, that.id) && Objects.equals(this.index, that.index)
+                        && this.shouldUpsertDoc == that.shouldUpsertDoc && equalsSourceKey(this.source.keySet(), that.source.keySet());
+            } else {
+                return false;
+            }
+        }
+
+        private boolean equalsSourceKey(Set<?> keys1, Set<?> keys2) {
+            if (keys1.size() != keys2.size()) {
+                return false;
+            }
+            for (Object key1 : keys1) {
+                if (!keys2.contains(key1)) {
+                    return false;
+                }
+            }
+            return true;
         }
 
         public String getIndex() {
@@ -370,9 +446,28 @@ public class ES7xConnection {
     public static class ES7xDeleteRequest implements ESBulkRequest.ESDeleteRequest {
 
         private final DeleteRequest deleteRequest;
+        private final String index;
+        private final String id;
 
         public ES7xDeleteRequest(String index, String id) {
             deleteRequest = new DeleteRequest(index, id);
+            this.index = index;
+            this.id = id;
+        }
+
+        @Override
+        public boolean isOverlap(ESBulkRequest.ESRequest prev) {
+            if (prev instanceof ES7xDeleteRequest) {
+                ES7xDeleteRequest that = ((ES7xDeleteRequest) prev);
+                return Objects.equals(this.index, that.index)
+                        && Objects.equals(this.id, that.id);
+            } else if (prev instanceof ES7xUpdateRequest) {
+                ES7xUpdateRequest that = ((ES7xUpdateRequest) prev);
+                return Objects.equals(this.index, that.index)
+                        && Objects.equals(this.id, that.id);
+            } else {
+                return false;
+            }
         }
 
         @Override
@@ -902,16 +997,5 @@ public class ES7xConnection {
                     ", requests=" + string +
                     '}';
         }
-    }
-
-    @Override
-    public String toString() {
-        return "ES7xConnection{" +
-                "concurrentBulkRequest=" + concurrentBulkRequest +
-                ", bulkCommitSize=" + bulkCommitSize +
-                ", updateByQueryChunkSize=" + updateByQueryChunkSize +
-                ", maxRetryCount=" + maxRetryCount +
-                ", bulkRetryCount=" + bulkRetryCount +
-                '}';
     }
 }

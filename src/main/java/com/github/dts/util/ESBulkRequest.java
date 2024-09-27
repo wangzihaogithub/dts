@@ -34,6 +34,9 @@ public interface ESBulkRequest {
     }
 
     interface ESRequest {
+        default boolean isOverlap(ESRequest prev) {
+            return false;
+        }
     }
 
     interface ESDeleteRequest extends ESRequest {

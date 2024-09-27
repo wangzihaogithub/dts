@@ -16,6 +16,7 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 /**
@@ -26,6 +27,7 @@ public class ES7xTemplate implements ESTemplate {
     private static final ConcurrentMap<String, ESFieldTypesCache> esFieldTypes = new ConcurrentHashMap<>(2);
     private final ES7xConnection esConnection;
     private final ES7xConnection.ES7xBulkRequest esBulkRequest;
+    private final BulkRequestListAddAfter bulkRequestListAddAfter = new BulkRequestListAddAfter();
     private int deleteByIdRangeBatch = 1000;
 
     public ES7xTemplate(ES7xConnection esConnection) {
@@ -136,7 +138,7 @@ public class ES7xTemplate implements ESTemplate {
 
     @Override
     public BulkRequestListImpl newBulkRequestList(BulkPriorityEnum priorityEnum) {
-        return new BulkRequestListImpl(priorityEnum, new ConcurrentHashMap<>());
+        return new BulkRequestListImpl(bulkRequestListAddAfter, priorityEnum, new ConcurrentHashMap<>());
     }
 
     /**
@@ -612,10 +614,10 @@ public class ES7xTemplate implements ESTemplate {
             synchronized (this) {
                 cache = esFieldTypes.get(index);
                 if (cache == null || cache.isTimeout(timeout)) {
-                    CompletableFuture<Map<String,Object>> future = esConnection.getMapping(index);
+                    CompletableFuture<Map<String, Object>> future = esConnection.getMapping(index);
                     if (cache == null) {
                         try {
-                            Map<String,Object> mappingMetaData = future.get();
+                            Map<String, Object> mappingMetaData = future.get();
                             if (mappingMetaData != null) {
                                 esFieldTypes.put(index, cache = new ESFieldTypesCache(mappingMetaData));
                             } else {
@@ -722,13 +724,23 @@ public class ES7xTemplate implements ESTemplate {
 //        }
     }
 
-    public class BulkRequestListImpl implements BulkRequestList {
+    @Override
+    public String toString() {
+        return "ES7xTemplate{" +
+                "esConnection=" + esConnection +
+                ", esBulkRequest=" + esBulkRequest +
+                '}';
+    }
+
+    public static class BulkRequestListImpl implements BulkRequestList {
         private final List<ESBulkRequest.ESRequest> requests = new ArrayList<>();
         private final BulkPriorityEnum priorityEnum;
         private final Map<String, Set<String>> indexPkUpdateMap;
+        private final Consumer<BulkRequestListImpl> addAfter;
         private int size = 0;
 
-        public BulkRequestListImpl(BulkPriorityEnum priorityEnum, Map<String, Set<String>> indexPkUpdateMap) {
+        public BulkRequestListImpl(Consumer<BulkRequestListImpl> addAfter, BulkPriorityEnum priorityEnum, Map<String, Set<String>> indexPkUpdateMap) {
+            this.addAfter = addAfter;
             this.priorityEnum = priorityEnum;
             this.indexPkUpdateMap = indexPkUpdateMap;
         }
@@ -749,12 +761,7 @@ public class ES7xTemplate implements ESTemplate {
                                 e -> Collections.newSetFromMap(new ConcurrentHashMap<>()))
                         .add(u.getId());
             }
-            if (isMaxBatchSize(size)) {
-                int bulk = bulk(this);
-                if (bulk > 0) {
-                    ES7xTemplate.this.commit();
-                }
-            }
+            addAfter.accept(this);
         }
 
         public boolean containsUpdate(String index, String id) {
@@ -764,9 +771,12 @@ public class ES7xTemplate implements ESTemplate {
 
         List<ESBulkRequest.ESRequest> drainTo() {
             synchronized (requests) {
-                ArrayList<ESBulkRequest.ESRequest> esRequests = new ArrayList<>(requests);
+                LinkedList<ESBulkRequest.ESRequest> esRequests = new LinkedList<>(requests);
                 size = 0;
                 requests.clear();
+                if (esRequests.size() > 1) {
+                    ES7xConnection.trim(esRequests);
+                }
                 return esRequests;
             }
         }
@@ -802,12 +812,12 @@ public class ES7xTemplate implements ESTemplate {
             if (bulkRequestList instanceof BulkRequestListImpl) {
                 map.putAll(((BulkRequestListImpl) bulkRequestList).indexPkUpdateMap);
             }
-            return new BulkRequestListImpl(priorityEnum, map);
+            return new BulkRequestListImpl(addAfter, priorityEnum, map);
         }
 
         @Override
         public BulkRequestList fork(BulkPriorityEnum priorityEnum) {
-            return new BulkRequestListImpl(priorityEnum, indexPkUpdateMap);
+            return new BulkRequestListImpl(addAfter, priorityEnum, indexPkUpdateMap);
         }
 
         @Override
@@ -817,12 +827,18 @@ public class ES7xTemplate implements ESTemplate {
                     '}';
         }
     }
-    @Override
-    public String toString() {
-        return "ES7xTemplate{" +
-                "esConnection=" + esConnection +
-                ", esBulkRequest=" + esBulkRequest +
-                '}';
+
+    public class BulkRequestListAddAfter implements Consumer<BulkRequestListImpl> {
+
+        @Override
+        public void accept(BulkRequestListImpl bulkRequestList) {
+            if (isMaxBatchSize(bulkRequestList.size)) {
+                int bulk = bulk(bulkRequestList);
+                if (bulk > 0) {
+                    commit();
+                }
+            }
+        }
     }
 
 }
