@@ -32,8 +32,6 @@ public abstract class AbstractEs7xETLDateController {
             getClass().getSimpleName(), true);
     @Autowired(required = false)
     protected StartupServer startupServer;
-    @Autowired(required = false)
-    protected AbstractMessageService messageService;
     private boolean stop = false;
 
     protected abstract Date selectMaxDate(JdbcTemplate jdbcTemplate);
@@ -85,6 +83,7 @@ public abstract class AbstractEs7xETLDateController {
             }).start();
         }
 
+        AbstractMessageService messageService = startupServer.getMessageService();
         List<SyncRunnable> runnableList = new ArrayList<>();
         setSuspendEs7x(true, clientIdentity);
         this.stop = false;
@@ -195,7 +194,7 @@ public abstract class AbstractEs7xETLDateController {
                 + ",\n\n DML条数 = " + dmlSize
                 + ",\n\n 对象 = " + getClass().getSimpleName()
                 + ",\n\n 明细 = " + runnableList;
-        messageService.send(title, content);
+        startupServer.getMessageService().send(title, content);
     }
 
     public static abstract class SyncRunnable implements Runnable {
