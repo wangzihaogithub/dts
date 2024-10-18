@@ -40,11 +40,8 @@ esMapping:
         job.update_time as updateTime,
         job.delete_user as deleteUser,
         job.delete_time as deleteTime,
-        job.delete_reason as deleteReason,
-        job.corp_id as corpId,
-        corp.name as corpName
+        job.delete_reason as deleteReason
       FROM job job
-      left join corp corp on corp.id = job.corp_id
       "
   objFields:
     education:
@@ -59,6 +56,41 @@ esMapping:
     session:
       type: array
       split: '[、]'
+    corp$aliasNames:
+      type: array
+      split: ','
+    corp$historyNames:
+      type: array
+      split: ','
+    corp:
+      type: object-sql
+      sql: "SELECT
+              corp.id ,
+              corp.`name`,
+              GROUP_CONCAT(if(corpName.type = 2, corpName.`name`, null)) as aliasNames,
+              GROUP_CONCAT(if(corpName.type = 3, corpName.`name`, null)) as historyNames,
+              corp.group_name as groupCompany,
+              corp.data_type as dataType,
+              corp.central_country_ent_flag as centralCountryEntFlag
+            FROM corp corp
+            LEFT JOIN corp_name corpName on corpName.corp_id = corp.id 
+      "
+      onParentChangeWhereSql: 'WHERE corp.id = #{corp_id} '
+      onChildChangeWhereSql: 'WHERE corp.id = #{id} '
+    corpTagList$tagIds:
+      type: array
+      split: ','
+    corpTagList:
+      type: array-sql
+      sql: "SELECT
+              group_concat(corpRelationTag.tag_id) as tagIds,
+              corpTag.category_id as categoryId
+          FROM corp_relation_tag corpRelationTag
+          INNER JOIN corp_tag corpTag on corpTag.id = corpRelationTag.tag_id
+          GROUP BY corpRelationTag.corp_id, corpTag.category_id
+"
+      onParentChangeWhereSql: 'WHERE corpRelationTag.corp_id = #{corp_id} '
+      onChildChangeWhereSql: 'WHERE corpRelationTag.corp_id = #{corp_id} '
     regionList:
       type: array-sql
       sql: "SELECT
@@ -88,3 +120,23 @@ esMapping:
           FROM job_specialty specialty "
       onParentChangeWhereSql: 'WHERE specialty.job_id = #{id} '
       onChildChangeWhereSql: 'WHERE specialty.job_id = #{job_id} '
+    corpRegionList:
+      type: array-sql
+      sql: "SELECT
+                   corpRegion.province_id as provinceId,
+                   corpRegion.city_id as cityId,
+                   corpRegion.district_id as districtId,
+                   corpRegion.region_id as regionId,
+                   province.`name` as provinceName,
+                   city.`name` as cityName,
+                   district.`name` as districtName,
+                   concat(if(region.lat< region.lng, region.lat,region.lng), ',', if(region.lat > region.lng, region.lat,region.lng)) as geo
+               FROM corp_region corpRegion
+               LEFT JOIN region region on region.id = corpRegion.region_id
+               LEFT JOIN region province on province.id = corpRegion.province_id
+               LEFT JOIN region city on city.id = corpRegion.city_id
+               LEFT JOIN region district on district.id = corpRegion.district_id
+               GROUP BY corpRegion.id
+    "
+      onParentChangeWhereSql: 'WHERE corpRegion.corp_id = #{corp_id} '
+      onChildChangeWhereSql: 'WHERE corpRegion.corp_id = #{corp_id} '

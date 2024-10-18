@@ -24,7 +24,7 @@ public class ES7XTest {
         requests1.add(new StringES("2"));
         requests1.add(new StringES("1"));
         requests1.add(new StringES("3"));
-        ES7xTemplate.trim(requests1);
+        ES7xConnection.trim(requests1);
         System.out.println("requests1 = " + requests1);
     }
 

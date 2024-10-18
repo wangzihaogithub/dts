@@ -1,0 +1,506 @@
+
+PUT /_alias/cnwy_job_test_index_alias
+{
+  "index": "cnwy_job_test_index"
+}
+
+
+# Create an index
+PUT /cnwy_corp_dev_index
+{
+  "mappings": {
+
+      "dynamic": "strict",
+      "_meta": {
+        "version_mapping": "v1.0",
+        "description": "菜鸟无忧-企业库索引"
+      },
+      "properties": {
+        "aliasNames": {
+          "type": "text",
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 256
+            }
+          }
+        },
+        "centralCountryEntFlag": {
+          "type": "boolean"
+        },
+        "createTime": {
+          "type": "date",
+          "format": "yyyy-MM-dd HH:mm:ss || epoch_millis",
+          "locale": "zh_CN"
+        },
+        "createUser": {
+          "type": "keyword"
+        },
+        "creditCode": {
+          "type": "keyword"
+        },
+        "dataType": {
+          "type": "integer"
+        },
+        "groupCompany": {
+          "type": "text",
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 256
+            }
+          }
+        },
+        "historyNames": {
+          "type": "text",
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 256
+            }
+          }
+        },
+        "homeUrl": {
+          "type": "keyword"
+        },
+        "id": {
+          "type": "keyword"
+        },
+        "indexUpdatedTime": {
+          "type": "date",
+          "format": "yyyy-MM-dd HH:mm:ss.SSS || epoch_millis",
+          "locale": "zh_CN"
+        },
+        "manualFlag": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "text",
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 256
+            }
+          }
+        },
+        "regionList": {
+          "type": "nested",
+          "properties": {
+            "cityId": {
+              "type": "integer"
+            },
+            "cityName": {
+              "type": "keyword"
+            },
+            "districtId": {
+              "type": "integer"
+            },
+            "districtName": {
+              "type": "keyword"
+            },
+            "geo": {
+              "type": "geo_point"
+            },
+            "provinceId": {
+              "type": "integer"
+            },
+            "provinceName": {
+              "type": "keyword"
+            },
+            "regionId": {
+              "type": "integer"
+            }
+          }
+        },
+        "registerStatusName": {
+          "type": "keyword"
+        },
+        "source": {
+          "type": "keyword"
+        },
+        "status": {
+          "type": "integer"
+        },
+        "tagList": {
+          "type": "nested",
+          "properties": {
+            "categoryId": {
+              "type": "keyword"
+            },
+            "tagIds": {
+              "type": "keyword"
+            }
+          }
+        },
+        "uniqueKey": {
+          "type": "keyword"
+        },
+        "updateTime": {
+          "type": "date",
+          "format": "yyyy-MM-dd HH:mm:ss || epoch_millis",
+          "locale": "zh_CN"
+        },
+        "updateUser": {
+          "type": "keyword"
+        }
+      }
+    }
+
+}
+
+PUT /cnwy_job_test_index
+{
+    "mappings" : {
+      "dynamic" : "strict",
+      "properties" : {
+        "account" : {
+          "type" : "integer"
+        },
+        "age" : {
+          "type" : "integer"
+        },
+        "ageHigh" : {
+          "type" : "integer"
+        },
+        "ageLow" : {
+          "type" : "integer"
+        },
+        "companyLink" : {
+          "type" : "keyword",
+          "doc_values" : false
+        },
+        "companyName" : {
+          "type" : "text",
+          "fields" : {
+            "keyword" : {
+              "type" : "keyword",
+              "ignore_above" : 256
+            }
+          }
+        },
+        "content" : {
+          "type" : "text"
+        },
+        "corp" : {
+          "type" : "nested",
+          "properties" : {
+            "aliasNames" : {
+              "type" : "text",
+              "fields" : {
+                "keyword" : {
+                  "type" : "keyword",
+                  "ignore_above" : 256
+                }
+              },
+              "copy_to" : [
+                "corpName"
+              ]
+            },
+            "centralCountryEntFlag" : {
+              "type" : "boolean"
+            },
+            "dataType" : {
+              "type" : "keyword"
+            },
+            "groupCompany" : {
+              "type" : "text",
+              "fields" : {
+                "keyword" : {
+                  "type" : "keyword",
+                  "ignore_above" : 256
+                }
+              }
+            },
+            "historyNames" : {
+              "type" : "text",
+              "fields" : {
+                "keyword" : {
+                  "type" : "keyword",
+                  "ignore_above" : 256
+                }
+              },
+              "copy_to" : [
+                "corpName"
+              ]
+            },
+            "id" : {
+              "type" : "keyword",
+              "copy_to" : [
+                "corpId"
+              ]
+            },
+            "name" : {
+              "type" : "text",
+              "fields" : {
+                "keyword" : {
+                  "type" : "keyword",
+                  "ignore_above" : 256
+                }
+              },
+              "copy_to" : [
+                "corpName"
+              ]
+            }
+          }
+        },
+        "corpId" : {
+          "type" : "keyword"
+        },
+        "corpName" : {
+          "type" : "text",
+          "store" : true,
+          "fields" : {
+            "keyword" : {
+              "type" : "keyword",
+              "ignore_above" : 256
+            }
+          }
+        },
+        "corpRegionList" : {
+          "type" : "nested",
+          "properties" : {
+            "cityId" : {
+              "type" : "integer"
+            },
+            "cityName" : {
+              "type" : "keyword"
+            },
+            "districtId" : {
+              "type" : "integer"
+            },
+            "districtName" : {
+              "type" : "keyword"
+            },
+            "geo" : {
+              "type" : "geo_point"
+            },
+            "provinceId" : {
+              "type" : "integer"
+            },
+            "provinceName" : {
+              "type" : "keyword"
+            },
+            "regionId" : {
+              "type" : "integer"
+            }
+          }
+        },
+        "corpTagList" : {
+          "type" : "nested",
+          "properties" : {
+            "categoryId" : {
+              "type" : "keyword"
+            },
+            "tagIds" : {
+              "type" : "keyword"
+            }
+          }
+        },
+        "createTime" : {
+          "type" : "date",
+          "format" : "yyyy-MM-dd HH:mm:ss || yyyy-MM-dd HH:mm:ss.SSS || epoch_millis",
+          "locale" : "zh_CN"
+        },
+        "createUser" : {
+          "type" : "keyword"
+        },
+        "deleteReason" : {
+          "type" : "keyword"
+        },
+        "deleteTime" : {
+          "type" : "date",
+          "format" : "yyyy-MM-dd HH:mm:ss || yyyy-MM-dd HH:mm:ss.SSS",
+          "locale" : "zh_CN"
+        },
+        "deleteUser" : {
+          "type" : "keyword"
+        },
+        "education" : {
+          "type" : "keyword"
+        },
+        "foreignLang" : {
+          "type" : "keyword"
+        },
+        "gender" : {
+          "type" : "integer"
+        },
+        "id" : {
+          "type" : "long"
+        },
+        "indexUpdatedTime" : {
+          "type" : "date",
+          "format" : "yyyy-MM-dd HH:mm:ss || yyyy-MM-dd HH:mm:ss.SSS || epoch_millis",
+          "locale" : "zh_CN"
+        },
+        "jobEndTime" : {
+          "type" : "date",
+          "format" : "yyyy-MM-dd HH:mm:ss || epoch_millis",
+          "locale" : "zh_CN"
+        },
+        "jobStartTime" : {
+          "type" : "date",
+          "format" : "yyyy-MM-dd HH:mm:ss || epoch_millis",
+          "locale" : "zh_CN"
+        },
+        "link" : {
+          "type" : "keyword",
+          "doc_values" : false
+        },
+        "name" : {
+          "type" : "text",
+          "fields" : {
+            "keyword" : {
+              "type" : "keyword",
+              "ignore_above" : 256
+            }
+          }
+        },
+        "nature" : {
+          "type" : "keyword"
+        },
+        "noticeUrl" : {
+          "type" : "keyword",
+          "doc_values" : false
+        },
+        "political" : {
+          "type" : "keyword"
+        },
+        "regionAddress" : {
+          "type" : "text",
+          "store" : true,
+          "fields" : {
+            "keyword" : {
+              "type" : "keyword",
+              "ignore_above" : 300
+            }
+          }
+        },
+        "regionList" : {
+          "type" : "nested",
+          "properties" : {
+            "address" : {
+              "type" : "keyword",
+              "doc_values" : false,
+              "copy_to" : [
+                "regionAddress"
+              ]
+            },
+            "cityId" : {
+              "type" : "integer"
+            },
+            "cityName" : {
+              "type" : "keyword"
+            },
+            "districtId" : {
+              "type" : "integer"
+            },
+            "districtName" : {
+              "type" : "keyword"
+            },
+            "geo" : {
+              "type" : "geo_point"
+            },
+            "id" : {
+              "type" : "integer"
+            },
+            "provinceId" : {
+              "type" : "integer"
+            },
+            "provinceName" : {
+              "type" : "keyword"
+            },
+            "regionId" : {
+              "type" : "integer"
+            },
+            "regionIdColloquial" : {
+              "type" : "integer"
+            },
+            "regionNameColloquial" : {
+              "type" : "keyword"
+            }
+          }
+        },
+        "session" : {
+          "type" : "keyword"
+        },
+        "source" : {
+          "type" : "integer"
+        },
+        "specialty" : {
+          "type" : "text",
+          "store" : true,
+          "fields" : {
+            "keyword" : {
+              "type" : "keyword",
+              "ignore_above" : 256
+            }
+          }
+        },
+        "specialtyList" : {
+          "type" : "nested",
+          "properties" : {
+            "id" : {
+              "type" : "integer"
+            },
+            "specialtyId" : {
+              "type" : "integer"
+            },
+            "specialtyIdColloquial" : {
+              "type" : "integer"
+            },
+            "specialtyName" : {
+              "type" : "text",
+              "fields" : {
+                "keyword" : {
+                  "type" : "keyword",
+                  "ignore_above" : 256
+                }
+              }
+            },
+            "specialtyNameColloquial" : {
+              "type" : "text",
+              "fields" : {
+                "keyword" : {
+                  "type" : "keyword",
+                  "ignore_above" : 256
+                }
+              },
+              "copy_to" : [
+                "specialty"
+              ]
+            }
+          }
+        },
+        "status" : {
+          "type" : "integer"
+        },
+        "targetId" : {
+          "type" : "keyword"
+        },
+        "type" : {
+          "type" : "keyword"
+        },
+        "updateTime" : {
+          "type" : "date",
+          "format" : "yyyy-MM-dd HH:mm:ss || yyyy-MM-dd HH:mm:ss.SSS || epoch_millis",
+          "locale" : "zh_CN"
+        },
+        "updateUser" : {
+          "type" : "keyword"
+        },
+        "welfare" : {
+          "type" : "keyword"
+        },
+        "year" : {
+          "type" : "keyword"
+        },
+        "yearHigh" : {
+          "type" : "integer"
+        },
+        "yearLow" : {
+          "type" : "integer"
+        }
+      }
+    }
+
+}

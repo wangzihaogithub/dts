@@ -69,7 +69,7 @@ public class ES7xAdapter implements Adapter {
                 Runnable::run :
                 Util.newFixedThreadPool(1, slaveNestedField.getThreads(),
                         60_000L, "ESNestedSlave", true, false, slaveNestedField.getQueues(), NestedSlaveTableRunnable::merge);
-        CanalConfig.OuterAdapterConfig.Es7x.MainJoinNestedField mainJoinNestedField = configuration.getEs7x().getMainJoinTableField();
+        CanalConfig.OuterAdapterConfig.Es7x.MainJoinNestedField mainJoinNestedField = configuration.getEs7x().getMainJoinNestedField();
         this.mainJoinTableExecutor = mainJoinNestedField.isBlock() ?
                 Runnable::run :
                 Util.newFixedThreadPool(1, mainJoinNestedField.getThreads(),

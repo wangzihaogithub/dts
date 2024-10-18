@@ -1,44 +1,40 @@
+cnwy.binlog-prefix: 'cnwy.'
 canal.conf:
+  enable-pull: true
   srcDataSources:
     defaultDS:
-      # 填上数据库地址账号密码就可以debug了
-      url: 'jdbc:mysql://xxx.com:3306/cnwy?useUnicode=true&characterEncoding=utf-8&allowMultiQueries=true&rewriteBatchedStatements=true&zeroDateTimeBehavior=CONVERT_TO_NULL'
-      username: 'xxx'
-      password: 'xxx'
+      url: 'jdbc:mysql://${MYSQL_HOST}:3306/cnwy?useUnicode=true&characterEncoding=utf-8&allowMultiQueries=true&rewriteBatchedStatements=true&zeroDateTimeBehavior=CONVERT_TO_NULL'
+      username: 'test_cnwy'
+      password: ${MYSQL_PASSWORD}
   canalAdapters:
     - destination: 'cnwybinlog'
       connector: com.github.dts.canal.MysqlBinlogCanalConnector
       topics:
-        - 'cnwy.job'
-        - 'cnwy.job_region'
-        - 'cnwy.job_specialty'
-        - 'cnwy.corp'
-        - 'cnwy.corp_name'
-        - 'cnwy.corp_region'
-        - 'cnwy.region'
-        - 'cnwy.corp_relation_tag'
-        - 'cnwy.corp_tag'
-        - 'cnwy.corp_category'
-        - 'cnwy.notice'
-        - 'cnwy.corp_recruit_url'
+        - '${cnwy.binlog-prefix}job'
+        - '${cnwy.binlog-prefix}job_region'
+        - '${cnwy.binlog-prefix}job_specialty'
+        - '${cnwy.binlog-prefix}corp'
+        - '${cnwy.binlog-prefix}corp_name'
+        - '${cnwy.binlog-prefix}corp_region'
+        - '${cnwy.binlog-prefix}region'
+        - '${cnwy.binlog-prefix}corp_relation_tag'
+        - '${cnwy.binlog-prefix}corp_tag'
+        - '${cnwy.binlog-prefix}corp_category'
+        - '${cnwy.binlog-prefix}notice'
+        - '${cnwy.binlog-prefix}corp_recruit_url'
       properties: {
         dataSource: 'defaultDS',
-        maxDumpThread: 1,
-#        enableGTID: true
+        maxDumpThread: 22,
+        enableGTID: true
       }
       groups:
         - outerAdapters:
-            - name: 'adapterES7'
-              # 为了方便调试，可以随便填，直接启动开始debug
+            - name: 'adapterES716'
               es7x:
-                address: 'xxx:9200'
-                username: 'xxx'
-                password: 'xxx'
-
-# redis非必填：配置上可以支持记忆增量指针，重启后也不会丢数据
-# 默认用本地文件存储
+                concurrentBulkRequest: 4
+                address: 'https://my-elasticsearch-project-f10e79.es.ap-southeast-1.aws.elastic.cloud:443'
+                api-key: ${ES_API_KEY}
 spring:
   redis:
-    host: 'xx.com'
-    password: 'xxx'
-    database: 2
+    host: ${REDIS_HOST}
+    password: ${REDIS_PASSWORD}

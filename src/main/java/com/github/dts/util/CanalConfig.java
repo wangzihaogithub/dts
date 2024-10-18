@@ -627,9 +627,10 @@ public class CanalConfig {
             private final MainJoinNestedField mainJoinNestedField = new MainJoinNestedField();
             private String resourcesDir = "es";
             private String[] address;// es 读地址
+            private String clusterName;
             private String username;// 账号，来源：租户账号
             private String password;// 密码，来源：租户密码
-            private Map<String, String> properties; // 其余参数, 可填写适配器中的所需的配置信息
+            private String apiKey;
             private int updateByQueryChunkSize = 1000;
             private int maxRetryCount = 1;// 错误请求重试几次
             private int bulkRetryCount = 1;
@@ -648,6 +649,58 @@ public class CanalConfig {
             private int commitEventPublishScheduledTickMs = 100;
             private int commitEventPublishMaxBlockCount = 50000;
             private boolean onlyEffect = true;// 只更新受到影响的字段
+            private int httpKeepAliveMinutes = 3000;
+            private int httpConnectTimeout = 10 * 60 * 60;
+            private int httpRequestTimeout = 100 * 60 * 60;
+            private int httpSocketTimeout = 100 * 60 * 60;
+
+            public String getClusterName() {
+                return clusterName;
+            }
+
+            public void setClusterName(String clusterName) {
+                this.clusterName = clusterName;
+            }
+
+            public int getHttpSocketTimeout() {
+                return httpSocketTimeout;
+            }
+
+            public void setHttpSocketTimeout(int httpSocketTimeout) {
+                this.httpSocketTimeout = httpSocketTimeout;
+            }
+
+            public int getHttpConnectTimeout() {
+                return httpConnectTimeout;
+            }
+
+            public void setHttpConnectTimeout(int httpConnectTimeout) {
+                this.httpConnectTimeout = httpConnectTimeout;
+            }
+
+            public int getHttpRequestTimeout() {
+                return httpRequestTimeout;
+            }
+
+            public void setHttpRequestTimeout(int httpRequestTimeout) {
+                this.httpRequestTimeout = httpRequestTimeout;
+            }
+
+            public int getHttpKeepAliveMinutes() {
+                return httpKeepAliveMinutes;
+            }
+
+            public void setHttpKeepAliveMinutes(int httpKeepAliveMinutes) {
+                this.httpKeepAliveMinutes = httpKeepAliveMinutes;
+            }
+
+            public String getApiKey() {
+                return apiKey;
+            }
+
+            public void setApiKey(String apiKey) {
+                this.apiKey = apiKey;
+            }
 
             public boolean isShareAdapterCache() {
                 return shareAdapterCache;
@@ -713,7 +766,7 @@ public class CanalConfig {
                 this.maxIdIn = maxIdIn;
             }
 
-            public MainJoinNestedField getMainJoinTableField() {
+            public MainJoinNestedField getMainJoinNestedField() {
                 return mainJoinNestedField;
             }
 
@@ -831,14 +884,6 @@ public class CanalConfig {
 
             public void setPassword(String password) {
                 this.password = password;
-            }
-
-            public Map<String, String> getProperties() {
-                return properties;
-            }
-
-            public void setProperties(Map<String, String> properties) {
-                this.properties = properties;
             }
 
             public SlaveNestedField getSlaveNestedField() {

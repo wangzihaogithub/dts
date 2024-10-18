@@ -2,12 +2,14 @@ package com.github.dts.util;
 
 
 import com.google.common.collect.Lists;
+import org.apache.http.Header;
 import org.apache.http.HttpHost;
 import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.UsernamePasswordCredentials;
 import org.apache.http.client.CredentialsProvider;
 import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.apache.http.impl.nio.reactor.IOReactorConfig;
+import org.apache.http.message.BasicHeader;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.DocWriteRequest;
 import org.elasticsearch.action.admin.indices.refresh.RefreshRequest;
@@ -68,28 +70,46 @@ public class ES7xConnection {
         HttpHost[] httpHosts = Arrays.stream(elasticsearchUri).map(HttpHost::create).toArray(HttpHost[]::new);
         String name = es7x.getUsername();
         String pwd = es7x.getPassword();
-        String clusterName = es7x.getProperties() != null ? es7x.getProperties().get("cluster.name") : null;
+        String apiKey = es7x.getApiKey();
+        String clusterName = es7x.getClusterName();
         int concurrentBulkRequest = es7x.getConcurrentBulkRequest();
+
+        BasicHeader basicHeader;
+        if (apiKey != null && !apiKey.isEmpty()) {
+            basicHeader = new BasicHeader("Authorization", "ApiKey " + apiKey);
+        } else {
+            basicHeader = null;
+        }
 
         final RestClientBuilder clientBuilder = RestClient
                 .builder(httpHosts)
                 .setRequestConfigCallback(requestConfigBuilder -> requestConfigBuilder
-                        .setConnectTimeout(10 * 60 * 60)
-                        .setConnectionRequestTimeout(100 * 60 * 60)
-                        .setSocketTimeout(100 * 60 * 60))
-                .setHttpClientConfigCallback(httpClientBuilder -> {
-                    CredentialsProvider credentialsProvider = new BasicCredentialsProvider();
-                    credentialsProvider.setCredentials(AuthScope.ANY, new UsernamePasswordCredentials(name, pwd));
-                    httpClientBuilder
-                            .setDefaultCredentialsProvider(credentialsProvider)
-                            .setMaxConnTotal(concurrentBulkRequest)
-                            .setMaxConnPerRoute(concurrentBulkRequest);
-                    return httpClientBuilder
-                            .setDefaultIOReactorConfig(IOReactorConfig.custom()
-                                    .setIoThreadCount(Math.max(concurrentBulkRequest, Runtime.getRuntime().availableProcessors()))
-                                    .setSelectInterval(100).setSoKeepAlive(true).build())
-                            .setKeepAliveStrategy((response, context) -> TimeUnit.MINUTES.toMillis(3000));
-                });
+                        .setConnectTimeout(es7x.getHttpConnectTimeout())
+                        .setConnectionRequestTimeout(es7x.getHttpRequestTimeout())
+                        .setSocketTimeout(es7x.getHttpSocketTimeout()));
+
+        if (basicHeader != null) {
+            clientBuilder.setDefaultHeaders(new Header[]{basicHeader});
+        }
+        clientBuilder.setHttpClientConfigCallback(httpClientBuilder -> {
+            IOReactorConfig reactorConfig = IOReactorConfig.custom()
+                    .setIoThreadCount(Math.max(concurrentBulkRequest, Runtime.getRuntime().availableProcessors()))
+                    .setSelectInterval(100)
+                    .setSoKeepAlive(true)
+                    .build();
+            if (basicHeader != null) {
+                httpClientBuilder.setDefaultHeaders(Collections.singletonList(basicHeader));
+            } else {
+                CredentialsProvider credentialsProvider = new BasicCredentialsProvider();
+                credentialsProvider.setCredentials(AuthScope.ANY, new UsernamePasswordCredentials(name, pwd));
+                httpClientBuilder.setDefaultCredentialsProvider(credentialsProvider);
+            }
+            httpClientBuilder.setMaxConnTotal(concurrentBulkRequest);
+            httpClientBuilder.setMaxConnPerRoute(concurrentBulkRequest);
+            httpClientBuilder.setDefaultIOReactorConfig(reactorConfig);
+            httpClientBuilder.setKeepAliveStrategy((response, context) -> TimeUnit.MINUTES.toMillis(es7x.getHttpKeepAliveMinutes()));
+            return httpClientBuilder;
+        });
         if (clusterName != null && !clusterName.isEmpty()) {
             clientBuilder.setPathPrefix(clusterName);
         }
@@ -183,6 +203,7 @@ public class ES7xConnection {
         return getMappingAsyncCache.computeIfAbsent(index, cacheKey -> {
             CompletableFuture<Map<String, Object>> future = new CompletableFuture<>();
             GetMappingsRequest request = new GetMappingsRequest();
+            request.setMasterTimeout(null);
             request.indices(index);
             restHighLevelClient.indices()
                     .getMappingAsync(request, RequestOptions.DEFAULT, new ActionListener<GetMappingsResponse>() {
