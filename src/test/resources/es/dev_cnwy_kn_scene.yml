@@ -1,0 +1,28 @@
+dataSourceKey: defaultDS
+destination: cnwybinlog
+esMapping:
+  env: dev
+  pk: id
+  _index: cnwy_kn_scene_test_index
+  upsert: false
+  writeNull: false
+  indexUpdatedTime: 'indexUpdatedTime'
+  sql: "SELECT
+        s.id as id,
+        s.type stype,
+        s.scene,
+        s.speech1,
+        s.speech2,
+        concat(ifnull(s.type,''), '.', ifnull(s.scene,''), '.', ifnull(s.speech1,''), '.', ifnull(s.speech2,'')) as text,
+        concat(ifnull(s.type,''), '.', ifnull(s.scene,''), '.', ifnull(s.speech1,''), '.', ifnull(s.speech2,'')) as textVector
+      FROM kn_scene s
+      "
+  objFields:
+    textVector:
+      type: llm-vector
+      paramLlmVector:
+        apiKey: ${cnwy.llm-api-key}
+        baseUrl: https://dashscope.aliyuncs.com/compatible-mode/v1
+        modelName: text-embedding-v3
+        dimensions: 1024
+

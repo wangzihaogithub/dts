@@ -44,6 +44,26 @@ public class SchemaItem {
 
     }
 
+    public static boolean matchColumnItem(ColumnItem columnItem, String tableName, Map<String, TableItem> aliasTableItems, Set<String> fieldNameSet) {
+        TableItem tableItem = aliasTableItems.get(columnItem.getOwner());
+        if (tableItem == null || !tableName.equalsIgnoreCase(tableItem.getTableName())) {
+            return false;
+        }
+        return fieldNameSet == null || fieldNameSet.contains(columnItem.getColumnName());
+    }
+
+    public List<FieldItem> selectField(SchemaItem.FieldItem currFieldItem) {
+        List<FieldItem> list = new ArrayList<>(2);
+        if (currFieldItem != null) {
+            for (SchemaItem.FieldItem fieldItem : selectFields.values()) {
+                if (fieldItem != currFieldItem && fieldItem.equalsColumn(currFieldItem)) {
+                    list.add(fieldItem);
+                }
+            }
+        }
+        return list;
+    }
+
     public String getDesc() {
         if (objectField != null) {
             return "nested[" + objectField.getFieldName() + "]";
@@ -84,7 +104,7 @@ public class SchemaItem {
     public boolean isJoinByMainTablePrimaryKey() {
         if (joinByMainTablePrimaryKey == null) {
             if (objectField != null && objectField.isSqlType()) {
-                List<SqlParser.BinaryOpExpr> varColumnList = SqlParser.getVarColumnList(getObjectField().getOnMainTableChangeWhereSql());
+                List<SqlParser.BinaryOpExpr> varColumnList = SqlParser.getVarColumnList(getObjectField().getParamSql().getOnMainTableChangeWhereSql());
                 FieldItem idField = getIdField();
                 String id = SQL.wrapPlaceholder(idField.getColumnName());
                 joinByMainTablePrimaryKey = varColumnList.stream().anyMatch(e -> e.getValue().equalsIgnoreCase(id));
@@ -98,8 +118,9 @@ public class SchemaItem {
     public Set<ColumnItem> getGroupByIdColumns() {
         if (groupByIdColumns == null) {
             Set<ColumnItem> groupByIdColumns;
-            if (objectField != null) {
-                String[] groupBy = objectField.groupByIdColumns();
+            ESSyncConfig.ObjectField.ParamSql paramSql;
+            if (objectField != null && (paramSql = objectField.getParamSql()) != null) {
+                String[] groupBy = paramSql.groupByIdColumns();
                 if (groupBy != null && groupBy.length > 0) {
                     groupByIdColumns = Arrays.stream(groupBy).map(ColumnItem::parse).collect(Collectors.toCollection(LinkedHashSet::new));
                 } else {
@@ -134,31 +155,30 @@ public class SchemaItem {
         return list;
     }
 
-
     public Set<String> getOnMainTableChangeWhereSqlVarList() {
         if (onMainTableChangeWhereSqlVarList == null && objectField != null && objectField.isSqlType()) {
-            this.onMainTableChangeWhereSqlVarList = Util.newLinkedCaseInsensitiveSet(SQL.convertToSql(objectField.getOnMainTableChangeWhereSql(), Collections.emptyMap()).getArgsMap().keySet());
+            this.onMainTableChangeWhereSqlVarList = Util.newLinkedCaseInsensitiveSet(SQL.convertToSql(objectField.getParamSql().getOnMainTableChangeWhereSql(), Collections.emptyMap()).getArgsMap().keySet());
         }
         return onMainTableChangeWhereSqlVarList;
     }
 
     public Set<String> getOnSlaveTableChangeWhereSqlVarList() {
         if (onSlaveTableChangeWhereSqlVarList == null && objectField != null && objectField.isSqlType()) {
-            this.onSlaveTableChangeWhereSqlVarList = Util.newLinkedCaseInsensitiveSet(SQL.convertToSql(objectField.getOnSlaveTableChangeWhereSql(), Collections.emptyMap()).getArgsMap().keySet());
+            this.onSlaveTableChangeWhereSqlVarList = Util.newLinkedCaseInsensitiveSet(SQL.convertToSql(objectField.getParamSql().getOnSlaveTableChangeWhereSql(), Collections.emptyMap()).getArgsMap().keySet());
         }
         return onSlaveTableChangeWhereSqlVarList;
     }
 
     public Map<String, List<String>> getOnMainTableChangeWhereSqlColumnList() {
         if (onMainTableChangeWhereSqlColumnList == null && objectField != null && objectField.isSqlType()) {
-            this.onMainTableChangeWhereSqlColumnList = SqlParser.getColumnList(objectField.getOnMainTableChangeWhereSql());
+            this.onMainTableChangeWhereSqlColumnList = SqlParser.getColumnList(objectField.getParamSql().getOnMainTableChangeWhereSql());
         }
         return onMainTableChangeWhereSqlColumnList;
     }
 
     public Map<String, List<String>> getOnSlaveTableChangeWhereSqlColumnList() {
         if (onSlaveTableChangeWhereSqlColumnList == null && objectField != null && objectField.isSqlType()) {
-            this.onSlaveTableChangeWhereSqlColumnList = SqlParser.getColumnList(objectField.getOnSlaveTableChangeWhereSql());
+            this.onSlaveTableChangeWhereSqlColumnList = SqlParser.getColumnList(objectField.getParamSql().getOnSlaveTableChangeWhereSql());
         }
         return onSlaveTableChangeWhereSqlColumnList;
     }
@@ -166,12 +186,12 @@ public class SchemaItem {
     private Set<ColumnItem> parseByObjectFieldIdColumns() {
         Set<ColumnItem> idColumns = new LinkedHashSet<>();
         TableItem mainTable = getMainTable();
-        List<String> mainColumnList = SqlParser.getVarColumnList(objectField.getOnSlaveTableChangeWhereSql()).stream()
+        List<String> mainColumnList = SqlParser.getVarColumnList(objectField.getParamSql().getOnSlaveTableChangeWhereSql()).stream()
                 .filter(e -> e.isOwner(mainTable.getAlias()))
                 .map(SqlParser.BinaryOpExpr::getName)
                 .collect(Collectors.toList());
         if (mainColumnList.isEmpty()) {
-            mainColumnList = SqlParser.getVarColumnList(objectField.getOnMainTableChangeWhereSql()).stream()
+            mainColumnList = SqlParser.getVarColumnList(objectField.getParamSql().getOnMainTableChangeWhereSql()).stream()
                     .filter(e -> e.isOwner(mainTable.getAlias()))
                     .map(SqlParser.BinaryOpExpr::getName)
                     .collect(Collectors.toList());
@@ -262,7 +282,7 @@ public class SchemaItem {
 
     public boolean existTable(String tableName) {
         if (objectField != null && objectField.isSqlType()) {
-            TableItem mainTable = objectField.getSchemaItem().getMainTable();
+            TableItem mainTable = objectField.getParamSql().getSchemaItem().getMainTable();
             if (tableName.equalsIgnoreCase(mainTable.getTableName())) {
                 return true;
             } else if (isIndexMainTable(tableName)) {
@@ -277,18 +297,18 @@ public class SchemaItem {
         Set<String> columnNameSet = columnNames == null ? null : Util.newLinkedCaseInsensitiveSet(columnNames);
         for (FieldItem fieldItem : fields.values()) {
             for (ColumnItem columnItem : fieldItem.getColumnItems()) {
-                if (columnItem.match(tableName, aliasTableItems, columnNameSet)) {
+                if (matchColumnItem(columnItem, tableName, aliasTableItems, columnNameSet)) {
                     return true;
                 }
             }
         }
         for (ColumnItem groupByIdColumn : groupByIdColumns) {
-            if (groupByIdColumn.match(tableName, aliasTableItems, columnNameSet)) {
+            if (matchColumnItem(groupByIdColumn, tableName, aliasTableItems, columnNameSet)) {
                 return true;
             }
         }
         if (objectField != null && objectField.isSqlType()) {
-            TableItem mainTable = objectField.getSchemaItem().getMainTable();
+            TableItem mainTable = objectField.getParamSql().getSchemaItem().getMainTable();
             if (tableName.equalsIgnoreCase(mainTable.getTableName())) {
                 if (columnNameSet == null || existColumn(columnNameSet, getOnSlaveTableChangeWhereSqlVarList())) {
                     return true;
@@ -397,25 +417,23 @@ public class SchemaItem {
             if (aliasTableItems.size() == 1) {
                 mainTable = aliasTableItems.values().iterator().next();
             } else {
-                if (objectField != null) {
-                    Map<String, List<String>> childColumnList = SqlParser.getColumnList(objectField.getOnSlaveTableChangeWhereSql());
+                ESSyncConfig.ObjectField.ParamSql paramSql;
+                if (objectField != null && (paramSql = objectField.getParamSql()) != null) {
+                    Map<String, List<String>> childColumnList = SqlParser.getColumnList(paramSql.getOnSlaveTableChangeWhereSql());
                     String owner;
-                    if (!childColumnList.isEmpty()) {
-                        owner = childColumnList.keySet().iterator().next();
-                    } else {
-                        Map<String, List<String>> parentColumnList = SqlParser.getColumnList(objectField.getOnMainTableChangeWhereSql());
-                        if (!parentColumnList.isEmpty()) {
-                            owner = parentColumnList.keySet().iterator().next();
-                        } else {
+                    if (childColumnList.isEmpty()) {
+                        Map<String, List<String>> parentColumnList = SqlParser.getColumnList(paramSql.getOnMainTableChangeWhereSql());
+                        if (parentColumnList.isEmpty()) {
                             owner = "";
+                        } else {
+                            owner = parentColumnList.keySet().iterator().next();
                         }
+                    } else {
+                        owner = childColumnList.keySet().iterator().next();
                     }
                     mainTable = aliasTableItems.get(owner);
                 } else if (esMapping != null) {
                     SchemaItem schemaItem = esMapping.getSchemaItem();
-                    if (schemaItem == null) {
-                        System.out.println("schemaItem = " + schemaItem);
-                    }
                     FieldItem pkFieldItem = schemaItem.getSelectFields().get(esMapping.getPk());
                     if (pkFieldItem == null) {
                         pkFieldItem = schemaItem.getSelectFields().get(esMapping.get_id());
@@ -750,6 +768,20 @@ public class SchemaItem {
             return o;
         }
 
+        public boolean equalsColumn(FieldItem fieldItem) {
+            if (fieldItem.columnItems.size() != columnItems.size()) {
+                return false;
+            }
+            for (int i = 0, size = fieldItem.columnItems.size(); i < size; i++) {
+                ColumnItem columnItem = fieldItem.columnItems.get(i);
+                ColumnItem thisColumnItem = columnItems.get(i);
+                if (!columnItem.equalsColumnItem(thisColumnItem)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
         public boolean equalsField(String name) {
             String columnName = getColumnName();
             String fieldName = getFieldName();
@@ -846,49 +878,4 @@ public class SchemaItem {
         }
     }
 
-    public static class ColumnItem {
-        private String owner;
-        private String columnName;
-
-        public static ColumnItem parse(String e) {
-            String[] split = e.split("[.]");
-            ColumnItem columnItem = new ColumnItem();
-            if (split.length == 1) {
-                columnItem.setColumnName(split[0]);
-            } else {
-                columnItem.setOwner(split[0]);
-                columnItem.setColumnName(split[1]);
-            }
-            return columnItem;
-        }
-
-        public boolean match(String tableName, Map<String, TableItem> aliasTableItems, Set<String> fieldNameSet) {
-            TableItem tableItem = aliasTableItems.get(getOwner());
-            if (tableItem == null || !tableName.equalsIgnoreCase(tableItem.getTableName())) {
-                return false;
-            }
-            return fieldNameSet == null || fieldNameSet.contains(getColumnName());
-        }
-
-        @Override
-        public String toString() {
-            return Objects.toString(owner, "") + "." + columnName;
-        }
-
-        public String getOwner() {
-            return owner;
-        }
-
-        public void setOwner(String owner) {
-            this.owner = owner;
-        }
-
-        public String getColumnName() {
-            return columnName;
-        }
-
-        public void setColumnName(String columnName) {
-            this.columnName = columnName;
-        }
-    }
 }

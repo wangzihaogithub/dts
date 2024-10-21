@@ -13,7 +13,7 @@ import com.alibaba.druid.sql.parser.ParserException;
 import com.alibaba.druid.sql.parser.SQLStatementParser;
 import com.alibaba.druid.sql.visitor.SQLASTVisitorAdapter;
 import com.alibaba.druid.sql.visitor.VisitorFeature;
-import com.github.dts.util.SchemaItem.ColumnItem;
+import com.github.dts.util.ColumnItem;
 import com.github.dts.util.SchemaItem.FieldItem;
 import com.github.dts.util.SchemaItem.RelationFieldsPair;
 import com.github.dts.util.SchemaItem.TableItem;
@@ -238,7 +238,7 @@ public class SqlParser {
         });
     }
 
-    public static String setGroupBy(String sql, Collection<SchemaItem.ColumnItem> needGroupBy) {
+    public static String setGroupBy(String sql, Collection<ColumnItem> needGroupBy) {
         SQLStatement sqlStatement = SQLUtils.parseSingleMysqlStatement(sql);
         if (sqlStatement instanceof SQLSelectStatement) {
             SQLSelect select = ((SQLSelectStatement) sqlStatement).getSelect();

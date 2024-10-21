@@ -13,7 +13,7 @@ public class ES7XTest {
     }
 
     private static void test1() {
-        LinkedList<ESBulkRequest.ESRequest> requests1 = new LinkedList<>();
+        LinkedList<TrimRequest> requests1 = new LinkedList<>();
 
         requests1.add(new StringES("3"));
         requests1.add(new StringES("1"));
@@ -24,7 +24,7 @@ public class ES7XTest {
         requests1.add(new StringES("2"));
         requests1.add(new StringES("1"));
         requests1.add(new StringES("3"));
-        ES7xConnection.trim(requests1);
+        TrimRequest.trim(requests1);
         System.out.println("requests1 = " + requests1);
     }
 
@@ -37,7 +37,7 @@ public class ES7XTest {
     }
 
     private static void test2() {
-        LinkedList<ESBulkRequest.ESRequest> requests1 = new LinkedList<>();
+        LinkedList<TrimRequest> requests1 = new LinkedList<>();
 
         requests1.add(new ES7xConnection.ES7xUpdateRequest("123",
                 "1", asMap("k", "v"), false, 1));
@@ -57,11 +57,11 @@ public class ES7XTest {
                 "1", asMap("ka", "v2"), true, 1));
         requests1.add(new ES7xConnection.ES7xUpdateRequest("123",
                 "2", asMap("k", "v2"), true, 1));
-        ES7xConnection.trim(requests1);
+        TrimRequest.trim(requests1);
         System.out.println("requests1 = " + requests1);
     }
 
-    static class StringES implements ESBulkRequest.ESRequest {
+    static class StringES implements TrimRequest {
         private final String string;
 
         StringES(String string) {
@@ -69,7 +69,7 @@ public class ES7XTest {
         }
 
         @Override
-        public boolean isOverlap(ESBulkRequest.ESRequest request) {
+        public boolean isOverlap(TrimRequest request) {
             if (request instanceof StringES) {
                 return string.equals(((StringES) request).string);
             }

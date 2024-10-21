@@ -2,7 +2,7 @@ package com.github.dts.impl.elasticsearch7x.nested;
 
 import com.github.dts.util.CacheMap;
 import com.github.dts.util.ESSyncUtil;
-import com.github.dts.util.SchemaItem;
+import com.github.dts.util.ColumnItem;
 import com.github.dts.util.SqlParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,16 +18,16 @@ import java.util.function.Supplier;
 public class JdbcTemplateSQL extends SQL {
     private static final Logger log = LoggerFactory.getLogger(JdbcTemplateSQL.class);
     private final String dataSourceKey;
-    private final Collection<SchemaItem.ColumnItem> needGroupBy;
+    private final Collection<ColumnItem> needGroupBy;
     private final RowMapperResultSetExtractor<Map<String, Object>> resultSetExtractor = new RowMapperResultSetExtractor<>(new ColumnMapRowMapper());
 
-    public JdbcTemplateSQL(String exprSql, Object[] args, Map<String, Object> argsMap, String dataSourceKey, Collection<SchemaItem.ColumnItem> needGroupBy) {
+    public JdbcTemplateSQL(String exprSql, Object[] args, Map<String, Object> argsMap, String dataSourceKey, Collection<ColumnItem> needGroupBy) {
         super(exprSql, args, argsMap);
         this.dataSourceKey = dataSourceKey;
         this.needGroupBy = needGroupBy;
     }
 
-    public Collection<SchemaItem.ColumnItem> getNeedGroupBy() {
+    public Collection<ColumnItem> getNeedGroupBy() {
         return needGroupBy;
     }
 

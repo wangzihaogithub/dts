@@ -2,13 +2,11 @@ package com.github.dts.util;
 
 import com.github.dts.impl.elasticsearch7x.nested.SQL;
 import com.github.dts.util.ESSyncConfig.ESMapping;
-import com.github.dts.util.SchemaItem.ColumnItem;
 import com.github.dts.util.SchemaItem.TableItem;
 import org.joda.time.DateTime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.util.CollectionUtils;
 
 import javax.sql.DataSource;
 import java.io.File;
@@ -45,34 +43,6 @@ public class ESSyncUtil {
         return destination + "_" + database + "_" + table;
     }
 
-    public static Map<String, ESSyncConfig> loadYamlToBean(Properties envProperties, File resourcesDir, String env) {
-        log.info("## Start loading es mapping config {}", resourcesDir);
-        Map<String, ESSyncConfig> esSyncConfig = new LinkedHashMap<>();
-        Map<String, byte[]> yamlMap = loadYamlToBytes(resourcesDir);
-        for (Map.Entry<String, byte[]> entry : yamlMap.entrySet()) {
-            String fileName = entry.getKey();
-            byte[] content = entry.getValue();
-
-            ESSyncConfig config = YmlConfigBinder.bindYmlToObj(null, content, ESSyncConfig.class, envProperties);
-            if (config == null) {
-                continue;
-            }
-            if (!Objects.equals(env, config.getEsMapping().getEnv())) {
-                continue;
-            }
-            String md5 = Util.md5(content);
-            try {
-                config.init(md5);
-            } catch (Exception e) {
-                throw new RuntimeException("ERROR Config: " + fileName + " " + e, e);
-            }
-            esSyncConfig.put(fileName, config);
-        }
-
-        log.info("## ES mapping config loaded");
-        return esSyncConfig;
-    }
-
     public static Map<String, byte[]> loadYamlToBytes(File configDir) {
         Map<String, byte[]> map = new LinkedHashMap<>();
         // 先取本地文件，再取类路径
@@ -92,37 +62,6 @@ public class ESSyncUtil {
             }
         }
         return map;
-    }
-
-    public static void loadESSyncConfig(Map<String, Map<String, ESSyncConfig>> map,
-                                        Map<String, ESSyncConfig> configMap,
-                                        Properties envProperties, File resourcesDir, String env) {
-        Map<String, ESSyncConfig> load = loadYamlToBean(envProperties, resourcesDir, env);
-        for (Map.Entry<String, ESSyncConfig> entry : load.entrySet()) {
-            ESSyncConfig config = entry.getValue();
-            if (!config.getEsMapping().isEnable()) {
-                continue;
-            }
-            String configName = entry.getKey();
-            configMap.put(configName, config);
-            String schema = CanalConfig.DatasourceConfig.getCatalog(config.getDataSourceKey());
-
-            for (TableItem item : config.getEsMapping().getSchemaItem().getAliasTableItems().values()) {
-                map.computeIfAbsent(getEsSyncConfigKey(config.getDestination(), schema, item.getTableName()),
-                        k -> new ConcurrentHashMap<>()).put(configName, config);
-            }
-            for (Map.Entry<String, ESSyncConfig.ObjectField> e : config.getEsMapping().getObjFields().entrySet()) {
-                ESSyncConfig.ObjectField v = e.getValue();
-                if (v.getSchemaItem() == null || CollectionUtils.isEmpty(v.getSchemaItem().getAliasTableItems())) {
-                    continue;
-                }
-                for (TableItem tableItem : v.getSchemaItem().getAliasTableItems().values()) {
-                    map.computeIfAbsent(getEsSyncConfigKey(config.getDestination(), schema, tableItem.getTableName()),
-                                    k -> new ConcurrentHashMap<>())
-                            .put(configName, config);
-                }
-            }
-        }
     }
 
     public static String join(Collection list) {
@@ -569,7 +508,7 @@ public class ESSyncUtil {
         return dateEsDateTime.toString(format).equals(dateMysqlDateTime.toString(format));
     }
 
-    public static boolean equalsRowData(Object mysql, Object es, ESSyncConfig.ObjectField objectField) {
+    public static boolean equalsRowData(Object mysql, Object es, ESSyncConfig.ObjectField objectField, Map<String, Object> mysqlRowData, Map<String, Object> esRowData) {
         ESSyncConfig.ObjectField.Type type = objectField.getType();
         switch (type) {
             case OBJECT_SQL: {
@@ -578,6 +517,15 @@ public class ESSyncUtil {
             case ARRAY_SQL: {
                 return es != null;
             }
+            case LLM_VECTOR: {
+                String refTextFieldName = objectField.getParamLlmVector().getEtlEqualsFieldName();
+                if (refTextFieldName == null || refTextFieldName.isEmpty()) {
+                    return true;
+                }
+                Object refEs = esRowData.get(refTextFieldName);
+                Object refMysql = mysqlRowData.get(refTextFieldName);
+                return Objects.equals(refEs, refMysql);
+            }
             case ARRAY: {
                 if (es == null && mysql == null) {
                     return true;
@@ -585,7 +533,7 @@ public class ESSyncUtil {
                 if (es == null || mysql == null) {
                     return false;
                 }
-                Collection<?> mysqlParse = (Collection) objectField.parse(mysql, objectField.getEsMapping());
+                Collection<?> mysqlParse = (Collection) objectField.parse(mysql, objectField.getEsMapping(), mysqlRowData);
                 Collection<?> esParse;
                 if (es instanceof Collection) {
                     esParse = (Collection) es;
@@ -681,7 +629,7 @@ public class ESSyncUtil {
                         Object esValue = es.get(field);
                         ESSyncConfig.ObjectField fieldObjectField = objectField.getEsMapping().getObjectField(objectField.getFieldName(), field);
                         if (fieldObjectField != null) {
-                            if (!equalsRowData(mysqlValue, esValue, fieldObjectField)) {
+                            if (!equalsRowData(mysqlValue, esValue, fieldObjectField, mysql, es)) {
                                 return false;
                             }
                         } else if (!equalsRowData(mysqlValue, esValue)) {
@@ -710,7 +658,7 @@ public class ESSyncUtil {
             Object mysql = mysqlRowData.get(diffField);
             Object es = esRowData.get(diffField);
             if (objectField != null) {
-                if (!equalsRowData(mysql, es, objectField)) {
+                if (!equalsRowData(mysql, es, objectField, mysqlRowData, esRowData)) {
                     return false;
                 }
             } else {

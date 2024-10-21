@@ -2,7 +2,6 @@ package com.github.dts.util;
 
 import com.github.dts.util.ESSyncConfig.ESMapping;
 
-import java.sql.Timestamp;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 

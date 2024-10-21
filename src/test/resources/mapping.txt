@@ -6,6 +6,74 @@ PUT /_alias/cnwy_job_test_index_alias
 
 
 # Create an index
+PUT /cnwy_kn_scene_test_index
+{
+    "mappings" : {
+      "dynamic" : "strict",
+      "properties" : {
+        "id" : {
+          "type" : "integer"
+        },
+        "stype": {
+            "type": "keyword"
+        },
+        "scene": {
+            "type": "keyword"
+        },
+        "speech1": {
+            "type": "keyword"
+        },
+        "speech2": {
+          "type": "keyword"
+        },
+        "text": {
+          "type": "keyword"
+        },
+        "textVector": {
+          "type": "dense_vector",
+          "dims": 1024
+        },
+        "indexUpdatedTime" : {
+          "type" : "date",
+          "format" : "yyyy-MM-dd HH:mm:ss.SSS || yyyy-MM-dd HH:mm:ss || epoch_millis",
+          "locale" : "zh_CN"
+        }
+      }
+    }
+}
+
+# Create an index
+PUT /cnwy_kn_question_test_index
+{
+    "mappings" : {
+      "dynamic" : "strict",
+      "properties" : {
+        "id" : {
+          "type" : "integer"
+        },
+        "question": {
+          "type": "keyword"
+        },
+        "answer": {
+           "type": "keyword"
+        },
+        "text": {
+          "type": "keyword"
+        },
+        "textVector": {
+          "type": "dense_vector",
+          "dims": 1024
+        },
+         "indexUpdatedTime" : {
+           "type" : "date",
+           "format" : "yyyy-MM-dd HH:mm:ss.SSS || yyyy-MM-dd HH:mm:ss || epoch_millis",
+           "locale" : "zh_CN"
+         }
+      }
+    }
+}
+
+# Create an index
 PUT /cnwy_corp_dev_index
 {
   "mappings": {
@@ -153,6 +221,10 @@ PUT /cnwy_job_test_index
     "mappings" : {
       "dynamic" : "strict",
       "properties" : {
+       "contentVector": {
+          "type": "dense_vector",
+          "dims": 1024
+        },
         "account" : {
           "type" : "integer"
         },

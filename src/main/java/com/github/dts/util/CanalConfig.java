@@ -622,37 +622,30 @@ public class CanalConfig {
 
         }
 
-        public static class Es7x {
-            private final SlaveNestedField slaveNestedField = new SlaveNestedField();
-            private final MainJoinNestedField mainJoinNestedField = new MainJoinNestedField();
-            private String resourcesDir = "es";
+        public static class EsAccount {
             private String[] address;// es 读地址
             private String clusterName;
             private String username;// 账号，来源：租户账号
             private String password;// 密码，来源：租户密码
             private String apiKey;
             private int updateByQueryChunkSize = 1000;
-            private int maxRetryCount = 1;// 错误请求重试几次
-            private int bulkRetryCount = 1;
+            private int maxRetryCount = 0;// 错误请求重试几次
+            private int bulkRetryCount = 0;
             private int concurrentBulkRequest = 16;// 最大并发bulk请求
             private int minAvailableSpaceHighBulkRequests = 2;// 高优先级bulk最少可用空间数量，最大实时性越好，保证实时性
             private int bulkCommitSize = 200;//每次bulk请求的大约提交条数
-            private boolean refresh = true;
-            private int refreshThreshold = 10;
-            private int listenerThreads = 50;
-            private int maxQueryCacheSize = 10000;//查询缓存大小
-            private boolean shareAdapterCache = true; // Adapter是否共享一个缓存
-            private int nestedFieldThreads = 10;
-            private int joinUpdateSize = 10;
-            private int streamChunkSize = 10000;
-            private int maxIdIn = 1000;
-            private int commitEventPublishScheduledTickMs = 100;
-            private int commitEventPublishMaxBlockCount = 50000;
-            private boolean onlyEffect = true;// 只更新受到影响的字段
             private int httpKeepAliveMinutes = 3000;
             private int httpConnectTimeout = 10 * 60 * 60;
             private int httpRequestTimeout = 100 * 60 * 60;
             private int httpSocketTimeout = 100 * 60 * 60;
+
+            public String[] getAddress() {
+                return address;
+            }
+
+            public void setAddress(String[] address) {
+                this.address = address;
+            }
 
             public String getClusterName() {
                 return clusterName;
@@ -662,12 +655,84 @@ public class CanalConfig {
                 this.clusterName = clusterName;
             }
 
-            public int getHttpSocketTimeout() {
-                return httpSocketTimeout;
+            public String getUsername() {
+                return username;
             }
 
-            public void setHttpSocketTimeout(int httpSocketTimeout) {
-                this.httpSocketTimeout = httpSocketTimeout;
+            public void setUsername(String username) {
+                this.username = username;
+            }
+
+            public String getPassword() {
+                return password;
+            }
+
+            public void setPassword(String password) {
+                this.password = password;
+            }
+
+            public String getApiKey() {
+                return apiKey;
+            }
+
+            public void setApiKey(String apiKey) {
+                this.apiKey = apiKey;
+            }
+
+            public int getUpdateByQueryChunkSize() {
+                return updateByQueryChunkSize;
+            }
+
+            public void setUpdateByQueryChunkSize(int updateByQueryChunkSize) {
+                this.updateByQueryChunkSize = updateByQueryChunkSize;
+            }
+
+            public int getMaxRetryCount() {
+                return maxRetryCount;
+            }
+
+            public void setMaxRetryCount(int maxRetryCount) {
+                this.maxRetryCount = maxRetryCount;
+            }
+
+            public int getBulkRetryCount() {
+                return bulkRetryCount;
+            }
+
+            public void setBulkRetryCount(int bulkRetryCount) {
+                this.bulkRetryCount = bulkRetryCount;
+            }
+
+            public int getConcurrentBulkRequest() {
+                return concurrentBulkRequest;
+            }
+
+            public void setConcurrentBulkRequest(int concurrentBulkRequest) {
+                this.concurrentBulkRequest = concurrentBulkRequest;
+            }
+
+            public int getMinAvailableSpaceHighBulkRequests() {
+                return minAvailableSpaceHighBulkRequests;
+            }
+
+            public void setMinAvailableSpaceHighBulkRequests(int minAvailableSpaceHighBulkRequests) {
+                this.minAvailableSpaceHighBulkRequests = minAvailableSpaceHighBulkRequests;
+            }
+
+            public int getBulkCommitSize() {
+                return bulkCommitSize;
+            }
+
+            public void setBulkCommitSize(int bulkCommitSize) {
+                this.bulkCommitSize = bulkCommitSize;
+            }
+
+            public int getHttpKeepAliveMinutes() {
+                return httpKeepAliveMinutes;
+            }
+
+            public void setHttpKeepAliveMinutes(int httpKeepAliveMinutes) {
+                this.httpKeepAliveMinutes = httpKeepAliveMinutes;
             }
 
             public int getHttpConnectTimeout() {
@@ -686,20 +751,38 @@ public class CanalConfig {
                 this.httpRequestTimeout = httpRequestTimeout;
             }
 
-            public int getHttpKeepAliveMinutes() {
-                return httpKeepAliveMinutes;
+            public int getHttpSocketTimeout() {
+                return httpSocketTimeout;
             }
 
-            public void setHttpKeepAliveMinutes(int httpKeepAliveMinutes) {
-                this.httpKeepAliveMinutes = httpKeepAliveMinutes;
+            public void setHttpSocketTimeout(int httpSocketTimeout) {
+                this.httpSocketTimeout = httpSocketTimeout;
+            }
+        }
+
+        public static class Es7x extends EsAccount {
+            private final SlaveNestedField slaveNestedField = new SlaveNestedField();
+            private final MainJoinNestedField mainJoinNestedField = new MainJoinNestedField();
+            private String resourcesDir = "es";
+            private int refreshThreshold = 10;
+            private int listenerThreads = 50;
+            private int maxQueryCacheSize = 10000;//查询缓存大小
+            private boolean shareAdapterCache = true; // Adapter是否共享一个缓存
+            private int nestedFieldThreads = 10;
+            private int joinUpdateSize = 10;
+            private int streamChunkSize = 10000;
+            private int maxIdIn = 1000;
+            private boolean refresh = true;
+            private int commitEventPublishScheduledTickMs = 100;
+            private int commitEventPublishMaxBlockCount = 50000;
+            private boolean onlyEffect = true;// 只更新受到影响的字段
+
+            public boolean isRefresh() {
+                return refresh;
             }
 
-            public String getApiKey() {
-                return apiKey;
-            }
-
-            public void setApiKey(String apiKey) {
-                this.apiKey = apiKey;
+            public void setRefresh(boolean refresh) {
+                this.refresh = refresh;
             }
 
             public boolean isShareAdapterCache() {
@@ -732,30 +815,6 @@ public class CanalConfig {
 
             public void setCommitEventPublishScheduledTickMs(int commitEventPublishScheduledTickMs) {
                 this.commitEventPublishScheduledTickMs = commitEventPublishScheduledTickMs;
-            }
-
-            public int getUpdateByQueryChunkSize() {
-                return updateByQueryChunkSize;
-            }
-
-            public void setUpdateByQueryChunkSize(int updateByQueryChunkSize) {
-                this.updateByQueryChunkSize = updateByQueryChunkSize;
-            }
-
-            public int getMinAvailableSpaceHighBulkRequests() {
-                return minAvailableSpaceHighBulkRequests;
-            }
-
-            public void setMinAvailableSpaceHighBulkRequests(int minAvailableSpaceHighBulkRequests) {
-                this.minAvailableSpaceHighBulkRequests = minAvailableSpaceHighBulkRequests;
-            }
-
-            public int getBulkRetryCount() {
-                return bulkRetryCount;
-            }
-
-            public void setBulkRetryCount(int bulkRetryCount) {
-                this.bulkRetryCount = bulkRetryCount;
             }
 
             public int getMaxIdIn() {
@@ -818,38 +877,6 @@ public class CanalConfig {
                 this.refreshThreshold = refreshThreshold;
             }
 
-            public boolean isRefresh() {
-                return refresh;
-            }
-
-            public void setRefresh(boolean refresh) {
-                this.refresh = refresh;
-            }
-
-            public int getMaxRetryCount() {
-                return maxRetryCount;
-            }
-
-            public void setMaxRetryCount(int maxRetryCount) {
-                this.maxRetryCount = maxRetryCount;
-            }
-
-            public int getBulkCommitSize() {
-                return bulkCommitSize;
-            }
-
-            public void setBulkCommitSize(int bulkCommitSize) {
-                this.bulkCommitSize = bulkCommitSize;
-            }
-
-            public int getConcurrentBulkRequest() {
-                return concurrentBulkRequest;
-            }
-
-            public void setConcurrentBulkRequest(int concurrentBulkRequest) {
-                this.concurrentBulkRequest = concurrentBulkRequest;
-            }
-
             public String getResourcesDir() {
                 return resourcesDir;
             }
@@ -860,30 +887,6 @@ public class CanalConfig {
 
             public File resourcesDir() {
                 return Util.getConfDirPath(resourcesDir);
-            }
-
-            public String[] getAddress() {
-                return address;
-            }
-
-            public void setAddress(String[] address) {
-                this.address = address;
-            }
-
-            public String getUsername() {
-                return username;
-            }
-
-            public void setUsername(String username) {
-                this.username = username;
-            }
-
-            public String getPassword() {
-                return password;
-            }
-
-            public void setPassword(String password) {
-                this.password = password;
             }
 
             public SlaveNestedField getSlaveNestedField() {

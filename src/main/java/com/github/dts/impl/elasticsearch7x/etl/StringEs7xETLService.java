@@ -437,7 +437,7 @@ public class StringEs7xETLService {
                                 if (objectField == null) {
                                     continue;
                                 }
-                                Set<String> cols = SQL.convertToSql(objectField.getFullSql(true), Collections.emptyMap()).getArgsMap().keySet();
+                                Set<String> cols = SQL.convertToSql(objectField.getParamSql().getFullSql(true), Collections.emptyMap()).getArgsMap().keySet();
                                 for (String col : cols) {
                                     select.add("`" + col + "`");
                                 }
@@ -462,9 +462,9 @@ public class StringEs7xETLService {
                                     if (map == null) {
                                         continue;
                                     }
-                                    SQL sql1 = SQL.convertToSql(objectField.getFullSql(true), map);
+                                    SQL sql1 = SQL.convertToSql(objectField.getParamSql().getFullSql(true), map);
                                     EsJdbcTemplateSQL jdbcTemplateSQL = new EsJdbcTemplateSQL(sql1.getExprSql(), sql1.getArgs(), map, config.getDataSourceKey(),
-                                            objectField.getSchemaItem().getGroupByIdColumns(), hit);
+                                            objectField.getParamSql().getSchemaItem().getGroupByIdColumns(), hit);
                                     list.add(jdbcTemplateSQL);
                                 }
                                 jdbcTemplateSQLList.put(diffField, list);

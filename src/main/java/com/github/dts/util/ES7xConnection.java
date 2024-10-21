@@ -11,6 +11,7 @@ import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.apache.http.impl.nio.reactor.IOReactorConfig;
 import org.apache.http.message.BasicHeader;
 import org.elasticsearch.action.ActionListener;
+import org.elasticsearch.action.ActionRequestValidationException;
 import org.elasticsearch.action.DocWriteRequest;
 import org.elasticsearch.action.admin.indices.refresh.RefreshRequest;
 import org.elasticsearch.action.admin.indices.refresh.RefreshResponse;
@@ -65,7 +66,7 @@ public class ES7xConnection {
     private final Map<String, CompletableFuture<Map<String, Object>>> getMappingAsyncCache = new ConcurrentHashMap<>(2);
     private final int updateByQueryChunkSize;
 
-    public ES7xConnection(CanalConfig.OuterAdapterConfig.Es7x es7x) {
+    public ES7xConnection(CanalConfig.OuterAdapterConfig.EsAccount es7x) {
         String[] elasticsearchUri = es7x.getAddress();
         HttpHost[] httpHosts = Arrays.stream(elasticsearchUri).map(HttpHost::create).toArray(HttpHost[]::new);
         String name = es7x.getUsername();
@@ -120,43 +121,6 @@ public class ES7xConnection {
         this.bulkCommitSize = es7x.getBulkCommitSize();
         this.concurrentBulkRequest = concurrentBulkRequest;
         this.restHighLevelClient = new RestHighLevelClient(clientBuilder);
-    }
-
-    public static void trim(LinkedList<ESBulkRequest.ESRequest> requests) {
-        ESBulkRequest.ESRequest[] snapshotList = new ESBulkRequest.ESRequest[requests.size()];
-        requests.toArray(snapshotList);
-        List<ESBulkRequest.ESRequest> overlapList = new ArrayList<>(2);
-        for (int i = snapshotList.length - 1; i >= 0; i--) {
-            ESBulkRequest.ESRequest request = snapshotList[i];
-            collectOverlap(snapshotList, request, overlapList);
-            if (!overlapList.isEmpty()) {
-                requests.removeIf(e -> {
-                    for (ESBulkRequest.ESRequest esRequest : overlapList) {
-                        if (e == esRequest) {
-                            return true;
-                        }
-                    }
-                    return false;
-                });
-                i -= overlapList.size();
-                requests.toArray(snapshotList);
-                overlapList.clear();
-            }
-        }
-    }
-
-    private static void collectOverlap(ESBulkRequest.ESRequest[] snapshotList, ESBulkRequest.ESRequest curr, List<ESBulkRequest.ESRequest> overlapList) {
-        for (ESBulkRequest.ESRequest row : snapshotList) {
-            if (row == null) {
-                break;
-            }
-            if (row == curr) {
-                break;
-            }
-            if (curr.isOverlap(row)) {
-                overlapList.add(row);
-            }
-        }
     }
 
     public int getUpdateByQueryChunkSize() {
@@ -352,7 +316,12 @@ public class ES7xConnection {
         private int size = 1;
 
         public ES7xUpdateByQueryRequest(String index) {
-            updateByQueryRequest = new UpdateByQueryRequest(index);
+            updateByQueryRequest = new UpdateByQueryRequest(index) {
+                @Override
+                public ActionRequestValidationException validate() {
+                    return null;
+                }
+            };
         }
 
         public static ES7xUpdateByQueryRequest byIds(String index, String[] ids, String fieldName, Object fieldValue) {
@@ -386,9 +355,15 @@ public class ES7xConnection {
         private final IndexRequest indexRequest;
 
         public ES7xIndexRequest(String index, String id, Map<String, ?> source) {
-            indexRequest = new IndexRequest(index);
+            indexRequest = new IndexRequest(index) {
+                @Override
+                public ActionRequestValidationException validate() {
+                    return null;
+                }
+            };
             indexRequest.id(id);
             indexRequest.source(source);
+//            indexRequest.type("");
         }
 
         @Override
@@ -411,10 +386,16 @@ public class ES7xConnection {
         private final boolean shouldUpsertDoc;
 
         public ES7xUpdateRequest(String index, String id, Map source, boolean shouldUpsertDoc, int retryOnConflict) {
-            updateRequest = new UpdateRequest(index, id);
+            updateRequest = new UpdateRequest(index, id) {
+                @Override
+                public ActionRequestValidationException validate() {
+                    return null;
+                }
+            };
             updateRequest.docAsUpsert(shouldUpsertDoc);
             updateRequest.doc(source);
             updateRequest.retryOnConflict(retryOnConflict);
+//            updateRequest.type("");
             this.index = index;
             this.id = id;
             this.source = source;
@@ -422,7 +403,7 @@ public class ES7xConnection {
         }
 
         @Override
-        public boolean isOverlap(ESBulkRequest.ESRequest prev) {
+        public boolean isOverlap(TrimRequest prev) {
             if (prev instanceof ES7xDeleteRequest) {
                 return false;
             } else if (prev instanceof ES7xUpdateRequest) {
@@ -471,13 +452,19 @@ public class ES7xConnection {
         private final String id;
 
         public ES7xDeleteRequest(String index, String id) {
-            deleteRequest = new DeleteRequest(index, id);
+            deleteRequest = new DeleteRequest(index, id) {
+                @Override
+                public ActionRequestValidationException validate() {
+                    return null;
+                }
+            };
+//            deleteRequest.type("");
             this.index = index;
             this.id = id;
         }
 
         @Override
-        public boolean isOverlap(ESBulkRequest.ESRequest prev) {
+        public boolean isOverlap(TrimRequest prev) {
             if (prev instanceof ES7xDeleteRequest) {
                 ES7xDeleteRequest that = ((ES7xDeleteRequest) prev);
                 return Objects.equals(this.index, that.index)
@@ -926,8 +913,8 @@ public class ES7xConnection {
                 return new BulkResponse(new BulkItemResponse[0], 0L);
             }
             IOException ioException = null;
-            int bulkRetryCount = Math.max(1, connection.bulkRetryCount);
-            for (int i = 0; i < bulkRetryCount; i++) {
+            int bulkRetryCount = Math.max(0, connection.bulkRetryCount);
+            for (int i = 0; i <= bulkRetryCount; i++) {
                 try {
                     return connection.restHighLevelClient.bulk(bulkRequest, RequestOptions.DEFAULT);
                 } catch (IOException e) {

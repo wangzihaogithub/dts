@@ -74,7 +74,7 @@ public class ES7xAdapter implements Adapter {
                 Runnable::run :
                 Util.newFixedThreadPool(1, mainJoinNestedField.getThreads(),
                         60_000L, "ESNestedMainJoin", true, false, mainJoinNestedField.getQueues(), NestedMainJoinTableRunnable::merge);
-        ESSyncUtil.loadESSyncConfig(dbTableEsSyncConfig, esSyncConfig, envProperties, configuration.getEs7x().resourcesDir(), env);
+        ESSyncConfig.loadESSyncConfig(dbTableEsSyncConfig, esSyncConfig, envProperties, canalAdapter, configuration.getEs7x().resourcesDir(), env);
 
         this.listenerList.sort(AnnotationAwareOrderComparator.INSTANCE);
         this.listenerList.forEach(item -> item.init(esSyncConfig));
@@ -162,8 +162,8 @@ public class ES7xAdapter implements Adapter {
             try {
                 Map<Map<String, ESSyncConfig>, List<Dml>> groupByMap = new IdentityHashMap<>(dbTableEsSyncConfig.size());
                 for (Dml dml : syncDmlList) {
-                    for (String s : dml.getDestination()) {
-                        String key = ESSyncUtil.getEsSyncConfigKey(s, dml.getDatabase(), dml.getTable());
+                    for (String destination : dml.getDestination()) {
+                        String key = ESSyncConfig.getEsSyncConfigKey(destination, dml.getDatabase(), dml.getTable());
                         Map<String, ESSyncConfig> configMap = dbTableEsSyncConfig.get(key);
                         if (configMap != null) {
                             groupByMap.computeIfAbsent(configMap, e -> new ArrayList<>()).add(dml);
@@ -394,7 +394,7 @@ public class ES7xAdapter implements Adapter {
         String[] destination = getDestination();
         List<Map<String, ESSyncConfig>> list = new ArrayList<>();
         for (String s : destination) {
-            Map<String, ESSyncConfig> configMap = dbTableEsSyncConfig.get(ESSyncUtil.getEsSyncConfigKey(s, database, table));
+            Map<String, ESSyncConfig> configMap = dbTableEsSyncConfig.get(ESSyncConfig.getEsSyncConfigKey(s, database, table));
             if (configMap != null) {
                 list.add(configMap);
             }

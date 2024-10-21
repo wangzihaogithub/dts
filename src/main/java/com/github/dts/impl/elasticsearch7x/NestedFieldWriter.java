@@ -124,7 +124,11 @@ public class NestedFieldWriter {
         Map<String, List<SchemaItem>> schemaItemMap = new LinkedHashMap<>();
         for (ESSyncConfig syncConfig : esSyncConfigMap.values()) {
             for (ESSyncConfig.ObjectField objectField : syncConfig.getEsMapping().getObjFields().values()) {
-                SchemaItem schemaItem = objectField.getSchemaItem();
+                ESSyncConfig.ObjectField.ParamSql paramSql = objectField.getParamSql();
+                if (paramSql == null) {
+                    continue;
+                }
+                SchemaItem schemaItem = paramSql.getSchemaItem();
                 if (schemaItem == null) {
                     continue;
                 }
@@ -163,19 +167,23 @@ public class NestedFieldWriter {
                 // 改之前的数据也要更新
                 Map<String, Object> mergeBeforeDataMap = dependent.getMergeBeforeDataMap();
                 if (!mergeBeforeDataMap.isEmpty()) {
-                    String fullSql = objectField.getFullSql(indexMainTable);
-                    SQL sql = SQL.convertToSql(fullSql, mergeBeforeDataMap);
-
-                    sqlList.add(new DependentSQL(sql, dependent, objectField.getSchemaItem().getGroupByIdColumns()));
+                    ESSyncConfig.ObjectField.ParamSql paramSql = objectField.getParamSql();
+                    if (paramSql != null) {
+                        String fullSql = paramSql.getFullSql(indexMainTable);
+                        SQL sql = SQL.convertToSql(fullSql, mergeBeforeDataMap);
+                        sqlList.add(new DependentSQL(sql, dependent, paramSql.getSchemaItem().getGroupByIdColumns()));
+                    }
                 }
             }
             // 改之后的数据
             Map<String, Object> mergeAfterDataMap = dependent.getMergeAfterDataMap();
             if (!mergeAfterDataMap.isEmpty()) {
-                String fullSql = objectField.getFullSql(indexMainTable);
-                SQL sql = SQL.convertToSql(fullSql, mergeAfterDataMap);
-
-                sqlList.add(new DependentSQL(sql, dependent, objectField.getSchemaItem().getGroupByIdColumns()));
+                ESSyncConfig.ObjectField.ParamSql paramSql = objectField.getParamSql();
+                if (paramSql != null) {
+                    String fullSql = paramSql.getFullSql(indexMainTable);
+                    SQL sql = SQL.convertToSql(fullSql, mergeAfterDataMap);
+                    sqlList.add(new DependentSQL(sql, dependent, paramSql.getSchemaItem().getGroupByIdColumns()));
+                }
             }
         }
         return sqlList;
@@ -234,7 +242,7 @@ public class NestedFieldWriter {
     public static class DependentSQL extends JdbcTemplateSQL {
         private final Dependent dependent;
 
-        DependentSQL(SQL sql, Dependent dependent, Collection<SchemaItem.ColumnItem> needGroupBy) {
+        DependentSQL(SQL sql, Dependent dependent, Collection<ColumnItem> needGroupBy) {
             super(sql.getExprSql(), sql.getArgs(), sql.getArgsMap(),
                     dependent.getSchemaItem().getEsMapping().getConfig().getDataSourceKey(), needGroupBy);
             this.dependent = dependent;
@@ -256,7 +264,7 @@ public class NestedFieldWriter {
             if (dependent.isIndexMainTable()) {
                 columnName = objectField.getEsMapping().getSchemaItem().getIdField().getColumnName();
             } else if (dependent.getSchemaItem().isJoinByMainTablePrimaryKey()) {
-                columnName = objectField.getJoinTableColumnName();
+                columnName = objectField.getParamSql().getJoinTableColumnName();
             } else {
                 columnName = null;
             }

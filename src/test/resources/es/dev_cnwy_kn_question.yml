@@ -1,0 +1,26 @@
+dataSourceKey: defaultDS
+destination: cnwybinlog
+esMapping:
+  env: dev
+  pk: id
+  _index: cnwy_kn_question_test_index
+  upsert: false
+  writeNull: false
+  indexUpdatedTime: 'indexUpdatedTime'
+  sql: "SELECT
+        q.id as id,
+        q.question,
+        q.answer,
+        concat(ifnull(q.question,''), '.', ifnull(q.answer,'')) as text,
+        concat(ifnull(q.question,''), '.', ifnull(q.answer,'')) as textVector
+      FROM kn_question q
+      "
+  objFields:
+    textVector:
+      type: llm-vector
+      paramLlmVector:
+        apiKey: ${cnwy.llm-api-key}
+        baseUrl: https://dashscope.aliyuncs.com/compatible-mode/v1
+        modelName: text-embedding-v3
+        dimensions: 1024
+

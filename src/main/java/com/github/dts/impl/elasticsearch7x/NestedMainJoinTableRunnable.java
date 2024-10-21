@@ -62,7 +62,7 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
     }
 
     private static DependentSQL convertParentSql(Dependent dependent, Function<Dependent, Map<String, Object>> rowGetter) {
-        String fullSql = dependent.getSchemaItem().getObjectField().getFullSql(false);
+        String fullSql = dependent.getSchemaItem().getObjectField().getParamSql().getFullSql(false);
         return new DependentSQL(SQL.convertToSql(fullSql, rowGetter.apply(dependent)), dependent, dependent.getSchemaItem().getGroupByIdColumns());
     }
 
@@ -79,7 +79,7 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
             String pkName = pkNames.iterator().next();
             ESSyncUtil.appendConditionByExpr(condition, SQL.wrapPlaceholder(dmlPkNames.get(0)), tableItem.getAlias(), pkName, and);
         } else {
-            String joinTableColumnName = dependent.getSchemaItem().getObjectField().getJoinTableColumnName();
+            String joinTableColumnName = dependent.getSchemaItem().getObjectField().getParamSql().getJoinTableColumnName();
             ESSyncUtil.appendConditionByExpr(condition, SQL.wrapPlaceholder(joinTableColumnName), tableItem.getAlias(), joinTableColumnName, and);
         }
 

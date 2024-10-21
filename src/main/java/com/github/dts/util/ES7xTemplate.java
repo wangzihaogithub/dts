@@ -425,13 +425,13 @@ public class ES7xTemplate implements ESTemplate {
             index = resultSet.findColumn(columnName);
         }
         Object value = resultSet.getObject(index);
-        return getValFromValue(mapping, value, fieldName);
+        return getValFromValue(mapping, value, fieldName, null, Collections.singletonMap(fieldName, value));
     }
 
     @Override
     public Object getValFromRS(ESMapping mapping, Map<String, Object> row, String fieldName,
                                String columnName, Map<String, Object> data) {
-        return getValFromValue(mapping, row.get(fieldName), fieldName);
+        return getValFromValue(mapping, row.get(fieldName), fieldName, null, row);
     }
 
     @Override
@@ -442,7 +442,7 @@ public class ES7xTemplate implements ESTemplate {
         for (FieldItem fieldItem : schemaItem.getSelectFields().values()) {
             String fieldName = fieldItem.getFieldName();
 
-            Object value = getValFromValue(mapping, row.get(fieldName), fieldName);
+            Object value = getValFromValue(mapping, row.get(fieldName), fieldName, null, row);
 
             if (!mapping.isWriteNull() && value == null) {
                 continue;
@@ -491,7 +491,7 @@ public class ES7xTemplate implements ESTemplate {
     @Override
     public Object getValFromData(ESMapping mapping, Map<String, Object> dmlData,
                                  String fieldName, String columnName) {
-        return getValFromValue(mapping, dmlData.get(columnName), fieldName);
+        return getValFromValue(mapping, dmlData.get(columnName), fieldName, null, dmlData);
     }
 
     @Override
@@ -500,22 +500,16 @@ public class ES7xTemplate implements ESTemplate {
         for (Map.Entry<String, Object> entry : theConvertMap.entrySet()) {
             String fieldName = entry.getKey();
             Object fieldValue = entry.getValue();
-            Object newValue = getValFromValue(
-                    esMapping, fieldValue,
-                    fieldName, parentFieldName);
+            Object newValue = getValFromValue(esMapping, fieldValue, fieldName, parentFieldName, theConvertMap);
             entry.setValue(newValue);
         }
     }
 
-    private Object getValFromValue(ESMapping mapping, Object value, String fieldName) {
-        return getValFromValue(mapping, value, fieldName, null);
-    }
-
-    private Object getValFromValue(ESMapping mapping, Object value, String fieldName, String parentFieldName) {
+    private Object getValFromValue(ESMapping mapping, Object value, String fieldName, String parentFieldName, Map<String, Object> row) {
         // 如果是对象类型
         ESSyncConfig.ObjectField objectField = mapping.getObjectField(parentFieldName, fieldName);
         if (objectField != null) {
-            return objectField.parse(value, mapping);
+            return objectField.parse(value, mapping, row);
         } else {
             return ESSyncUtil.typeConvert(value, fieldName, getEsType(mapping), parentFieldName);
         }
@@ -775,7 +769,7 @@ public class ES7xTemplate implements ESTemplate {
                 size = 0;
                 requests.clear();
                 if (esRequests.size() > 1) {
-                    ES7xConnection.trim(esRequests);
+                    TrimRequest.trim(esRequests);
                 }
                 return esRequests;
             }

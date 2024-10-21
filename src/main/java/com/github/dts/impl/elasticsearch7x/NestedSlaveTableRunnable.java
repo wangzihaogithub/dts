@@ -151,7 +151,7 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
             byChildrenSqlSet.add(new DependentSQL(nestedChildrenSql, dependent, null));
         }
 
-        String fullSql = dependent.getSchemaItem().getObjectField().getFullSql(false);
+        String fullSql = dependent.getSchemaItem().getObjectField().getParamSql().getFullSql(false);
         Set<DependentSQL> byMainSqlList = new LinkedHashSet<>();
         MergeJdbcTemplateSQL.executeQueryList(MergeJdbcTemplateSQL.merge(byChildrenSqlSet, chunkSize), cacheMap, (sql, changeRowList) -> {
             for (Map<String, Object> changeRow : changeRowList) {

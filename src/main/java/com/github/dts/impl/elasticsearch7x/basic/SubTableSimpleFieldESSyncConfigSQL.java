@@ -3,7 +3,7 @@ package com.github.dts.impl.elasticsearch7x.basic;
 import com.github.dts.impl.elasticsearch7x.nested.SQL;
 import com.github.dts.util.*;
 import com.github.dts.util.ESSyncConfig.ESMapping;
-import com.github.dts.util.SchemaItem.ColumnItem;
+import com.github.dts.util.ColumnItem;
 import com.github.dts.util.SchemaItem.FieldItem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

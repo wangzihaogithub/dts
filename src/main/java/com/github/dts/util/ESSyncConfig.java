@@ -2,8 +2,12 @@ package com.github.dts.util;
 
 import com.github.dts.impl.elasticsearch7x.ES7xAdapter;
 import com.github.dts.impl.elasticsearch7x.NestedFieldWriter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
@@ -14,10 +18,89 @@ import java.util.stream.Collectors;
  */
 public class ESSyncConfig {
     public static final String ES_ID_FIELD_NAME = "_id";
+    private static final Logger log = LoggerFactory.getLogger(ESSyncConfig.class);
     private String dataSourceKey;   // 数据源key
     private String destination;     // canal destination
     private ESMapping esMapping;
     private String md5;
+
+    public static String getEsSyncConfigKey(String destination, String database, String table) {
+        return destination + "_" + database + "_" + table;
+    }
+
+    public static void loadESSyncConfig(Map<String, Map<String, ESSyncConfig>> map,
+                                        Map<String, ESSyncConfig> configMap,
+                                        Properties envProperties, CanalConfig.CanalAdapter canalAdapter, File resourcesDir, String env) {
+        Map<String, ESSyncConfig> load = loadYamlToBean(envProperties, canalAdapter, resourcesDir, env);
+        for (Map.Entry<String, ESSyncConfig> entry : load.entrySet()) {
+            ESSyncConfig config = entry.getValue();
+            if (!config.getEsMapping().isEnable()) {
+                continue;
+            }
+            String configName = entry.getKey();
+            configMap.put(configName, config);
+            String schema = CanalConfig.DatasourceConfig.getCatalog(config.getDataSourceKey());
+            for (SchemaItem.TableItem item : config.getEsMapping().getSchemaItem().getAliasTableItems().values()) {
+                map.computeIfAbsent(getEsSyncConfigKey(config.getDestination(), schema, item.getTableName()),
+                        k -> new ConcurrentHashMap<>()).put(configName, config);
+            }
+            for (Map.Entry<String, ESSyncConfig.ObjectField> e : config.getEsMapping().getObjFields().entrySet()) {
+                ESSyncConfig.ObjectField v = e.getValue();
+                if (v == null) {
+                    continue;
+                }
+                ObjectField.ParamSql paramSql = v.getParamSql();
+                if (paramSql == null) {
+                    continue;
+                }
+                SchemaItem schemaItem = paramSql.getSchemaItem();
+                if (schemaItem == null || ESSyncUtil.isEmpty(schemaItem.getAliasTableItems())) {
+                    continue;
+                }
+                for (SchemaItem.TableItem tableItem : schemaItem.getAliasTableItems().values()) {
+                    map.computeIfAbsent(getEsSyncConfigKey(config.getDestination(), schema, tableItem.getTableName()),
+                                    k -> new ConcurrentHashMap<>())
+                            .put(configName, config);
+                }
+            }
+        }
+    }
+
+    public static Map<String, ESSyncConfig> loadYamlToBean(Properties envProperties, CanalConfig.CanalAdapter canalAdapter, File resourcesDir, String env) {
+        log.info("## Start loading es mapping config {}", resourcesDir);
+        Map<String, ESSyncConfig> esSyncConfig = new LinkedHashMap<>();
+        Map<String, byte[]> yamlMap = ESSyncUtil.loadYamlToBytes(resourcesDir);
+        for (Map.Entry<String, byte[]> entry : yamlMap.entrySet()) {
+            String fileName = entry.getKey();
+            byte[] content = entry.getValue();
+
+            ESSyncConfig config = YmlConfigBinder.bindYmlToObj(null, content, ESSyncConfig.class, envProperties);
+            if (config == null) {
+                continue;
+            }
+            String[] destination = canalAdapter.getDestination();
+            if (ESSyncUtil.isEmpty(config.getDestination())) {
+                if (destination == null || destination.length == 0) {
+                    config.setDestination("");
+                } else if (destination.length == 1) {
+                    config.setDestination(destination[0]);
+                }
+            }
+            if (!Objects.equals(env, config.getEsMapping().getEnv())) {
+                continue;
+            }
+            String md5 = Util.md5(content);
+            try {
+                config.init(md5);
+            } catch (Exception e) {
+                throw new RuntimeException("ERROR Config: " + fileName + " " + e, e);
+            }
+            esSyncConfig.put(fileName, config);
+        }
+
+        log.info("## ES mapping config loaded");
+        return esSyncConfig;
+    }
 
     @Override
     public String toString() {
@@ -28,15 +111,20 @@ public class ESSyncConfig {
         return md5;
     }
 
-    public void init(String md5) {
-        if (esMapping._index == null) {
-            throw new NullPointerException("esMapping._index");
+    private void init(String md5) {
+        if (Util.isBlank(esMapping._index)) {
+            throw new NullPointerException("empty esMapping._index");
         }
-        if (esMapping._id == null && esMapping.getPk() == null) {
-            throw new NullPointerException("esMapping._id or esMapping.pk");
+        if (Util.isBlank(esMapping._id) && Util.isBlank(esMapping.getPk())) {
+            throw new NullPointerException("empty esMapping._id or esMapping.pk");
         }
-        if (esMapping.sql == null) {
-            throw new NullPointerException("esMapping.sql");
+        if (Util.isBlank(esMapping.sql)) {
+            throw new NullPointerException("empty esMapping.sql");
+        }
+        if (Util.isBlank(esMapping._id)) {
+            esMapping._id = esMapping.pk;
+        } else if (Util.isBlank(esMapping.pk)) {
+            esMapping.pk = esMapping._id;
         }
         this.md5 = md5;
         esMapping.setConfig(this);
@@ -45,24 +133,20 @@ public class ESSyncConfig {
         esMapping.setSchemaItem(schemaItem);
         schemaItem.init(null, esMapping);
         if (schemaItem.getAliasTableItems().isEmpty() || schemaItem.getSelectFields().isEmpty()) {
-            throw new RuntimeException("Parse sql error" + esMapping.getSql());
+            throw new RuntimeException("table fields is empty, Parse sql error" + esMapping.getSql());
         }
 
         for (Map.Entry<String, ObjectField> entry : esMapping.getObjFields().entrySet()) {
             ObjectField objectField = entry.getValue();
-            objectField.setEsMapping(esMapping);
-            objectField.setFieldName(entry.getKey());
-            String sql = objectField.getSql();
-            if (sql != null && !sql.isEmpty()) {
-                SchemaItem schemaItem1 = SqlParser.parse(objectField.sql());
-                schemaItem1.init(objectField, esMapping);
-                if (schemaItem1.getAliasTableItems().isEmpty() || schemaItem1.getSelectFields().isEmpty()) {
-                    throw new RuntimeException("Parse sql error" + sql);
-                }
-                objectField.setSchemaItem(schemaItem1);
+            objectField.fieldName = entry.getKey();
+            objectField.esMapping = esMapping;
+            ObjectField.ParamSql paramSql = objectField.getParamSql();
+            if (paramSql != null) {
+                paramSql.init(objectField);
             }
-            if (Util.isBlank(objectField.getJoinTableColumnName())) {
-                objectField.setJoinTableColumnName(objectField.joinTableColumnName());
+            ObjectField.ParamLlmVector paramLlmVector = objectField.getParamLlmVector();
+            if (paramLlmVector != null) {
+                paramLlmVector.init(objectField);
             }
         }
     }
@@ -95,6 +179,7 @@ public class ESSyncConfig {
         private String env;
         private String _index;
         private String _id;
+        private String pk;
         private long mappingMetadataTimeout = 12L * 60L * 60000L;
         private int retryOnConflict = 5;
         private boolean upsert = false;
@@ -106,7 +191,7 @@ public class ESSyncConfig {
         private boolean updateByQuerySkipIndexUpdatedTime = true;
         private int version = 0;
         private boolean enable = true;
-        private String pk;
+
         private String sql;
         // 对象字段, 例: objFields:
         // - _labels: array:;
@@ -267,22 +352,18 @@ public class ESSyncConfig {
          * object
          * object-sql
          * array-sql
+         * boolean
+         * static-method
+         * llm-vector
          */
         private Type type;
-
         private String fieldName;
-        private String sql;
-        private String method;
-        private String split = "";
-        private String onMainTableChangeWhereSql;
-        private String onSlaveTableChangeWhereSql;
-        /**
-         * 取这个 #{xxx}
-         */
-        private String joinTableColumnName;
-        private SchemaItem schemaItem;
         private ESMapping esMapping;
-        private transient StaticMethodAccessor<ESStaticMethodParam> staticMethodAccessor;
+
+        private ParamStaticMethod paramStaticMethod;
+        private ParamArray paramArray;
+        private ParamSql paramSql;
+        private ParamLlmVector paramLlmVector;
 
         @Override
         public String toString() {
@@ -303,13 +384,12 @@ public class ESSyncConfig {
          * @return ES对象
          * @see ESSyncServiceListener#onSyncAfter(List, ES7xAdapter, ESTemplate.BulkRequestList)
          */
-        public Object parse(Object val, ESMapping mapping) {
-            if (val == null) {
-                return null;
-            }
-
+        public Object parse(Object val, ESMapping mapping, Map<String, Object> row) {
             switch (type) {
                 case ARRAY: {
+                    if (val == null) {
+                        return null;
+                    }
                     if (val instanceof Collection) {
                         return val;
                     }
@@ -317,24 +397,45 @@ public class ESSyncConfig {
                     if (Util.isEmpty(varStr)) {
                         return null;
                     }
-                    String[] values = varStr.split(split);
+                    String[] values = varStr.split(paramArray.split);
                     return Arrays.asList(values);
                 }
                 case OBJECT: {
+                    if (val == null) {
+                        return null;
+                    }
                     if (val instanceof Map) {
                         return val;
                     }
                     return JsonUtil.toMap(val.toString(), true);
                 }
                 case BOOLEAN: {
+                    if (val == null) {
+                        return null;
+                    }
                     if (val instanceof Boolean) {
                         return val;
                     }
                     return ESSyncUtil.castToBoolean(val);
                 }
+                case LLM_VECTOR: {
+                    float[] vector;
+                    String string;
+                    if (val == null) {
+                        vector = null;
+                    } else if ((string = val.toString().trim()).isEmpty()) {
+                        vector = null;
+                    } else {
+                        vector = paramLlmVector.getTypeLlmVectorAPI().vector(string);
+                    }
+                    return vector;
+                }
                 case STATIC_METHOD: {
-                    if (staticMethodAccessor == null) {
-                        staticMethodAccessor = new StaticMethodAccessor<>(method, ESStaticMethodParam.class);
+                    if (val == null) {
+                        return null;
+                    }
+                    if (paramStaticMethod.staticMethodAccessor == null) {
+                        paramStaticMethod.staticMethodAccessor = new StaticMethodAccessor<>(paramStaticMethod.method, ESStaticMethodParam.class);
                     }
                     String[] split1 = fieldName.split("\\$");
                     String parentFieldName;
@@ -346,7 +447,7 @@ public class ESSyncConfig {
                         parentFieldName = split1[0];
                         fieldName = split1[1];
                     }
-                    return staticMethodAccessor.apply(new ESStaticMethodParam(val, mapping, fieldName, parentFieldName));
+                    return paramStaticMethod.staticMethodAccessor.apply(new ESStaticMethodParam(val, mapping, fieldName, parentFieldName));
                 }
                 case ARRAY_SQL:
                 case OBJECT_SQL:
@@ -356,99 +457,44 @@ public class ESSyncConfig {
             }
         }
 
-        public String getMethod() {
-            return method;
+        public ParamSql getParamSql() {
+            return paramSql;
         }
 
-        public void setMethod(String method) {
-            this.method = method;
+        public void setParamSql(ParamSql paramSql) {
+            this.paramSql = paramSql;
         }
 
-        public String getJoinTableColumnName() {
-            return joinTableColumnName;
+        public ParamArray getParamArray() {
+            return paramArray;
         }
 
-        public void setJoinTableColumnName(String joinTableColumnName) {
-            this.joinTableColumnName = joinTableColumnName;
+        public void setParamArray(ParamArray paramArray) {
+            this.paramArray = paramArray;
         }
 
-        public String[] groupByIdColumns() {
-            return SqlParser.getGroupByIdColumns(sql);
+        public ParamLlmVector getParamLlmVector() {
+            return paramLlmVector;
         }
 
-        String joinTableColumnName() {
-            if (type != null && !type.isSqlType()) {
-                return null;
-            }
-            SchemaItem.TableItem mainTable = schemaItem.getMainTable();
-            List<String> mainColumnList = SqlParser.getVarColumnList(onSlaveTableChangeWhereSql).stream()
-                    .filter(e -> e.isOwner(mainTable.getAlias()))
-                    .map(SqlParser.BinaryOpExpr::getName)
-                    .collect(Collectors.toList());
-            if (mainColumnList.isEmpty()) {
-                return null;
-            }
-            LinkedHashSet<String> mainColumnSet = new LinkedHashSet<>(mainColumnList);
-            if (mainColumnSet.size() != 1) {
-                throw new IllegalArgumentException("joinTableColumnName is only support single var column. find " + mainColumnSet);
-            }
-            return mainColumnSet.iterator().next();
+        public void setParamLlmVector(ParamLlmVector paramLlmVector) {
+            this.paramLlmVector = paramLlmVector;
         }
 
-        public String getOnSlaveTableChangeWhereSql() {
-            return onSlaveTableChangeWhereSql;
+        public ParamStaticMethod getParamStaticMethod() {
+            return paramStaticMethod;
         }
 
-        public void setOnSlaveTableChangeWhereSql(String onSlaveTableChangeWhereSql) {
-            this.onSlaveTableChangeWhereSql = onSlaveTableChangeWhereSql;
-        }
-
-        @Deprecated
-        public void setParentDocumentId(String joinTableColumnName) {
-            this.joinTableColumnName = joinTableColumnName;
-        }
-
-        @Deprecated
-        public void setOnChildChangeWhereSql(String onSlaveTableChangeWhereSql) {
-            this.onSlaveTableChangeWhereSql = onSlaveTableChangeWhereSql;
-        }
-
-        @Deprecated
-        public void setOnParentChangeWhereSql(String onMainTableChangeWhereSql) {
-            this.onMainTableChangeWhereSql = onMainTableChangeWhereSql;
-        }
-
-        public String getOnMainTableChangeWhereSql() {
-            return onMainTableChangeWhereSql;
-        }
-
-        public void setOnMainTableChangeWhereSql(String onMainTableChangeWhereSql) {
-            this.onMainTableChangeWhereSql = onMainTableChangeWhereSql;
-        }
-
-        public String getFullSql(boolean isMainTable) {
-            String sql1 = sql();
-            if (isMainTable) {
-                return sql1 + " " + onMainTableChangeWhereSql;
-            } else {
-                return sql1 + " " + onSlaveTableChangeWhereSql;
-            }
+        public void setParamStaticMethod(ParamStaticMethod paramStaticMethod) {
+            this.paramStaticMethod = paramStaticMethod;
         }
 
         public String getFieldName() {
             return fieldName;
         }
 
-        public void setFieldName(String fieldName) {
-            this.fieldName = fieldName;
-        }
-
         public ESMapping getEsMapping() {
             return esMapping;
-        }
-
-        public void setEsMapping(ESMapping esMapping) {
-            this.esMapping = esMapping;
         }
 
         public Type getType() {
@@ -459,34 +505,6 @@ public class ESSyncConfig {
             this.type = type;
         }
 
-        public String getSql() {
-            return sql;
-        }
-
-        public void setSql(String sql) {
-            this.sql = sql;
-        }
-
-        public String sql() {
-            return SqlParser.removeGroupBy(sql);
-        }
-
-        public String getSplit() {
-            return split;
-        }
-
-        public void setSplit(String split) {
-            this.split = split;
-        }
-
-        public SchemaItem getSchemaItem() {
-            return schemaItem;
-        }
-
-        public void setSchemaItem(SchemaItem schemaItem) {
-            this.schemaItem = schemaItem;
-        }
-
         public boolean isSqlType() {
             return type != null && type.isSqlType();
         }
@@ -495,14 +513,257 @@ public class ESSyncConfig {
             /**
              * 数组(逗号分割), 对象(JSON.parse), 数组(sql多条查询), 对象(sql单条查询) ,boolean
              */
-            ARRAY, OBJECT, ARRAY_SQL, OBJECT_SQL, BOOLEAN, STATIC_METHOD, URL;
+            ARRAY, OBJECT, ARRAY_SQL, OBJECT_SQL, BOOLEAN, STATIC_METHOD, LLM_VECTOR;
 
             public boolean isSqlType() {
                 return this == Type.OBJECT_SQL || this == Type.ARRAY_SQL;
             }
 
+            public boolean isLlmVector() {
+                return this == Type.LLM_VECTOR;
+            }
+
             public boolean isSingleJoinType() {
                 return this == Type.OBJECT_SQL;
+            }
+        }
+
+        public static class ParamArray {
+            private String split = "";
+
+            public String getSplit() {
+                return split;
+            }
+
+            public void setSplit(String split) {
+                this.split = split;
+            }
+        }
+
+        public static class ParamSql {
+            private String sql;
+            private String onMainTableChangeWhereSql;
+            private String onSlaveTableChangeWhereSql;
+            /**
+             * 默认取sql中的这个 #{xxx} 名
+             */
+            private String joinTableColumnName;
+
+            private transient SchemaItem schemaItem;
+
+            private void init(ObjectField objectField) {
+                if (!Util.isBlank(sql)) {
+                    SchemaItem schemaItem1 = SqlParser.parse(sql);
+                    schemaItem1.init(objectField, objectField.esMapping);
+                    if (schemaItem1.getAliasTableItems().isEmpty() || schemaItem1.getSelectFields().isEmpty()) {
+                        throw new RuntimeException("Parse sql error" + sql);
+                    }
+                    this.schemaItem = schemaItem1;
+                }
+                if (Util.isBlank(joinTableColumnName)) {
+                    this.joinTableColumnName = joinTableColumnName();
+                }
+            }
+
+            public String getSql() {
+                return sql;
+            }
+
+            public void setSql(String sql) {
+                this.sql = sql;
+            }
+
+            public String sql() {
+                return SqlParser.removeGroupBy(sql);
+            }
+
+            @Deprecated
+            public void setParentDocumentId(String joinTableColumnName) {
+                this.joinTableColumnName = joinTableColumnName;
+            }
+
+            @Deprecated
+            public void setOnChildChangeWhereSql(String onSlaveTableChangeWhereSql) {
+                this.onSlaveTableChangeWhereSql = onSlaveTableChangeWhereSql;
+            }
+
+            @Deprecated
+            public void setOnParentChangeWhereSql(String onMainTableChangeWhereSql) {
+                this.onMainTableChangeWhereSql = onMainTableChangeWhereSql;
+            }
+
+            public SchemaItem getSchemaItem() {
+                return schemaItem;
+            }
+
+            public String getJoinTableColumnName() {
+                return joinTableColumnName;
+            }
+
+            public void setJoinTableColumnName(String joinTableColumnName) {
+                this.joinTableColumnName = joinTableColumnName;
+            }
+
+            public String[] groupByIdColumns() {
+                return SqlParser.getGroupByIdColumns(sql);
+            }
+
+            String joinTableColumnName() {
+                SchemaItem.TableItem mainTable = schemaItem.getMainTable();
+                List<String> mainColumnList = SqlParser.getVarColumnList(onSlaveTableChangeWhereSql).stream()
+                        .filter(e -> e.isOwner(mainTable.getAlias()))
+                        .map(SqlParser.BinaryOpExpr::getName)
+                        .collect(Collectors.toList());
+                if (mainColumnList.isEmpty()) {
+                    return null;
+                }
+                LinkedHashSet<String> mainColumnSet = new LinkedHashSet<>(mainColumnList);
+                if (mainColumnSet.size() != 1) {
+                    throw new IllegalArgumentException("joinTableColumnName is only support single var column. find " + mainColumnSet);
+                }
+                return mainColumnSet.iterator().next();
+            }
+
+            public String getOnSlaveTableChangeWhereSql() {
+                return onSlaveTableChangeWhereSql;
+            }
+
+            public void setOnSlaveTableChangeWhereSql(String onSlaveTableChangeWhereSql) {
+                this.onSlaveTableChangeWhereSql = onSlaveTableChangeWhereSql;
+            }
+
+            public String getOnMainTableChangeWhereSql() {
+                return onMainTableChangeWhereSql;
+            }
+
+            public void setOnMainTableChangeWhereSql(String onMainTableChangeWhereSql) {
+                this.onMainTableChangeWhereSql = onMainTableChangeWhereSql;
+            }
+
+            public String getFullSql(boolean isMainTable) {
+                String sql1 = sql();
+                if (isMainTable) {
+                    return sql1 + " " + onMainTableChangeWhereSql;
+                } else {
+                    return sql1 + " " + onSlaveTableChangeWhereSql;
+                }
+            }
+
+        }
+
+        public static class ParamStaticMethod {
+            private String method;
+            private transient StaticMethodAccessor<ESStaticMethodParam> staticMethodAccessor;
+
+            public String getMethod() {
+                return method;
+            }
+
+            public void setMethod(String method) {
+                this.method = method;
+            }
+        }
+
+        /**
+         * Dense vector field type 密集向量字段类型
+         * https://www.elastic.co/guide/en/elasticsearch/reference/current/dense-vector.html#dense-vector-params
+         */
+        public static class ParamLlmVector {
+            private LlmVectorType type = LlmVectorType.openAi;
+            private String apiKey;
+            private String baseUrl;
+            private String modelName;
+            /**
+             * （可选，整数）向量维度数
+             */
+            private Integer dimensions = null;
+
+            /**
+             * etl刷数据时，判断是否相等的字段
+             */
+            private String etlEqualsFieldName;
+            private volatile transient TypeLlmVectorAPI typeLlmVectorAPI;
+
+            private void init(ObjectField objectField) {
+                getTypeLlmVectorAPI();
+                if (Util.isBlank(etlEqualsFieldName)) {
+                    ESMapping esMapping = objectField.esMapping;
+                    SchemaItem.FieldItem currFieldItem = esMapping.getSchemaItem().getSelectFields().get(objectField.fieldName);
+                    List<SchemaItem.FieldItem> fieldItemList = esMapping.getSchemaItem().selectField(currFieldItem);
+                    if (fieldItemList.size() == 1) {
+                        this.etlEqualsFieldName = fieldItemList.get(0).getFieldName();
+                    } else {
+                        throw new IllegalArgumentException("etlEqualsFieldName must not empty!");
+                    }
+                }
+            }
+
+            @Override
+            public String toString() {
+                return type + "[" + modelName + "]";
+            }
+
+            public TypeLlmVectorAPI getTypeLlmVectorAPI() {
+                if (typeLlmVectorAPI == null) {
+                    synchronized (this) {
+                        if (typeLlmVectorAPI == null) {
+                            typeLlmVectorAPI = new TypeLlmVectorAPI(this);
+                        }
+                    }
+                }
+                return typeLlmVectorAPI;
+            }
+
+            public LlmVectorType getType() {
+                return type;
+            }
+
+            public void setType(LlmVectorType type) {
+                this.type = type;
+            }
+
+            public String getEtlEqualsFieldName() {
+                return etlEqualsFieldName;
+            }
+
+            public void setEtlEqualsFieldName(String refTextFieldName) {
+                this.etlEqualsFieldName = refTextFieldName;
+            }
+
+            public Integer getDimensions() {
+                return dimensions;
+            }
+
+            public void setDimensions(Integer dimensions) {
+                this.dimensions = dimensions;
+            }
+
+            public String getApiKey() {
+                return apiKey;
+            }
+
+            public void setApiKey(String apiKey) {
+                this.apiKey = apiKey;
+            }
+
+            public String getBaseUrl() {
+                return baseUrl;
+            }
+
+            public void setBaseUrl(String baseUrl) {
+                this.baseUrl = baseUrl;
+            }
+
+            public String getModelName() {
+                return modelName;
+            }
+
+            public void setModelName(String modelName) {
+                this.modelName = modelName;
+            }
+
+            public enum LlmVectorType {
+                openAi
             }
         }
     }

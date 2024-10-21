@@ -1,7 +1,7 @@
 package com.github.dts.impl.elasticsearch7x.nested;
 
 import com.github.dts.util.CacheMap;
-import com.github.dts.util.SchemaItem;
+import com.github.dts.util.ColumnItem;
 import com.github.dts.util.SqlParser;
 import com.google.common.collect.Lists;
 import org.slf4j.Logger;
@@ -25,7 +25,7 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
                                  String[] uniqueColumnNames,
                                  List<String> addColumnNameList,
                                  List<T> mergeList,
-                                 Collection<SchemaItem.ColumnItem> needGroupBy) {
+                                 Collection<ColumnItem> needGroupBy) {
         super(exprSql, args, new LinkedHashMap<>(), dataSourceKey, needGroupBy);
         this.uniqueColumnNames = uniqueColumnNames;
         this.addColumnNameList = addColumnNameList;
@@ -77,7 +77,7 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
                     } else {
                         List<List<T>> partitionList = Lists.partition(valueList, maxIdInCount);
                         for (List<T> partition : partitionList) {
-                            Collection<SchemaItem.ColumnItem> needGroupBy = groupBy ? first.getNeedGroupBy() : null;
+                            Collection<ColumnItem> needGroupBy = groupBy ? first.getNeedGroupBy() : null;
                             Map<String, Object[]> distinctArgList = new LinkedHashMap<>();
                             for (T e : partition) {
                                 distinctArgList.put(argsToString(e.getArgs()), e.getArgs());
@@ -104,7 +104,7 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
     }
 
     private static <T extends JdbcTemplateSQL> MergeJdbcTemplateSQL<T> newNoMerge(List<T> mergeList, T value, boolean groupBy) {
-        Collection<SchemaItem.ColumnItem> needGroupBy = value.getNeedGroupBy();
+        Collection<ColumnItem> needGroupBy = value.getNeedGroupBy();
         String exprSql = groupBy && needGroupBy != null && !needGroupBy.isEmpty() ?
                 SqlParser.setGroupBy(value.getExprSql(), value.getNeedGroupBy()) : value.getExprSql();
         return new MergeJdbcTemplateSQL<>(

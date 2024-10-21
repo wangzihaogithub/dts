@@ -5,7 +5,7 @@ import com.github.dts.util.Dml;
 import com.github.dts.util.ESSyncConfig;
 import com.github.dts.util.ESSyncConfig.ESMapping;
 import com.github.dts.util.ESTemplate;
-import com.github.dts.util.SchemaItem.ColumnItem;
+import com.github.dts.util.ColumnItem;
 import com.github.dts.util.SchemaItem.FieldItem;
 import com.github.dts.util.SchemaItem.TableItem;
 

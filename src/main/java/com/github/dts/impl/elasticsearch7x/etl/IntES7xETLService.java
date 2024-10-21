@@ -333,7 +333,7 @@ public class IntES7xETLService {
                                 if (objectField == null) {
                                     continue;
                                 }
-                                Set<String> cols = SQL.convertToSql(objectField.getFullSql(true), Collections.emptyMap()).getArgsMap().keySet();
+                                Set<String> cols = SQL.convertToSql(objectField.getParamSql().getFullSql(true), Collections.emptyMap()).getArgsMap().keySet();
                                 for (String col : cols) {
                                     select.add("`" + col + "`");
                                 }
@@ -358,9 +358,9 @@ public class IntES7xETLService {
                                     if (map == null) {
                                         continue;
                                     }
-                                    SQL sql1 = SQL.convertToSql(objectField.getFullSql(true), map);
+                                    SQL sql1 = SQL.convertToSql(objectField.getParamSql().getFullSql(true), map);
                                     EsJdbcTemplateSQL jdbcTemplateSQL = new EsJdbcTemplateSQL(sql1.getExprSql(), sql1.getArgs(), map, config.getDataSourceKey(),
-                                            objectField.getSchemaItem().getGroupByIdColumns(), hit);
+                                            objectField.getParamSql().getSchemaItem().getGroupByIdColumns(), hit);
                                     list.add(jdbcTemplateSQL);
                                 }
                                 jdbcTemplateSQLList.put(diffField, list);
@@ -462,6 +462,7 @@ public class IntES7xETLService {
             setSuspendEs7x(true, clientIdentity);
 
             AbstractMessageService messageService = startupServer.getMessageService();
+            AtomicInteger configDone = new AtomicInteger(configMap.values().size());
             for (ESSyncConfig config : configMap.values()) {
                 JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(config.getDataSourceKey());
                 String catalog = CanalConfig.DatasourceConfig.getCatalog(config.getDataSourceKey());
@@ -472,7 +473,7 @@ public class IntES7xETLService {
                         selectMaxId(jdbcTemplate, pk, tableName) : offsetEnd;
 
                 Date timestamp = new Timestamp(System.currentTimeMillis());
-                AtomicInteger done = new AtomicInteger(0);
+                AtomicInteger done = new AtomicInteger(threads);
                 AtomicLong dmlSize = new AtomicLong(0);
                 for (int i = 0; i < threads; i++) {
                     runnableList.add(new SyncRunnable(name, this,
@@ -501,11 +502,13 @@ public class IntES7xETLService {
 
                         @Override
                         public void done() {
-                            if (done.incrementAndGet() == threads) {
+                            if (done.incrementAndGet() == 0) {
                                 if (log.isInfoEnabled()) {
                                     log.info("syncAll done {}", this);
                                 }
-                                setSuspendEs7x(false, clientIdentity);
+                                if (configDone.decrementAndGet() == 0) {
+                                    setSuspendEs7x(false, clientIdentity);
+                                }
                                 sendDone(messageService, runnableList, timestamp, dmlSize.longValue(), onlyFieldNameSet, adapter, config, onlyCurrentIndex);
                             }
                         }

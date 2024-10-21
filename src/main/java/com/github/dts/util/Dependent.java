@@ -110,7 +110,7 @@ public class Dependent {
      * @return 嵌套文档主表
      */
     public SchemaItem.TableItem getNestedMainTable() {
-        return schemaItem.getObjectField().getSchemaItem().getMainTable();
+        return schemaItem.getObjectField().getParamSql().getSchemaItem().getMainTable();
     }
 
     /**
@@ -118,7 +118,7 @@ public class Dependent {
      * @return 嵌套文档从表
      */
     public List<SchemaItem.TableItem> getNestedSlaveTableList() {
-        return schemaItem.getObjectField().getSchemaItem().getSlaveTableList();
+        return schemaItem.getObjectField().getParamSql().getSchemaItem().getSlaveTableList();
     }
 
     /**

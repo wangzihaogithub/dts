@@ -20,6 +20,10 @@ public interface ESBulkRequest {
 
     ESBulkResponse bulk();
 
+    interface ESRequest extends TrimRequest {
+
+    }
+
     interface ESIndexRequest extends ESRequest {
 
     }
@@ -31,12 +35,6 @@ public interface ESBulkRequest {
 
     interface ESUpdateRequest extends ESRequest {
 
-    }
-
-    interface ESRequest {
-        default boolean isOverlap(ESRequest prev) {
-            return false;
-        }
     }
 
     interface ESDeleteRequest extends ESRequest {
