@@ -77,7 +77,7 @@ public class NestedFieldWriter {
      * @param dml dml数据
      * @return Dependent
      */
-    private static DependentGroup getDependentList(List<SchemaItem> schemaItemList, Dml dml) {
+    private static SqlDependentGroup getDependentList(List<SchemaItem> schemaItemList, Dml dml) {
         if (schemaItemList == null || schemaItemList.isEmpty()) {
             return null;
         }
@@ -92,27 +92,27 @@ public class NestedFieldWriter {
         }
 
         int size = Math.max(oldList.size(), dataList.size());
-        DependentGroup dependentGroup = null;
+        SqlDependentGroup sqlDependentGroup = null;
         for (SchemaItem schemaItem : schemaItemList) {
             for (int i = 0; i < size; i++) {
-                Dependent dependent = new Dependent(schemaItem, i, dml);
-                if (dependentGroup == null) {
-                    dependentGroup = new DependentGroup();
+                SqlDependent sqlDependent = new SqlDependent(schemaItem, i, dml);
+                if (sqlDependentGroup == null) {
+                    sqlDependentGroup = new SqlDependentGroup();
                 }
-                if (dependent.isIndexMainTable()) {
-                    dependentGroup.addMain(dependent);
-                } else if (dependent.isNestedMainTable()) {
-                    if (dependent.getSchemaItem().isJoinByMainTablePrimaryKey()) {
-                        dependentGroup.addMain(dependent);
+                if (sqlDependent.isIndexMainTable()) {
+                    sqlDependentGroup.addMain(sqlDependent);
+                } else if (sqlDependent.isNestedMainTable()) {
+                    if (sqlDependent.getSchemaItem().isJoinByMainTablePrimaryKey()) {
+                        sqlDependentGroup.addMain(sqlDependent);
                     } else {
-                        dependentGroup.addMainJoin(dependent);
+                        sqlDependentGroup.addMainJoin(sqlDependent);
                     }
                 } else {
-                    dependentGroup.addSlave(dependent);
+                    sqlDependentGroup.addSlave(sqlDependent);
                 }
             }
         }
-        return dependentGroup;
+        return sqlDependentGroup;
     }
 
     /**
@@ -154,35 +154,35 @@ public class NestedFieldWriter {
     }
 
 
-    private static Set<DependentSQL> convertToSql(List<Dependent> mainTableDependentList) {
+    private static Set<DependentSQL> convertToSql(List<SqlDependent> mainTableSqlDependentList) {
         Set<DependentSQL> sqlList = new LinkedHashSet<>();
-        for (Dependent dependent : mainTableDependentList) {
-            boolean indexMainTable = dependent.isIndexMainTable();
-            ESSyncConfig.ObjectField objectField = dependent.getSchemaItem().getObjectField();
+        for (SqlDependent sqlDependent : mainTableSqlDependentList) {
+            boolean indexMainTable = sqlDependent.isIndexMainTable();
+            ESSyncConfig.ObjectField objectField = sqlDependent.getSchemaItem().getObjectField();
             // 主表删除，nested字段会自动删除，无需处理
-            if (dependent.getDml().isTypeDelete() && indexMainTable) {
+            if (sqlDependent.getDml().isTypeDelete() && indexMainTable) {
                 continue;
             }
-            if (dependent.getDml().isTypeUpdate()) {
+            if (sqlDependent.getDml().isTypeUpdate()) {
                 // 改之前的数据也要更新
-                Map<String, Object> mergeBeforeDataMap = dependent.getMergeBeforeDataMap();
+                Map<String, Object> mergeBeforeDataMap = sqlDependent.getMergeBeforeDataMap();
                 if (!mergeBeforeDataMap.isEmpty()) {
                     ESSyncConfig.ObjectField.ParamSql paramSql = objectField.getParamSql();
                     if (paramSql != null) {
                         String fullSql = paramSql.getFullSql(indexMainTable);
                         SQL sql = SQL.convertToSql(fullSql, mergeBeforeDataMap);
-                        sqlList.add(new DependentSQL(sql, dependent, paramSql.getSchemaItem().getGroupByIdColumns()));
+                        sqlList.add(new DependentSQL(sql, sqlDependent, paramSql.getSchemaItem().getGroupByIdColumns()));
                     }
                 }
             }
             // 改之后的数据
-            Map<String, Object> mergeAfterDataMap = dependent.getMergeAfterDataMap();
+            Map<String, Object> mergeAfterDataMap = sqlDependent.getMergeAfterDataMap();
             if (!mergeAfterDataMap.isEmpty()) {
                 ESSyncConfig.ObjectField.ParamSql paramSql = objectField.getParamSql();
                 if (paramSql != null) {
                     String fullSql = paramSql.getFullSql(indexMainTable);
                     SQL sql = SQL.convertToSql(fullSql, mergeAfterDataMap);
-                    sqlList.add(new DependentSQL(sql, dependent, paramSql.getSchemaItem().getGroupByIdColumns()));
+                    sqlList.add(new DependentSQL(sql, sqlDependent, paramSql.getSchemaItem().getGroupByIdColumns()));
                 }
             }
         }
@@ -196,26 +196,26 @@ public class NestedFieldWriter {
         MergeJdbcTemplateSQL.executeQueryList(sqlList, cacheMap, (sql, list) -> executeEsTemplateUpdate(bulkRequestList, esTemplate, sql, list));
     }
 
-    public DependentGroup convertToDependentGroup(List<Dml> dmls, boolean onlyCurrentIndex, boolean onlyEffect) {
-        List<DependentGroup> groupList = new ArrayList<>(dmls.size());
+    public SqlDependentGroup convertToSqlDependentGroup(List<Dml> dmls, boolean onlyCurrentIndex, boolean onlyEffect) {
+        List<SqlDependentGroup> groupList = new ArrayList<>(dmls.size());
         for (Dml dml : dmls) {
             Map<String, List<SchemaItem>> map = onlyCurrentIndex ? onlyCurrentIndexSchemaItemMap : schemaItemMap;
-            DependentGroup dmlDependentGroup = getDependentList(map.get(dml.getTable()), dml);
-            if (dmlDependentGroup != null) {
-                groupList.add(dmlDependentGroup);
+            SqlDependentGroup dmlSqlDependentGroup = getDependentList(map.get(dml.getTable()), dml);
+            if (dmlSqlDependentGroup != null) {
+                groupList.add(dmlSqlDependentGroup);
             }
         }
-        return new DependentGroup(groupList, onlyEffect);
+        return new SqlDependentGroup(groupList, onlyEffect);
     }
 
-    public void writeMainTable(List<Dependent> mainTableDependentList,
+    public void writeMainTable(List<SqlDependent> mainTableSqlDependentList,
                                ESTemplate.BulkRequestList bulkRequestList,
                                int maxIdIn,
                                CacheMap cacheMap) {
-        if (mainTableDependentList.isEmpty()) {
+        if (mainTableSqlDependentList.isEmpty()) {
             return;
         }
-        Set<DependentSQL> sqlList = convertToSql(mainTableDependentList);
+        Set<DependentSQL> sqlList = convertToSql(mainTableSqlDependentList);
         List<MergeJdbcTemplateSQL<DependentSQL>> mergeSqlList = MergeJdbcTemplateSQL.merge(sqlList, maxIdIn);
         if (mainTableListenerExecutor == null) {
             executeEsTemplateUpdate(mergeSqlList, bulkRequestList, cacheMap, esTemplate);
@@ -240,16 +240,16 @@ public class NestedFieldWriter {
     }
 
     public static class DependentSQL extends JdbcTemplateSQL {
-        private final Dependent dependent;
+        private final SqlDependent sqlDependent;
 
-        DependentSQL(SQL sql, Dependent dependent, Collection<ColumnItem> needGroupBy) {
+        DependentSQL(SQL sql, SqlDependent sqlDependent, Collection<ColumnItem> needGroupBy) {
             super(sql.getExprSql(), sql.getArgs(), sql.getArgsMap(),
-                    dependent.getSchemaItem().getEsMapping().getConfig().getDataSourceKey(), needGroupBy);
-            this.dependent = dependent;
+                    sqlDependent.getSchemaItem().getEsMapping().getConfig().getDataSourceKey(), needGroupBy);
+            this.sqlDependent = sqlDependent;
         }
 
-        public Dependent getDependent() {
-            return dependent;
+        public SqlDependent getDependent() {
+            return sqlDependent;
         }
 
         public Object getPkValue() {
@@ -259,11 +259,11 @@ public class NestedFieldWriter {
         }
 
         public String getPkColumnName() {
-            ESSyncConfig.ObjectField objectField = dependent.getSchemaItem().getObjectField();
+            ESSyncConfig.ObjectField objectField = sqlDependent.getSchemaItem().getObjectField();
             String columnName;
-            if (dependent.isIndexMainTable()) {
+            if (sqlDependent.isIndexMainTable()) {
                 columnName = objectField.getEsMapping().getSchemaItem().getIdField().getColumnName();
-            } else if (dependent.getSchemaItem().isJoinByMainTablePrimaryKey()) {
+            } else if (sqlDependent.getSchemaItem().isJoinByMainTablePrimaryKey()) {
                 columnName = objectField.getParamSql().getJoinTableColumnName();
             } else {
                 columnName = null;
@@ -277,12 +277,12 @@ public class NestedFieldWriter {
             if (!(o instanceof DependentSQL)) return false;
             if (!super.equals(o)) return false;
             DependentSQL that = (DependentSQL) o;
-            return Objects.equals(dependent, that.dependent);
+            return Objects.equals(sqlDependent, that.sqlDependent);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(super.hashCode(), dependent);
+            return Objects.hash(super.hashCode(), sqlDependent);
         }
     }
 

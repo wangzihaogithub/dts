@@ -155,7 +155,7 @@ public class BasicFieldWriter {
                 }
             }
             if (!add && existTable) {
-                result.insertList.add(new Dependent(schemaItem, index, dml, Boolean.FALSE));
+                result.insertList.add(new SqlDependent(schemaItem, index, dml, Boolean.FALSE));
             }
         }
     }
@@ -294,7 +294,7 @@ public class BasicFieldWriter {
             }
 
             if (!add && existTable) {
-                result.updateList.add(new Dependent(schemaItem, index, dml, Boolean.FALSE));
+                result.updateList.add(new SqlDependent(schemaItem, index, dml, Boolean.FALSE));
             }
         }
     }
@@ -326,7 +326,7 @@ public class BasicFieldWriter {
                 Object pkVal = esTemplate.getIdValFromRS(mapping, data);
                 if (pkVal != null && !"".equals(pkVal)) {
                     esTemplate.delete(mapping, pkVal, bulkRequestList);
-                    result.deleteList.add(new Dependent(schemaItem, index, dml, Boolean.TRUE));
+                    result.deleteList.add(new SqlDependent(schemaItem, index, dml, Boolean.TRUE));
                     add = true;
                 }
             }
@@ -375,7 +375,7 @@ public class BasicFieldWriter {
             }
 
             if (!add && existTable) {
-                result.deleteList.add(new Dependent(schemaItem, index, dml, Boolean.FALSE));
+                result.deleteList.add(new SqlDependent(schemaItem, index, dml, Boolean.FALSE));
             }
         }
     }
@@ -386,12 +386,12 @@ public class BasicFieldWriter {
      * @param config es配置
      * @param data   单行dml数据
      */
-    private Dependent singleTableSimpleFiledInsert(ESSyncConfig config, Map<String, Object> data, Dml dml, int index, ESTemplate.BulkRequestList bulkRequestList) {
+    private SqlDependent singleTableSimpleFiledInsert(ESSyncConfig config, Map<String, Object> data, Dml dml, int index, ESTemplate.BulkRequestList bulkRequestList) {
         ESMapping mapping = config.getEsMapping();
         Map<String, Object> esFieldData = new LinkedHashMap<>();
         Object idVal = esTemplate.getESDataFromDmlData(mapping, data, esFieldData);
         esTemplate.insert(mapping, idVal, esFieldData, bulkRequestList);
-        return new Dependent(config.getEsMapping().getSchemaItem(), index, dml, Boolean.TRUE);
+        return new SqlDependent(config.getEsMapping().getSchemaItem(), index, dml, Boolean.TRUE);
     }
 
     /**
@@ -402,13 +402,13 @@ public class BasicFieldWriter {
      * @param data   单行data数据
      * @param old    单行old数据
      */
-    private Dependent singleTableSimpleFiledUpdate(ESSyncConfig config, Dml dml, Map<String, Object> data,
-                                                   Map<String, Object> old, int index, ESTemplate.BulkRequestList bulkRequestList) {
+    private SqlDependent singleTableSimpleFiledUpdate(ESSyncConfig config, Dml dml, Map<String, Object> data,
+                                                      Map<String, Object> old, int index, ESTemplate.BulkRequestList bulkRequestList) {
         ESMapping mapping = config.getEsMapping();
         Map<String, Object> esFieldData = new LinkedHashMap<>();
         Object idVal = esTemplate.getESDataFromDmlData(mapping, data, old, esFieldData, dml.getTable());
         esTemplate.update(mapping, idVal, esFieldData, bulkRequestList);
-        return new Dependent(config.getEsMapping().getSchemaItem(), index, dml, esFieldData.isEmpty() ? Boolean.FALSE : Boolean.TRUE);
+        return new SqlDependent(config.getEsMapping().getSchemaItem(), index, dml, esFieldData.isEmpty() ? Boolean.FALSE : Boolean.TRUE);
     }
 
     /**
@@ -419,8 +419,8 @@ public class BasicFieldWriter {
      * @param data      单行dml数据
      * @param tableItem 当前表配置
      */
-    private Dependent joinTableSimpleFieldOperation(ESSyncConfig config, Dml dml, Map<String, Object> data,
-                                                    TableItem tableItem, Map<String, Object> esFieldData, int index, ESTemplate.BulkRequestList bulkRequestList) {
+    private SqlDependent joinTableSimpleFieldOperation(ESSyncConfig config, Dml dml, Map<String, Object> data,
+                                                       TableItem tableItem, Map<String, Object> esFieldData, int index, ESTemplate.BulkRequestList bulkRequestList) {
         ESMapping mapping = config.getEsMapping();
 
         Map<String, Object> paramsTmp = new LinkedHashMap<>();
@@ -442,7 +442,7 @@ public class BasicFieldWriter {
         if (effect) {
             esTemplate.updateByQuery(config, paramsTmp, esFieldData, bulkRequestList);
         }
-        return new Dependent(config.getEsMapping().getSchemaItem(), index, dml, effect);
+        return new SqlDependent(config.getEsMapping().getSchemaItem(), index, dml, effect);
     }
 
     /**
@@ -503,9 +503,9 @@ public class BasicFieldWriter {
 
     public static class WriteResult {
         private final List<ESSyncConfigSQL> sqlList = new ArrayList<>();
-        private final List<Dependent> updateList = new ArrayList<>();
-        private final List<Dependent> insertList = new ArrayList<>();
-        private final List<Dependent> deleteList = new ArrayList<>();
+        private final List<SqlDependent> updateList = new ArrayList<>();
+        private final List<SqlDependent> insertList = new ArrayList<>();
+        private final List<SqlDependent> deleteList = new ArrayList<>();
 
         public void add(WriteResult result) {
             sqlList.addAll(result.sqlList);
@@ -519,14 +519,14 @@ public class BasicFieldWriter {
             for (ESSyncConfigSQL sql : sqlList) {
                 indices.add(sql.getConfig().getEsMapping().get_index());
             }
-            for (Dependent dependent : updateList) {
-                indices.add(dependent.getSchemaItem().getEsMapping().get_index());
+            for (SqlDependent sqlDependent : updateList) {
+                indices.add(sqlDependent.getSchemaItem().getEsMapping().get_index());
             }
-            for (Dependent dependent : insertList) {
-                indices.add(dependent.getSchemaItem().getEsMapping().get_index());
+            for (SqlDependent sqlDependent : insertList) {
+                indices.add(sqlDependent.getSchemaItem().getEsMapping().get_index());
             }
-            for (Dependent dependent : deleteList) {
-                indices.add(dependent.getSchemaItem().getEsMapping().get_index());
+            for (SqlDependent sqlDependent : deleteList) {
+                indices.add(sqlDependent.getSchemaItem().getEsMapping().get_index());
             }
             return indices;
         }
@@ -535,15 +535,15 @@ public class BasicFieldWriter {
             return sqlList;
         }
 
-        public List<Dependent> getDeleteList() {
+        public List<SqlDependent> getDeleteList() {
             return deleteList;
         }
 
-        public List<Dependent> getInsertList() {
+        public List<SqlDependent> getInsertList() {
             return insertList;
         }
 
-        public List<Dependent> getUpdateList() {
+        public List<SqlDependent> getUpdateList() {
             return updateList;
         }
     }

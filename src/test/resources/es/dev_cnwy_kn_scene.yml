@@ -9,16 +9,14 @@ esMapping:
   indexUpdatedTime: 'indexUpdatedTime'
   sql: "SELECT
         s.id as id,
-        s.type stype,
-        s.scene,
-        s.speech1,
-        s.speech2,
-        s.scene as text,
-        s.scene as textVector
+        s.type,
+        concat(ifnull(s.speech1,''), ifnull(s.speech2,'')) answer,
+        s.scene as question,
+        s.scene as questionVector
       FROM kn_scene s
       "
   objFields:
-    textVector:
+    questionVector:
       type: llm-vector
       paramLlmVector:
         apiKey: ${cnwy.llm-api-key}

@@ -16,7 +16,7 @@ import java.util.stream.Collectors;
 
 class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Runnable {
     private static final Logger log = LoggerFactory.getLogger(NestedMainJoinTableRunnable.class);
-    private final List<Dependent> dmlList;
+    private final List<SqlDependent> dmlList;
     private final ES7xTemplate es7xTemplate;
     private final int maxIdInCount;
     private final int streamChunkSize;
@@ -26,14 +26,14 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
     private final ESTemplate.BulkRequestList bulkRequestList;
     private final ESTemplate.CommitListener commitListener;
 
-    NestedMainJoinTableRunnable(List<Dependent> dmlList, ES7xTemplate es7xTemplate,
+    NestedMainJoinTableRunnable(List<SqlDependent> dmlList, ES7xTemplate es7xTemplate,
                                 ESTemplate.BulkRequestList bulkRequestList,
                                 ESTemplate.CommitListener commitListener,
                                 int maxIdInCount, int streamChunkSize, Timestamp maxTimestamp) {
         this(dmlList, es7xTemplate, bulkRequestList, commitListener, maxIdInCount, streamChunkSize, maxTimestamp, null, null);
     }
 
-    NestedMainJoinTableRunnable(List<Dependent> dmlList, ES7xTemplate es7xTemplate,
+    NestedMainJoinTableRunnable(List<SqlDependent> dmlList, ES7xTemplate es7xTemplate,
                                 ESTemplate.BulkRequestList bulkRequestList,
                                 ESTemplate.CommitListener commitListener,
                                 int maxIdInCount, int streamChunkSize, Timestamp maxTimestamp,
@@ -51,7 +51,7 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
     }
 
     static NestedMainJoinTableRunnable merge(NestedMainJoinTableRunnable oldRun, NestedMainJoinTableRunnable newRun) {
-        List<Dependent> dmlList = new ArrayList<>(oldRun.dmlList.size() + newRun.dmlList.size());
+        List<SqlDependent> dmlList = new ArrayList<>(oldRun.dmlList.size() + newRun.dmlList.size());
         dmlList.addAll(oldRun.dmlList);
         dmlList.addAll(newRun.dmlList);
         return new NestedMainJoinTableRunnable(dmlList, oldRun.es7xTemplate,
@@ -61,25 +61,25 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
                 oldRun, newRun);
     }
 
-    private static DependentSQL convertParentSql(Dependent dependent, Function<Dependent, Map<String, Object>> rowGetter) {
-        String fullSql = dependent.getSchemaItem().getObjectField().getParamSql().getFullSql(false);
-        return new DependentSQL(SQL.convertToSql(fullSql, rowGetter.apply(dependent)), dependent, dependent.getSchemaItem().getGroupByIdColumns());
+    private static DependentSQL convertParentSql(SqlDependent sqlDependent, Function<SqlDependent, Map<String, Object>> rowGetter) {
+        String fullSql = sqlDependent.getSchemaItem().getObjectField().getParamSql().getFullSql(false);
+        return new DependentSQL(SQL.convertToSql(fullSql, rowGetter.apply(sqlDependent)), sqlDependent, sqlDependent.getSchemaItem().getGroupByIdColumns());
     }
 
-    private static DependentSQL convertChildrenSQL(Dependent dependent, Function<Dependent, Map<String, Object>> rowGetter) {
-        SchemaItem.TableItem tableItem = dependent.getIndexMainTable();
+    private static DependentSQL convertChildrenSQL(SqlDependent sqlDependent, Function<SqlDependent, Map<String, Object>> rowGetter) {
+        SchemaItem.TableItem tableItem = sqlDependent.getIndexMainTable();
 
-        Dml dml = dependent.getDml();
+        Dml dml = sqlDependent.getDml();
         StringBuilder condition = new StringBuilder();
         String and = " AND ";
 
-        if (dependent.getSchemaItem().getObjectField().getType().isSingleJoinType()) {
-            Set<String> pkNames = dependent.getSchemaItem().getOnMainTableChangeWhereSqlVarList();
+        if (sqlDependent.getSchemaItem().getObjectField().getType().isSingleJoinType()) {
+            Set<String> pkNames = sqlDependent.getSchemaItem().getOnMainTableChangeWhereSqlVarList();
             List<String> dmlPkNames = dml.getPkNames();
             String pkName = pkNames.iterator().next();
             ESSyncUtil.appendConditionByExpr(condition, SQL.wrapPlaceholder(dmlPkNames.get(0)), tableItem.getAlias(), pkName, and);
         } else {
-            String joinTableColumnName = dependent.getSchemaItem().getObjectField().getParamSql().getJoinTableColumnName();
+            String joinTableColumnName = sqlDependent.getSchemaItem().getObjectField().getParamSql().getJoinTableColumnName();
             ESSyncUtil.appendConditionByExpr(condition, SQL.wrapPlaceholder(joinTableColumnName), tableItem.getAlias(), joinTableColumnName, and);
         }
 
@@ -91,14 +91,14 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
         Map<String, List<String>> columnList = Collections.singletonMap(tableItem.getAlias(), dml.getPkNames());
         String sql2 = SqlParser.changeSelect(sql1, columnList, false);
 
-        SQL sql = SQL.convertToSql(sql2, rowGetter.apply(dependent));
-        return new DependentSQL(sql, dependent, null);
+        SQL sql = SQL.convertToSql(sql2, rowGetter.apply(sqlDependent));
+        return new DependentSQL(sql, sqlDependent, null);
     }
 
     @Override
     public void run() {
-        List<Dependent> dependentList = dmlList.stream().filter(e -> !ESSyncUtil.isEmpty(e.getDml().getPkNames())).collect(Collectors.toList());
-        if (dependentList.isEmpty()) {
+        List<SqlDependent> sqlDependentList = dmlList.stream().filter(e -> !ESSyncUtil.isEmpty(e.getDml().getPkNames())).collect(Collectors.toList());
+        if (sqlDependentList.isEmpty()) {
             return;
         }
         AtomicInteger childrenCounter = new AtomicInteger();
@@ -106,39 +106,39 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
         try {
             // 这种一条sql：update corp_region set corp_id = 2 where id = xx and corp_id=1
             // 更新 corp_id = 2 影响的数据，或insert语句，delete语句
-            executeRowChange(dependentList, childrenCounter, bulkRequestList, false);
+            executeRowChange(sqlDependentList, childrenCounter, bulkRequestList, false);
             // 更新 corp_id = 1 影响的数据
-            executeRowChange(dependentList, childrenCounter, bulkRequestList, true);
+            executeRowChange(sqlDependentList, childrenCounter, bulkRequestList, true);
             complete(null);
         } catch (Exception e) {
             log.info("NestedMainJoinTable={}ms, rowCount={}, ts={}, dependentList={}, error={}",
                     System.currentTimeMillis() - maxTimestamp.getTime(),
                     childrenCounter.intValue(),
-                    maxTimestamp, dependentList, e.toString(), e);
+                    maxTimestamp, sqlDependentList, e.toString(), e);
             completeExceptionally(e);
             throw e;
         }
     }
 
-    private void executeRowChange(List<Dependent> dependentList, AtomicInteger childrenCounter, ESTemplate.BulkRequestList bulkRequestList, boolean before) {
-        List<DependentSQL> parentSqlList = new ArrayList<>(dependentList.size());
-        List<DependentSQL> childrenSqlList = new ArrayList<>(dependentList.size());
-        for (Dependent dependent : dependentList) {
+    private void executeRowChange(List<SqlDependent> sqlDependentList, AtomicInteger childrenCounter, ESTemplate.BulkRequestList bulkRequestList, boolean before) {
+        List<DependentSQL> parentSqlList = new ArrayList<>(sqlDependentList.size());
+        List<DependentSQL> childrenSqlList = new ArrayList<>(sqlDependentList.size());
+        for (SqlDependent sqlDependent : sqlDependentList) {
             if (before) {
-                if (dependent.getDml().isTypeUpdate()) {
-                    parentSqlList.add(convertParentSql(dependent, Dependent::getMergeBeforeDataMap));
-                    childrenSqlList.add(convertChildrenSQL(dependent, Dependent::getMergeBeforeDataMap));
+                if (sqlDependent.getDml().isTypeUpdate()) {
+                    parentSqlList.add(convertParentSql(sqlDependent, SqlDependent::getMergeBeforeDataMap));
+                    childrenSqlList.add(convertChildrenSQL(sqlDependent, SqlDependent::getMergeBeforeDataMap));
                 }
             } else {
-                parentSqlList.add(convertParentSql(dependent, Dependent::getMergeAfterDataMap));
-                childrenSqlList.add(convertChildrenSQL(dependent, Dependent::getMergeAfterDataMap));
+                parentSqlList.add(convertParentSql(sqlDependent, SqlDependent::getMergeAfterDataMap));
+                childrenSqlList.add(convertChildrenSQL(sqlDependent, SqlDependent::getMergeAfterDataMap));
             }
         }
 
         List<MergeJdbcTemplateSQL<DependentSQL>> mergeNestedMainSqlList = MergeJdbcTemplateSQL.merge(parentSqlList, maxIdInCount);
         List<MergeJdbcTemplateSQL<DependentSQL>> childrenMergeSqlList = MergeJdbcTemplateSQL.merge(childrenSqlList, maxIdInCount);
 
-        Map<Dependent, List<Map<String, Object>>> parentGetterMap = MergeJdbcTemplateSQL.toMap(mergeNestedMainSqlList, DependentSQL::getDependent);
+        Map<SqlDependent, List<Map<String, Object>>> parentGetterMap = MergeJdbcTemplateSQL.toMap(mergeNestedMainSqlList, DependentSQL::getDependent);
         for (MergeJdbcTemplateSQL<DependentSQL> children : childrenMergeSqlList) {
             children.executeQueryStream(streamChunkSize, DependentSQL::getDependent, (chunk) -> {
                 childrenCounter.addAndGet(chunk.rowList.size());
@@ -152,7 +152,7 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
         log.info("NestedMainJoinTable={}ms, rowCount={}, ts={}, dependentList={}, changeSql={}",
                 System.currentTimeMillis() - maxTimestamp.getTime(),
                 childrenCounter.intValue(),
-                maxTimestamp, dependentList, childrenMergeSqlList);
+                maxTimestamp, sqlDependentList, childrenMergeSqlList);
 
         bulkRequestList.commit(es7xTemplate);
     }

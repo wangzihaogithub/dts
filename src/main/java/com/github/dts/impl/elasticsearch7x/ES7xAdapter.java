@@ -184,18 +184,18 @@ public class ES7xAdapter implements Adapter {
             }
 
             timestamp = System.currentTimeMillis();
-            DependentGroup dependentGroup = nestedFieldWriter.convertToDependentGroup(syncDmlList, onlyCurrentIndex, onlyEffect);
+            SqlDependentGroup sqlDependentGroup = nestedFieldWriter.convertToSqlDependentGroup(syncDmlList, onlyCurrentIndex, onlyEffect);
 
             // join async change
-            List<CompletableFuture<?>> futures = asyncRunDependent(maxSqlEsTimestamp, joinUpdateSize,
-                    bulkRequestList, dependentGroup.selectMainTableJoinDependentList(), dependentGroup.selectSlaveTableDependentList(), cacheMap);
+            List<CompletableFuture<?>> futures = asyncRunSqlDependent(maxSqlEsTimestamp, joinUpdateSize,
+                    bulkRequestList, sqlDependentGroup.selectMainTableJoinDependentList(), sqlDependentGroup.selectSlaveTableDependentList(), cacheMap);
 
             // nested type ： main table change
-            List<Dependent> mainTableDependentList = dependentGroup.selectMainTableDependentList(onlyFieldName);
-            boolean changeNestedFieldMainTable = !mainTableDependentList.isEmpty();
+            List<SqlDependent> mainTableSqlDependentList = sqlDependentGroup.selectMainTableSqlDependentList(onlyFieldName);
+            boolean changeNestedFieldMainTable = !mainTableSqlDependentList.isEmpty();
             if (changeNestedFieldMainTable) {
                 try {
-                    nestedFieldWriter.writeMainTable(mainTableDependentList, bulkRequestList, maxIdIn, cacheMap);
+                    nestedFieldWriter.writeMainTable(mainTableSqlDependentList, bulkRequestList, maxIdIn, cacheMap);
                 } finally {
                     log.info("sync(dml[{}]).BasicFieldWriter={}ms, NestedFieldWriter={}ms, {}, table={}",
                             syncDmlList.size(),
@@ -219,11 +219,11 @@ public class ES7xAdapter implements Adapter {
             }
 
             // future
-            CompletableFuture<Void> future = allOfCompleted(futures, commitListener, dependentGroup, writeResult, startTimestamp, maxSqlEsTimestamp, refresh);
+            CompletableFuture<Void> future = allOfCompleted(futures, commitListener, sqlDependentGroup, writeResult, startTimestamp, maxSqlEsTimestamp, refresh);
             // refresh
             if (refresh && dmls.size() < refreshThreshold) {
                 if (changeListenerList || changeNestedFieldMainTable) {
-                    refresh(dependentGroup.getIndices(), commitListener);
+                    refresh(sqlDependentGroup.getIndices(), commitListener);
                 }
             }
             // close cache
@@ -236,15 +236,15 @@ public class ES7xAdapter implements Adapter {
     }
 
     private <L extends EsDependentCommitListener & ESTemplate.RefreshListener> CompletableFuture<Void> allOfCompleted(
-            List<CompletableFuture<?>> futures, L commitListener, DependentGroup dependentGroup,
+            List<CompletableFuture<?>> futures, L commitListener, SqlDependentGroup sqlDependentGroup,
             BasicFieldWriter.WriteResult writeResult,
             Timestamp startTimestamp, Timestamp sqlEsTimestamp,
             boolean refresh) {
         if (futures.isEmpty()) {
             if (commitListener != null) {
-                commitListener.done(new EsDependentCommitListener.CommitEvent(writeResult, dependentGroup.getMainTableDependentList(),
-                        dependentGroup.getMainTableJoinDependentList(),
-                        dependentGroup.getSlaveTableDependentList(),
+                commitListener.done(new EsDependentCommitListener.CommitEvent(writeResult, sqlDependentGroup.getMainTableDependentList(),
+                        sqlDependentGroup.getMainTableJoinDependentList(),
+                        sqlDependentGroup.getSlaveTableDependentList(),
                         startTimestamp,
                         sqlEsTimestamp
                 ));
@@ -252,7 +252,7 @@ public class ES7xAdapter implements Adapter {
             return CompletableFuture.completedFuture(null);
         } else {
             if (commitListener != null) {
-                commitListener.done(new EsDependentCommitListener.CommitEvent(writeResult, dependentGroup.getMainTableDependentList(),
+                commitListener.done(new EsDependentCommitListener.CommitEvent(writeResult, sqlDependentGroup.getMainTableDependentList(),
                         Collections.emptyList(),
                         Collections.emptyList(),
                         startTimestamp,
@@ -268,14 +268,14 @@ public class ES7xAdapter implements Adapter {
                             future.complete(null);
                             if (commitListener != null) {
                                 commitListener.done(new EsDependentCommitListener.CommitEvent(null, Collections.emptyList(),
-                                        dependentGroup.getMainTableJoinDependentList(),
-                                        dependentGroup.getSlaveTableDependentList(),
+                                        sqlDependentGroup.getMainTableJoinDependentList(),
+                                        sqlDependentGroup.getSlaveTableDependentList(),
                                         startTimestamp,
                                         sqlEsTimestamp
                                 ));
                             }
                             if (refresh) {
-                                refresh(dependentGroup.getIndices(), commitListener);
+                                refresh(sqlDependentGroup.getIndices(), commitListener);
                             }
                         }
                     });
@@ -294,18 +294,18 @@ public class ES7xAdapter implements Adapter {
         });
     }
 
-    private List<CompletableFuture<?>> asyncRunDependent(Timestamp maxTimestamp,
-                                                         int joinUpdateSize,
-                                                         ESTemplate.BulkRequestList bulkRequestList,
-                                                         List<Dependent> mainTableJoinDependentList,
-                                                         List<Dependent> slaveTableDependentList,
-                                                         CacheMap cacheMap) {
+    private List<CompletableFuture<?>> asyncRunSqlDependent(Timestamp maxTimestamp,
+                                                            int joinUpdateSize,
+                                                            ESTemplate.BulkRequestList bulkRequestList,
+                                                            List<SqlDependent> mainTableJoinSqlDependentList,
+                                                            List<SqlDependent> slaveTableSqlDependentList,
+                                                            CacheMap cacheMap) {
         List<CompletableFuture<?>> futures = new ArrayList<>();
 
         // nested type ：main table parent object change
-        if (!mainTableJoinDependentList.isEmpty()) {
+        if (!mainTableJoinSqlDependentList.isEmpty()) {
             NestedMainJoinTableRunnable runnable = new NestedMainJoinTableRunnable(
-                    mainTableJoinDependentList, esTemplate,
+                    mainTableJoinSqlDependentList, esTemplate,
                     bulkRequestList,
                     null,
                     joinUpdateSize, streamChunkSize, maxTimestamp);
@@ -314,7 +314,7 @@ public class ES7xAdapter implements Adapter {
         }
 
         // nested type ：join table change
-        List<Dependent> slaveTableList = slaveTableDependentList.stream()
+        List<SqlDependent> slaveTableList = slaveTableSqlDependentList.stream()
                 .filter(e -> e.getDml().isTypeUpdate())
                 .collect(Collectors.toList());
         if (!slaveTableList.isEmpty()) {
@@ -403,7 +403,7 @@ public class ES7xAdapter implements Adapter {
     }
 
     static class RealtimeListener implements ESTemplate.RefreshListener, EsDependentCommitListener, Runnable {
-        private static final Function<String, List<Dependent>> MAPPING_FUNCTION = k -> new ArrayList<>();
+        private static final Function<String, List<SqlDependent>> MAPPING_FUNCTION = k -> new ArrayList<>();
         private static volatile ScheduledExecutorService SCHEDULED;
         private final DiscoveryService discoveryService;
         private final LinkedBlockingQueue<CommitEvent> eventList;
@@ -460,7 +460,7 @@ public class ES7xAdapter implements Adapter {
                 }
 
                 DiscoveryService.MessageIdIncrementer messageIdIncrementer = discoveryService.getMessageIdIncrementer();
-                Map<Dml, Map<Integer, List<Dependent>>> dmlListMap = groupByDml(drainTo());
+                Map<Dml, Map<Integer, List<SqlDependent>>> dmlListMap = groupByDml(drainTo());
                 List<DmlDTO> dmlDTO = convert(dmlListMap);
                 try {
                     for (DmlDTO dto : dmlDTO) {
@@ -484,68 +484,68 @@ public class ES7xAdapter implements Adapter {
             }
         }
 
-        private String dependentKey(Dependent dependent) {
-            return dependent.getDml() + "_" + dependent.getIndex();
+        private String dependentKey(SqlDependent sqlDependent) {
+            return sqlDependent.getDml() + "_" + sqlDependent.getIndex();
         }
 
-        private Map<Dml, Map<Integer, List<Dependent>>> groupByDml(List<CommitEvent> list) {
-            Map<String, List<Dependent>> dependentMap = new IdentityHashMap<>();
+        private Map<Dml, Map<Integer, List<SqlDependent>>> groupByDml(List<CommitEvent> list) {
+            Map<String, List<SqlDependent>> dependentMap = new IdentityHashMap<>();
             for (CommitEvent event : list) {
-                for (Dependent dependent : event.mainTableDependentList) {
-                    dependentMap.computeIfAbsent(dependentKey(dependent), MAPPING_FUNCTION)
-                            .add(dependent);
+                for (SqlDependent sqlDependent : event.mainTableSqlDependentList) {
+                    dependentMap.computeIfAbsent(dependentKey(sqlDependent), MAPPING_FUNCTION)
+                            .add(sqlDependent);
                 }
-                for (Dependent dependent : event.mainTableJoinDependentList) {
-                    dependentMap.computeIfAbsent(dependentKey(dependent), MAPPING_FUNCTION)
-                            .add(dependent);
+                for (SqlDependent sqlDependent : event.mainTableJoinSqlDependentList) {
+                    dependentMap.computeIfAbsent(dependentKey(sqlDependent), MAPPING_FUNCTION)
+                            .add(sqlDependent);
                 }
-                for (Dependent dependent : event.slaveTableDependentList) {
-                    dependentMap.computeIfAbsent(dependentKey(dependent), MAPPING_FUNCTION)
-                            .add(dependent);
+                for (SqlDependent sqlDependent : event.slaveTableSqlDependentList) {
+                    dependentMap.computeIfAbsent(dependentKey(sqlDependent), MAPPING_FUNCTION)
+                            .add(sqlDependent);
                 }
                 BasicFieldWriter.WriteResult writeResult = event.writeResult;
                 if (writeResult != null) {
                     for (ESSyncConfigSQL configSQL : writeResult.getSqlList()) {
-                        Dependent dependent = configSQL.getDependent();
-                        dependentMap.computeIfAbsent(dependentKey(dependent), MAPPING_FUNCTION)
-                                .add(dependent);
+                        SqlDependent sqlDependent = configSQL.getDependent();
+                        dependentMap.computeIfAbsent(dependentKey(sqlDependent), MAPPING_FUNCTION)
+                                .add(sqlDependent);
                     }
-                    for (Dependent dependent : writeResult.getInsertList()) {
-                        dependentMap.computeIfAbsent(dependentKey(dependent), MAPPING_FUNCTION)
-                                .add(dependent);
+                    for (SqlDependent sqlDependent : writeResult.getInsertList()) {
+                        dependentMap.computeIfAbsent(dependentKey(sqlDependent), MAPPING_FUNCTION)
+                                .add(sqlDependent);
                     }
-                    for (Dependent dependent : writeResult.getUpdateList()) {
-                        dependentMap.computeIfAbsent(dependentKey(dependent), MAPPING_FUNCTION)
-                                .add(dependent);
+                    for (SqlDependent sqlDependent : writeResult.getUpdateList()) {
+                        dependentMap.computeIfAbsent(dependentKey(sqlDependent), MAPPING_FUNCTION)
+                                .add(sqlDependent);
                     }
-                    for (Dependent dependent : writeResult.getDeleteList()) {
-                        dependentMap.computeIfAbsent(dependentKey(dependent), MAPPING_FUNCTION)
-                                .add(dependent);
+                    for (SqlDependent sqlDependent : writeResult.getDeleteList()) {
+                        dependentMap.computeIfAbsent(dependentKey(sqlDependent), MAPPING_FUNCTION)
+                                .add(sqlDependent);
                     }
                 }
             }
-            Map<Dml, Map<Integer, List<Dependent>>> dmlListMap = new IdentityHashMap<>();
-            for (List<Dependent> value : dependentMap.values()) {
-                Dependent dependent = value.get(0);
-                dmlListMap.computeIfAbsent(dependent.getDml(), k -> new LinkedHashMap<>())
-                        .computeIfAbsent(dependent.getIndex(), k -> new ArrayList<>())
+            Map<Dml, Map<Integer, List<SqlDependent>>> dmlListMap = new IdentityHashMap<>();
+            for (List<SqlDependent> value : dependentMap.values()) {
+                SqlDependent sqlDependent = value.get(0);
+                dmlListMap.computeIfAbsent(sqlDependent.getDml(), k -> new LinkedHashMap<>())
+                        .computeIfAbsent(sqlDependent.getIndex(), k -> new ArrayList<>())
                         .addAll(value);
             }
             return dmlListMap;
         }
 
-        private List<DmlDTO> convert(Map<Dml, Map<Integer, List<Dependent>>> dmlListMap) {
+        private List<DmlDTO> convert(Map<Dml, Map<Integer, List<SqlDependent>>> dmlListMap) {
             List<DmlDTO> list = new ArrayList<>();
-            for (Map.Entry<Dml, Map<Integer, List<Dependent>>> entry : dmlListMap.entrySet()) {
+            for (Map.Entry<Dml, Map<Integer, List<SqlDependent>>> entry : dmlListMap.entrySet()) {
                 Dml dml = entry.getKey();
-                for (Map.Entry<Integer, List<Dependent>> entry1 : entry.getValue().entrySet()) {
-                    List<Dependent> dependentList = entry1.getValue();
-                    Dependent f = dependentList.get(0);
+                for (Map.Entry<Integer, List<SqlDependent>> entry1 : entry.getValue().entrySet()) {
+                    List<SqlDependent> sqlDependentList = entry1.getValue();
+                    SqlDependent f = sqlDependentList.get(0);
                     List<DmlDTO.Dependent> descList = new ArrayList<>();
-                    for (Dependent dependent : dependentList) {
-                        SchemaItem schemaItem = dependent.getSchemaItem();
+                    for (SqlDependent sqlDependent : sqlDependentList) {
+                        SchemaItem schemaItem = sqlDependent.getSchemaItem();
                         DmlDTO.Dependent desc = new DmlDTO.Dependent();
-                        desc.setEffect(dependent.isEffect());
+                        desc.setEffect(sqlDependent.isEffect());
                         desc.setName(schemaItem.getDesc());
                         desc.setEsIndex(schemaItem.getEsMapping().get_index());
                         descList.add(desc);

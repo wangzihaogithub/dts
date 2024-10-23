@@ -14,22 +14,16 @@ PUT /cnwy_kn_scene_test_index
         "id" : {
           "type" : "integer"
         },
-        "stype": {
+        "type": {
             "type": "keyword"
         },
-        "scene": {
+        "answer": {
             "type": "keyword"
         },
-        "speech1": {
-            "type": "keyword"
-        },
-        "speech2": {
+        "question": {
           "type": "keyword"
         },
-        "text": {
-          "type": "keyword"
-        },
-        "textVector": {
+        "questionVector": {
           "type": "dense_vector",
           "dims": 1024
         },
@@ -51,16 +45,13 @@ PUT /cnwy_kn_question_test_index
         "id" : {
           "type" : "integer"
         },
-        "question": {
-          "type": "keyword"
-        },
         "answer": {
            "type": "keyword"
         },
-        "text": {
+        "question": {
           "type": "keyword"
         },
-        "textVector": {
+        "questionVector": {
           "type": "dense_vector",
           "dims": 1024
         },

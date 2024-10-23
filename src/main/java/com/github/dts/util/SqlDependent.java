@@ -5,20 +5,20 @@ import java.util.*;
 /**
  * 表依赖关系
  */
-public class Dependent {
+public class SqlDependent {
     private final Dml dml;
     private final SchemaItem schemaItem;
     private final int index;
     private transient String dmlKey;
     private Boolean effect;
 
-    public Dependent(SchemaItem schemaItem, int index,
-                     Dml dml) {
+    public SqlDependent(SchemaItem schemaItem, int index,
+                        Dml dml) {
         this(schemaItem, index, dml, null);
     }
 
-    public Dependent(SchemaItem schemaItem, int index,
-                     Dml dml, Boolean effect) {
+    public SqlDependent(SchemaItem schemaItem, int index,
+                        Dml dml, Boolean effect) {
         this.schemaItem = schemaItem;
         this.index = index;
         this.dml = dml;
@@ -176,9 +176,9 @@ public class Dependent {
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof Dependent)) return false;
-        Dependent dependent = (Dependent) o;
-        return index == dependent.index && Objects.equals(dml, dependent.dml) && Objects.equals(schemaItem, dependent.schemaItem);
+        if (!(o instanceof SqlDependent)) return false;
+        SqlDependent sqlDependent = (SqlDependent) o;
+        return index == sqlDependent.index && Objects.equals(dml, sqlDependent.dml) && Objects.equals(schemaItem, sqlDependent.schemaItem);
     }
 
     @Override

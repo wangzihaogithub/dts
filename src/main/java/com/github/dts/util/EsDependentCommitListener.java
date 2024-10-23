@@ -9,18 +9,18 @@ public interface EsDependentCommitListener {
     void done(CommitEvent event);
 
     static class CommitEvent {
-        public final List<Dependent> mainTableDependentList;
-        public final List<Dependent> mainTableJoinDependentList;
-        public final List<Dependent> slaveTableDependentList;
+        public final List<SqlDependent> mainTableSqlDependentList;
+        public final List<SqlDependent> mainTableJoinSqlDependentList;
+        public final List<SqlDependent> slaveTableSqlDependentList;
         public final Timestamp startTimestamp;
         public final Timestamp sqlTimestamp;
         public final BasicFieldWriter.WriteResult writeResult;
 
-        public CommitEvent(BasicFieldWriter.WriteResult writeResult, List<Dependent> mainTableDependentList, List<Dependent> mainTableJoinDependentList, List<Dependent> slaveTableDependentList, Timestamp startTimestamp, Timestamp sqlTimestamp) {
+        public CommitEvent(BasicFieldWriter.WriteResult writeResult, List<SqlDependent> mainTableSqlDependentList, List<SqlDependent> mainTableJoinSqlDependentList, List<SqlDependent> slaveTableSqlDependentList, Timestamp startTimestamp, Timestamp sqlTimestamp) {
             this.writeResult = writeResult;
-            this.mainTableDependentList = mainTableDependentList;
-            this.mainTableJoinDependentList = mainTableJoinDependentList;
-            this.slaveTableDependentList = slaveTableDependentList;
+            this.mainTableSqlDependentList = mainTableSqlDependentList;
+            this.mainTableJoinSqlDependentList = mainTableJoinSqlDependentList;
+            this.slaveTableSqlDependentList = slaveTableSqlDependentList;
             this.startTimestamp = startTimestamp;
             this.sqlTimestamp = sqlTimestamp;
         }

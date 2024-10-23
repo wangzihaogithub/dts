@@ -11,12 +11,11 @@ esMapping:
         q.id as id,
         q.question,
         q.answer,
-        q.question as textVector,
-        q.question as text
+        q.question as questionVector
       FROM kn_question q
       "
   objFields:
-    textVector:
+    questionVector:
       type: llm-vector
       paramLlmVector:
         apiKey: ${cnwy.llm-api-key}
