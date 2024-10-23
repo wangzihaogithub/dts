@@ -13,8 +13,8 @@ esMapping:
         s.scene,
         s.speech1,
         s.speech2,
-        concat(ifnull(s.type,''), '.', ifnull(s.scene,''), '.', ifnull(s.speech1,''), '.', ifnull(s.speech2,'')) as text,
-        concat(ifnull(s.type,''), '.', ifnull(s.scene,''), '.', ifnull(s.speech1,''), '.', ifnull(s.speech2,'')) as textVector
+        s.scene as text,
+        s.scene as textVector
       FROM kn_scene s
       "
   objFields:

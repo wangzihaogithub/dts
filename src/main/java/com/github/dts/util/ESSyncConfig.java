@@ -687,15 +687,30 @@ public class ESSyncConfig {
             private void init(ObjectField objectField) {
                 getTypeLlmVectorAPI();
                 if (Util.isBlank(etlEqualsFieldName)) {
-                    ESMapping esMapping = objectField.esMapping;
-                    SchemaItem.FieldItem currFieldItem = esMapping.getSchemaItem().getSelectFields().get(objectField.fieldName);
-                    List<SchemaItem.FieldItem> fieldItemList = esMapping.getSchemaItem().selectField(currFieldItem);
-                    if (fieldItemList.size() == 1) {
-                        this.etlEqualsFieldName = fieldItemList.get(0).getFieldName();
-                    } else {
+                    SchemaItem.FieldItem fieldItem = etlEqualsFieldName(objectField);
+                    if (fieldItem == null) {
                         throw new IllegalArgumentException("etlEqualsFieldName must not empty!");
+                    } else {
+                        this.etlEqualsFieldName = fieldItem.getFieldName();
                     }
                 }
+            }
+
+            private SchemaItem.FieldItem etlEqualsFieldName(ObjectField objectField) {
+                ESMapping esMapping = objectField.esMapping;
+                SchemaItem.FieldItem currFieldItem = esMapping.getSchemaItem().getSelectFields().get(objectField.fieldName);
+                List<SchemaItem.FieldItem> fieldItemList = esMapping.getSchemaItem().selectField(currFieldItem);
+                for (int i = 0; i < fieldItemList.size(); i++) {
+                    SchemaItem.FieldItem fieldItem = fieldItemList.get(i);
+                    if (fieldItem == currFieldItem) {
+                        if (i + 1 < fieldItemList.size()) {
+                            return fieldItemList.get(i + 1);
+                        } else if (i - 1 >= 0) {
+                            return fieldItemList.get(i - 1);
+                        }
+                    }
+                }
+                return null;
             }
 
             @Override

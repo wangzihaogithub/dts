@@ -56,7 +56,7 @@ public class SchemaItem {
         List<FieldItem> list = new ArrayList<>(2);
         if (currFieldItem != null) {
             for (SchemaItem.FieldItem fieldItem : selectFields.values()) {
-                if (fieldItem != currFieldItem && fieldItem.equalsColumn(currFieldItem)) {
+                if (fieldItem == currFieldItem || fieldItem.equalsColumn(currFieldItem)) {
                     list.add(fieldItem);
                 }
             }

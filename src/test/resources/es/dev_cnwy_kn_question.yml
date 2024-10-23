@@ -11,8 +11,8 @@ esMapping:
         q.id as id,
         q.question,
         q.answer,
-        concat(ifnull(q.question,''), '.', ifnull(q.answer,'')) as text,
-        concat(ifnull(q.question,''), '.', ifnull(q.answer,'')) as textVector
+        q.question as textVector,
+        q.question as text
       FROM kn_question q
       "
   objFields:
