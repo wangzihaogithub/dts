@@ -22,4 +22,4 @@ esMapping:
         baseUrl: https://dashscope.aliyuncs.com/compatible-mode/v1
         modelName: text-embedding-v3
         dimensions: 1024
-
+        requestMaxContentSize: 6

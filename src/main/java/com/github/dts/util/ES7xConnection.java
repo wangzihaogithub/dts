@@ -19,7 +19,6 @@ import org.elasticsearch.action.bulk.BulkItemResponse;
 import org.elasticsearch.action.bulk.BulkRequest;
 import org.elasticsearch.action.bulk.BulkResponse;
 import org.elasticsearch.action.delete.DeleteRequest;
-import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.update.UpdateRequest;
@@ -310,29 +309,35 @@ public class ES7xConnection {
         }
     }
 
-    public static class ES7xUpdateByQueryRequest implements ESBulkRequest.ESUpdateByQueryRequest {
+    public static class ES7xUpdateByQueryRequest extends UpdateByQueryRequest implements ESBulkRequest.ESUpdateByQueryRequest {
 
-        private final UpdateByQueryRequest updateByQueryRequest;
+        private final Map<String, Object> params = new HashMap<>();
         private int size = 1;
 
         public ES7xUpdateByQueryRequest(String index) {
-            updateByQueryRequest = new UpdateByQueryRequest(index) {
-                @Override
-                public ActionRequestValidationException validate() {
-                    return null;
-                }
-            };
+            super(index);
         }
 
         public static ES7xUpdateByQueryRequest byIds(String index, String[] ids, String fieldName, Object fieldValue) {
             ES7xUpdateByQueryRequest updateByQueryRequest = new ES7xUpdateByQueryRequest(index);
+            updateByQueryRequest.params.put("v", fieldValue);
             updateByQueryRequest.size = ids.length;
-            updateByQueryRequest.updateByQueryRequest.setQuery(QueryBuilders.idsQuery().addIds(ids));
-            updateByQueryRequest.updateByQueryRequest.setBatchSize(ids.length);
-            updateByQueryRequest.updateByQueryRequest.setScript(new Script(ScriptType.INLINE, "painless",
-                    "ctx._source." + fieldName + "= params.v", Collections.singletonMap("v", fieldValue)));
-            updateByQueryRequest.updateByQueryRequest.setAbortOnVersionConflict(false);
+            updateByQueryRequest.setQuery(QueryBuilders.idsQuery().addIds(ids));
+            updateByQueryRequest.setBatchSize(ids.length);
+            updateByQueryRequest.setScript(new Script(ScriptType.INLINE, "painless",
+                    "ctx._source." + fieldName + "= params.v", updateByQueryRequest.params));
+            updateByQueryRequest.setAbortOnVersionConflict(false);
             return updateByQueryRequest;
+        }
+
+        @Override
+        public ActionRequestValidationException validate() {
+            return null;
+        }
+
+        @Override
+        public void beforeBulk() {
+            TypeLlmVectorAPI.beforeBulk(params);
         }
 
         @Override
@@ -340,66 +345,38 @@ public class ES7xConnection {
             return size;
         }
 
-        @Override
-        public String toString() {
-            return updateByQueryRequest.toString();
-        }
-
         public ES7xUpdateByQueryRequest build() {
             return this;
         }
     }
 
-    public static class ES7xIndexRequest implements ESBulkRequest.ESIndexRequest {
-
-        private final IndexRequest indexRequest;
-
-        public ES7xIndexRequest(String index, String id, Map<String, ?> source) {
-            indexRequest = new IndexRequest(index) {
-                @Override
-                public ActionRequestValidationException validate() {
-                    return null;
-                }
-            };
-            indexRequest.id(id);
-            indexRequest.source(source);
-//            indexRequest.type("");
-        }
-
-        @Override
-        public String toString() {
-            return indexRequest.toString();
-        }
-
-        public IndexRequest build() {
-            return indexRequest;
-        }
-
-    }
-
-    public static class ES7xUpdateRequest implements ESBulkRequest.ESUpdateRequest {
-
-        private final UpdateRequest updateRequest;
+    public static class ES7xUpdateRequest extends UpdateRequest implements ESBulkRequest.ESUpdateRequest {
         private final String index;
         private final String id;
         private final Map source;
         private final boolean shouldUpsertDoc;
 
         public ES7xUpdateRequest(String index, String id, Map source, boolean shouldUpsertDoc, int retryOnConflict) {
-            updateRequest = new UpdateRequest(index, id) {
-                @Override
-                public ActionRequestValidationException validate() {
-                    return null;
-                }
-            };
-            updateRequest.docAsUpsert(shouldUpsertDoc);
-            updateRequest.doc(source);
-            updateRequest.retryOnConflict(retryOnConflict);
+            super(index, id);
+            docAsUpsert(shouldUpsertDoc);
+            retryOnConflict(retryOnConflict);
 //            updateRequest.type("");
             this.index = index;
             this.id = id;
             this.source = source;
             this.shouldUpsertDoc = shouldUpsertDoc;
+        }
+
+        @Override
+        public ActionRequestValidationException validate() {
+            return null;
+        }
+
+        @Override
+        public void beforeBulk() {
+            Map source = new LinkedHashMap(this.source);
+            TypeLlmVectorAPI.beforeBulk(source);
+            doc(source);
         }
 
         @Override
@@ -435,32 +412,25 @@ public class ES7xConnection {
             return id;
         }
 
-        @Override
-        public String toString() {
-            return updateRequest.toString();
-        }
-
         public UpdateRequest build() {
-            return updateRequest;
+            return this;
         }
     }
 
-    public static class ES7xDeleteRequest implements ESBulkRequest.ESDeleteRequest {
+    public static class ES7xDeleteRequest extends DeleteRequest implements ESBulkRequest.ESDeleteRequest {
 
-        private final DeleteRequest deleteRequest;
         private final String index;
         private final String id;
 
         public ES7xDeleteRequest(String index, String id) {
-            deleteRequest = new DeleteRequest(index, id) {
-                @Override
-                public ActionRequestValidationException validate() {
-                    return null;
-                }
-            };
-//            deleteRequest.type("");
+            super(index, id);
             this.index = index;
             this.id = id;
+        }
+
+        @Override
+        public ActionRequestValidationException validate() {
+            return null;
         }
 
         @Override
@@ -478,13 +448,8 @@ public class ES7xConnection {
             }
         }
 
-        @Override
-        public String toString() {
-            return deleteRequest.toString();
-        }
-
         public DeleteRequest build() {
-            return deleteRequest;
+            return this;
         }
     }
 
@@ -517,6 +482,17 @@ public class ES7xConnection {
         public void clear() {
             requests().clear();
             this.beforeEstimatedSizeInBytes = super.estimatedSizeInBytes();
+        }
+
+        public void beforeBulk() {
+            for (DocWriteRequest<?> request : requests()) {
+                if (request instanceof ESBulkRequest.ESRequest) {
+                    ((ESBulkRequest.ESRequest) request).beforeBulk();
+                }
+            }
+            for (ES7xUpdateByQueryRequest request : updateByQueryRequests) {
+                request.beforeBulk();
+            }
         }
 
         public void add(ES7xUpdateByQueryRequest updateByQueryRequest) {
@@ -775,9 +751,7 @@ public class ES7xConnection {
                     if (bulkRequest.requestNumberOfActions() < bulkCommitSize && bulkRequest.tryLock()) {
                         try {
                             for (Object request : requests) {
-                                if (request instanceof ES7xIndexRequest) {
-                                    bulkRequest.add(((ES7xIndexRequest) request).build());
-                                } else if (request instanceof ES7xUpdateByQueryRequest) {
+                                if (request instanceof ES7xUpdateByQueryRequest) {
                                     bulkRequest.add(((ES7xUpdateByQueryRequest) request).build());
                                 } else if (request instanceof ES7xUpdateRequest) {
                                     bulkRequest.add(((ES7xUpdateRequest) request).build());
@@ -787,24 +761,6 @@ public class ES7xConnection {
                                     throw new IllegalArgumentException("Unknown request type: " + request.getClass());
                                 }
                             }
-                        } finally {
-                            bulkRequest.unlock();
-                        }
-                        return this;
-                    }
-                }
-                yieldThread();
-            }
-        }
-
-        @Override
-        public ES7xBulkRequest add(ESIndexRequest esIndexRequest) {
-            ES7xIndexRequest eir = (ES7xIndexRequest) esIndexRequest;
-            while (true) {
-                for (ConcurrentBulkRequest bulkRequest : bulkRequests) {
-                    if (bulkRequest.requestNumberOfActions() < bulkCommitSize && bulkRequest.tryLock()) {
-                        try {
-                            bulkRequest.add(eir.build());
                         } finally {
                             bulkRequest.unlock();
                         }
@@ -912,6 +868,9 @@ public class ES7xConnection {
             if (bulkRequest.numberOfActions() == 0) {
                 return new BulkResponse(new BulkItemResponse[0], 0L);
             }
+            if (bulkRequest instanceof ConcurrentBulkRequest) {
+                ((ConcurrentBulkRequest) bulkRequest).beforeBulk();
+            }
             IOException ioException = null;
             int bulkRetryCount = Math.max(0, connection.bulkRetryCount);
             for (int i = 0; i <= bulkRetryCount; i++) {
@@ -960,7 +919,7 @@ public class ES7xConnection {
                 if (updateByQueryRequest == null) {
                     break;
                 }
-                BulkByScrollResponse updatedByQuery = connection.restHighLevelClient.updateByQuery(updateByQueryRequest.updateByQueryRequest, RequestOptions.DEFAULT);
+                BulkByScrollResponse updatedByQuery = connection.restHighLevelClient.updateByQuery(updateByQueryRequest, RequestOptions.DEFAULT);
                 requestResponse.addUpdateByQueryResponse(updateByQueryRequest, updatedByQuery);
             }
             return requestResponse;

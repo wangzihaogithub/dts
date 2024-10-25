@@ -419,16 +419,14 @@ public class ESSyncConfig {
                     return ESSyncUtil.castToBoolean(val);
                 }
                 case LLM_VECTOR: {
-                    float[] vector;
                     String string;
                     if (val == null) {
-                        vector = null;
+                        return null;
                     } else if ((string = val.toString().trim()).isEmpty()) {
-                        vector = null;
+                        return null;
                     } else {
-                        vector = paramLlmVector.getTypeLlmVectorAPI().vector(string);
+                        return paramLlmVector.getTypeLlmVectorAPI().vector(string);
                     }
-                    return vector;
                 }
                 case STATIC_METHOD: {
                     if (val == null) {
@@ -669,7 +667,7 @@ public class ESSyncConfig {
          * https://www.elastic.co/guide/en/elasticsearch/reference/current/dense-vector.html#dense-vector-params
          */
         public static class ParamLlmVector {
-            private LlmVectorType type = LlmVectorType.openAi;
+            private Class<? extends LlmEmbeddingModel> modelClass = com.github.dts.util.OpenAiLlmEmbeddingModel.class;
             private String apiKey;
             private String baseUrl;
             private String modelName;
@@ -682,6 +680,10 @@ public class ESSyncConfig {
              * etl刷数据时，判断是否相等的字段
              */
             private String etlEqualsFieldName;
+            /**
+             * 每次请求最多几条
+             */
+            private int requestMaxContentSize = 6;
             private volatile transient TypeLlmVectorAPI typeLlmVectorAPI;
 
             private void init(ObjectField objectField) {
@@ -694,6 +696,26 @@ public class ESSyncConfig {
                         this.etlEqualsFieldName = fieldItem.getFieldName();
                     }
                 }
+            }
+
+            public Class<? extends LlmEmbeddingModel> getModelClass() {
+                return modelClass;
+            }
+
+            public void setModelClass(Class<? extends LlmEmbeddingModel> modelClass) {
+                this.modelClass = modelClass;
+            }
+
+            public int getRequestMaxContentSize() {
+                return requestMaxContentSize;
+            }
+
+            public void setRequestMaxContentSize(int requestMaxContentSize) {
+                this.requestMaxContentSize = requestMaxContentSize;
+            }
+
+            public boolean isContentSizeThreshold(int contentSize) {
+                return contentSize >= requestMaxContentSize;
             }
 
             private SchemaItem.FieldItem etlEqualsFieldName(ObjectField objectField) {
@@ -715,26 +737,22 @@ public class ESSyncConfig {
 
             @Override
             public String toString() {
-                return type + "[" + modelName + "]";
+                return modelClass + "[" + modelName + "]";
             }
 
             public TypeLlmVectorAPI getTypeLlmVectorAPI() {
                 if (typeLlmVectorAPI == null) {
                     synchronized (this) {
                         if (typeLlmVectorAPI == null) {
-                            typeLlmVectorAPI = new TypeLlmVectorAPI(this);
+                            try {
+                                typeLlmVectorAPI = new TypeLlmVectorAPI(this);
+                            } catch (Exception e) {
+                                Util.sneakyThrows(e);
+                            }
                         }
                     }
                 }
                 return typeLlmVectorAPI;
-            }
-
-            public LlmVectorType getType() {
-                return type;
-            }
-
-            public void setType(LlmVectorType type) {
-                this.type = type;
             }
 
             public String getEtlEqualsFieldName() {

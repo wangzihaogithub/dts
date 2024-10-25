@@ -6,8 +6,6 @@ public interface ESBulkRequest {
 
     ESBulkRequest add(Collection<ESRequest> requests, BulkPriorityEnum bulkPriority);
 
-    ESBulkRequest add(ESIndexRequest esIndexRequest);
-
     ESBulkRequest add(ESUpdateByQueryRequest esUpdateRequest);
 
     ESBulkRequest add(ESUpdateRequest esUpdateRequest);
@@ -21,11 +19,8 @@ public interface ESBulkRequest {
     ESBulkResponse bulk();
 
     interface ESRequest extends TrimRequest {
-
-    }
-
-    interface ESIndexRequest extends ESRequest {
-
+        default void beforeBulk() {
+        }
     }
 
     interface ESUpdateByQueryRequest extends ESRequest {

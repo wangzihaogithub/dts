@@ -680,25 +680,6 @@ public class ES7xTemplate implements ESTemplate {
 //        }
     }
 
-    private void addRequest(ESBulkRequest.ESIndexRequest indexRequest, BulkRequestList bulkRequestList) {
-//        synchronized (esBulkRequest) {
-        if (bulkRequestList != null) {
-            bulkRequestList.add(indexRequest);
-            if (isMaxBatchSize(bulkRequestList.size())) {
-                int bulk = bulk(bulkRequestList);
-                if (bulk > 0) {
-                    commit();
-                }
-            }
-        } else {
-            esBulkRequest.add(indexRequest);
-            if (isMaxBatchSize(esBulkRequest.numberOfActions())) {
-                commit();
-            }
-        }
-//        }
-    }
-
     private void addRequest(ESBulkRequest.ESDeleteRequest deleteRequest, BulkRequestList bulkRequestList) {
 //        synchronized (esBulkRequest) {
         if (bulkRequestList != null) {
