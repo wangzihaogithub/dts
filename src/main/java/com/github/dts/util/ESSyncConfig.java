@@ -133,21 +133,39 @@ public class ESSyncConfig {
         esMapping.setSchemaItem(schemaItem);
         schemaItem.init(null, esMapping);
         if (schemaItem.getAliasTableItems().isEmpty() || schemaItem.getSelectFields().isEmpty()) {
-            throw new RuntimeException("table fields is empty, Parse sql error" + esMapping.getSql());
+            throw new IllegalArgumentException("table fields is empty, Parse sql error" + esMapping.getSql());
         }
 
         for (Map.Entry<String, ObjectField> entry : esMapping.getObjFields().entrySet()) {
             ObjectField objectField = entry.getValue();
             objectField.fieldName = entry.getKey();
             objectField.esMapping = esMapping;
-            ObjectField.ParamSql paramSql = objectField.getParamSql();
-            if (paramSql != null) {
+            ObjectField.Type type = objectField.getType();
+            if (type.isSqlType()) {
+                ObjectField.ParamSql paramSql = objectField.getParamSql();
+                if (paramSql == null) {
+                    throw new IllegalArgumentException("fieldName = " + objectField.fieldName + ", sql type paramSql is null");
+                }
                 paramSql.init(objectField);
-            }
-            ObjectField.ParamLlmVector paramLlmVector = objectField.getParamLlmVector();
-            if (paramLlmVector != null) {
+            } else if (type.isLlmVector()) {
+                ObjectField.ParamLlmVector paramLlmVector = objectField.getParamLlmVector();
+                if (paramLlmVector == null) {
+                    throw new IllegalArgumentException("fieldName = " + objectField.fieldName + ", llmVector type paramLlmVector is null");
+                }
                 paramLlmVector.init(objectField);
+            } else if (type == ObjectField.Type.ARRAY) {
+                ObjectField.ParamArray paramArray = objectField.getParamArray();
+                if (paramArray == null || paramArray.getSplit() == null) {
+                    throw new IllegalArgumentException("fieldName = " + objectField.fieldName + ", paramArray type paramArray split is null");
+                }
+            } else if (type == ObjectField.Type.STATIC_METHOD) {
+                ObjectField.ParamStaticMethod paramStaticMethod = objectField.getParamStaticMethod();
+                if (paramStaticMethod == null || Util.isBlank(paramStaticMethod.getMethod())) {
+                    throw new IllegalArgumentException("fieldName = " + objectField.fieldName + ", paramStaticMethod type method is empty");
+                }
+                paramStaticMethod.init();
             }
+
         }
     }
 
@@ -381,6 +399,7 @@ public class ESSyncConfig {
          *
          * @param val     val
          * @param mapping mapping
+         * @param row     row
          * @return ES对象
          * @see ESSyncServiceListener#onSyncAfter(List, ES7xAdapter, ESTemplate.BulkRequestList)
          */
@@ -433,7 +452,7 @@ public class ESSyncConfig {
                         return null;
                     }
                     if (paramStaticMethod.staticMethodAccessor == null) {
-                        paramStaticMethod.staticMethodAccessor = new StaticMethodAccessor<>(paramStaticMethod.method, ESStaticMethodParam.class);
+                        paramStaticMethod.init();
                     }
                     String[] split1 = fieldName.split("\\$");
                     String parentFieldName;
@@ -527,7 +546,7 @@ public class ESSyncConfig {
         }
 
         public static class ParamArray {
-            private String split = "";
+            private String split;
 
             public String getSplit() {
                 return split;
@@ -652,6 +671,10 @@ public class ESSyncConfig {
         public static class ParamStaticMethod {
             private String method;
             private transient StaticMethodAccessor<ESStaticMethodParam> staticMethodAccessor;
+
+            public void init() {
+                staticMethodAccessor = new StaticMethodAccessor<>(method, ESStaticMethodParam.class);
+            }
 
             public String getMethod() {
                 return method;

@@ -502,10 +502,10 @@ public class BasicFieldWriter {
     }
 
     public static class WriteResult {
-        private final List<ESSyncConfigSQL> sqlList = new ArrayList<>();
-        private final List<SqlDependent> updateList = new ArrayList<>();
-        private final List<SqlDependent> insertList = new ArrayList<>();
-        private final List<SqlDependent> deleteList = new ArrayList<>();
+        private final ArrayList<ESSyncConfigSQL> sqlList = new ArrayList<>();
+        private final ArrayList<SqlDependent> updateList = new ArrayList<>();
+        private final ArrayList<SqlDependent> insertList = new ArrayList<>();
+        private final ArrayList<SqlDependent> deleteList = new ArrayList<>();
 
         public void add(WriteResult result) {
             sqlList.addAll(result.sqlList);
@@ -545,6 +545,13 @@ public class BasicFieldWriter {
 
         public List<SqlDependent> getUpdateList() {
             return updateList;
+        }
+
+        public void trimToSize() {
+            sqlList.trimToSize();
+            deleteList.trimToSize();
+            insertList.trimToSize();
+            updateList.trimToSize();
         }
     }
 

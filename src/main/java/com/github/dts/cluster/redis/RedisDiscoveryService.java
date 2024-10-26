@@ -284,12 +284,14 @@ public class RedisDiscoveryService implements DiscoveryService, DisposableBean {
     @Override
     public void registerServerInstance() {
         // server : set, pub, sub, get
+        long ts = System.currentTimeMillis();
         Map<String, ServerInstance> serverInstanceMap = redisTemplate.execute(connection -> {
             connection.set(keyServerSetBytes, serverInstanceBytes, Expiration.seconds(redisInstanceExpireSec), RedisStringCommands.SetOption.UPSERT);
             connection.publish(keyServerPubSubBytes, serverInstanceBytes);
             connection.subscribe(messageServerListener, keyServerPubSubBytes, keyServerPubUnsubBytes);
             return getServerInstanceMap(connection);
         }, true);
+        log.info("registerServerInstance -> getServerInstanceMap cost {}/ms", System.currentTimeMillis() - ts);
         updateServerInstance(serverInstanceMap);
 
         scheduledUpdateSdkInstance();

@@ -182,6 +182,7 @@ public class ES7xAdapter implements Adapter {
                     refresh(writeResult.getIndices(), commitListener);
                 }
             }
+            writeResult.trimToSize();
 
             timestamp = System.currentTimeMillis();
             SqlDependentGroup sqlDependentGroup = nestedFieldWriter.convertToSqlDependentGroup(syncDmlList, onlyCurrentIndex, onlyEffect);
@@ -402,8 +403,22 @@ public class ES7xAdapter implements Adapter {
         return list;
     }
 
+    @Override
+    public String toString() {
+        return configuration.getName() + "{" +
+                "address='" + Arrays.toString(configuration.getEs7x().getAddress()) + '\'' +
+                ", refresh=" + refresh +
+                ", onlyEffect=" + onlyEffect +
+                ", refreshThreshold=" + refreshThreshold +
+                ", joinUpdateSize=" + joinUpdateSize +
+                ", streamChunkSize=" + streamChunkSize +
+                ", maxIdIn=" + maxIdIn +
+                '}';
+    }
+
     static class RealtimeListener implements ESTemplate.RefreshListener, EsDependentCommitListener, Runnable {
-        private static final Function<String, List<SqlDependent>> MAPPING_FUNCTION = k -> new ArrayList<>();
+        private static final Function<Dml, Map<Integer, ArrayList<SqlDependent>>> MAPPING_FUNCTION = k -> new LinkedHashMap<>(2);
+        private static final Function<Integer, ArrayList<SqlDependent>> MAPPING_FUNCTION1 = k -> new ArrayList<>(2);
         private static volatile ScheduledExecutorService SCHEDULED;
         private final DiscoveryService discoveryService;
         private final LinkedBlockingQueue<CommitEvent> eventList;
@@ -425,6 +440,91 @@ public class ES7xAdapter implements Adapter {
                 }
             }
             return SCHEDULED;
+        }
+
+        private static void putDependent(Map<Dml, Map<Integer, ArrayList<SqlDependent>>> dependentMap, SqlDependent sqlDependent) {
+            dependentMap.computeIfAbsent(sqlDependent.getDml(), MAPPING_FUNCTION)
+                    .computeIfAbsent(sqlDependent.getDml().getIndex(), MAPPING_FUNCTION1)
+                    .add(sqlDependent);
+        }
+
+        private static IdentityHashMap<Dml, Map<Integer, ArrayList<SqlDependent>>> trimTableSize(IdentityHashMap<Dml, Map<Integer, ArrayList<SqlDependent>>> dependentMap) {
+            for (Map<Integer, ArrayList<SqlDependent>> value : dependentMap.values()) {
+                for (ArrayList<SqlDependent> sqlDependents : value.values()) {
+                    sqlDependents.trimToSize();
+                }
+            }
+            return new IdentityHashMap<>(dependentMap);
+        }
+
+        private static Map<Dml, Map<Integer, ArrayList<SqlDependent>>> groupByDml(List<CommitEvent> list) {
+            IdentityHashMap<Dml, Map<Integer, ArrayList<SqlDependent>>> dependentMap = new IdentityHashMap<>();
+            for (CommitEvent event : list) {
+                for (SqlDependent sqlDependent : event.mainTableSqlDependentList) {
+                    putDependent(dependentMap, sqlDependent);
+                }
+                for (SqlDependent sqlDependent : event.mainTableJoinSqlDependentList) {
+                    putDependent(dependentMap, sqlDependent);
+                }
+                for (SqlDependent sqlDependent : event.slaveTableSqlDependentList) {
+                    putDependent(dependentMap, sqlDependent);
+                }
+                BasicFieldWriter.WriteResult writeResult = event.writeResult;
+                if (writeResult != null) {
+                    for (ESSyncConfigSQL configSQL : writeResult.getSqlList()) {
+                        putDependent(dependentMap, configSQL.getDependent());
+                    }
+                    for (SqlDependent sqlDependent : writeResult.getInsertList()) {
+                        putDependent(dependentMap, sqlDependent);
+                    }
+                    for (SqlDependent sqlDependent : writeResult.getUpdateList()) {
+                        putDependent(dependentMap, sqlDependent);
+                    }
+                    for (SqlDependent sqlDependent : writeResult.getDeleteList()) {
+                        putDependent(dependentMap, sqlDependent);
+                    }
+                }
+            }
+            // 减少List默认16Size的内存占用
+            return trimTableSize(dependentMap);
+        }
+
+        private static List<DmlDTO> convert(Map<Dml, Map<Integer, ArrayList<SqlDependent>>> dmlListMap, String adapterName) {
+            List<DmlDTO> list = new ArrayList<>();
+            for (Map.Entry<Dml, Map<Integer, ArrayList<SqlDependent>>> entry : dmlListMap.entrySet()) {
+                Dml dml = entry.getKey();
+                for (Map.Entry<Integer, ArrayList<SqlDependent>> entry1 : entry.getValue().entrySet()) {
+                    List<SqlDependent> sqlDependentList = entry1.getValue();
+                    SqlDependent f = sqlDependentList.get(0);
+                    List<DmlDTO.Dependent> descList = convertDtoDependentList(sqlDependentList);
+                    DmlDTO dmlDTO = new DmlDTO();
+                    dmlDTO.setTableName(dml.getTable());
+                    dmlDTO.setDatabase(dml.getDatabase());
+                    dmlDTO.setPkNames(dml.getPkNames());
+                    dmlDTO.setEs(dml.getEs());
+                    dmlDTO.setTs(dml.getTs());
+                    dmlDTO.setType(dml.getType());
+                    dmlDTO.setOld(f.getOldMap());
+                    dmlDTO.setData(f.getDataMap());
+                    dmlDTO.setDependents(descList);
+                    dmlDTO.setAdapterName(adapterName);
+                    list.add(dmlDTO);
+                }
+            }
+            return list;
+        }
+
+        private static List<DmlDTO.Dependent> convertDtoDependentList(List<SqlDependent> sqlDependentList) {
+            List<DmlDTO.Dependent> descList = new ArrayList<>(sqlDependentList.size());
+            for (SqlDependent sqlDependent : sqlDependentList) {
+                SchemaItem schemaItem = sqlDependent.getSchemaItem();
+                DmlDTO.Dependent desc = new DmlDTO.Dependent();
+                desc.setEffect(sqlDependent.isEffect());
+                desc.setName(schemaItem.getDesc());
+                desc.setEsIndex(schemaItem.getEsMapping().get_index());
+                descList.add(desc);
+            }
+            return descList;
         }
 
         @Override
@@ -460,8 +560,8 @@ public class ES7xAdapter implements Adapter {
                 }
 
                 DiscoveryService.MessageIdIncrementer messageIdIncrementer = discoveryService.getMessageIdIncrementer();
-                Map<Dml, Map<Integer, List<SqlDependent>>> dmlListMap = groupByDml(drainTo());
-                List<DmlDTO> dmlDTO = convert(dmlListMap);
+                Map<Dml, Map<Integer, ArrayList<SqlDependent>>> dmlListMap = groupByDml(drainTo());
+                List<DmlDTO> dmlDTO = convert(dmlListMap, adapterName);
                 try {
                     for (DmlDTO dto : dmlDTO) {
                         long id = messageIdIncrementer.incrementId(dmlDTO.size());
@@ -483,101 +583,5 @@ public class ES7xAdapter implements Adapter {
                 }
             }
         }
-
-        private String dependentKey(SqlDependent sqlDependent) {
-            return sqlDependent.getDml() + "_" + sqlDependent.getIndex();
-        }
-
-        private Map<Dml, Map<Integer, List<SqlDependent>>> groupByDml(List<CommitEvent> list) {
-            Map<String, List<SqlDependent>> dependentMap = new IdentityHashMap<>();
-            for (CommitEvent event : list) {
-                for (SqlDependent sqlDependent : event.mainTableSqlDependentList) {
-                    dependentMap.computeIfAbsent(dependentKey(sqlDependent), MAPPING_FUNCTION)
-                            .add(sqlDependent);
-                }
-                for (SqlDependent sqlDependent : event.mainTableJoinSqlDependentList) {
-                    dependentMap.computeIfAbsent(dependentKey(sqlDependent), MAPPING_FUNCTION)
-                            .add(sqlDependent);
-                }
-                for (SqlDependent sqlDependent : event.slaveTableSqlDependentList) {
-                    dependentMap.computeIfAbsent(dependentKey(sqlDependent), MAPPING_FUNCTION)
-                            .add(sqlDependent);
-                }
-                BasicFieldWriter.WriteResult writeResult = event.writeResult;
-                if (writeResult != null) {
-                    for (ESSyncConfigSQL configSQL : writeResult.getSqlList()) {
-                        SqlDependent sqlDependent = configSQL.getDependent();
-                        dependentMap.computeIfAbsent(dependentKey(sqlDependent), MAPPING_FUNCTION)
-                                .add(sqlDependent);
-                    }
-                    for (SqlDependent sqlDependent : writeResult.getInsertList()) {
-                        dependentMap.computeIfAbsent(dependentKey(sqlDependent), MAPPING_FUNCTION)
-                                .add(sqlDependent);
-                    }
-                    for (SqlDependent sqlDependent : writeResult.getUpdateList()) {
-                        dependentMap.computeIfAbsent(dependentKey(sqlDependent), MAPPING_FUNCTION)
-                                .add(sqlDependent);
-                    }
-                    for (SqlDependent sqlDependent : writeResult.getDeleteList()) {
-                        dependentMap.computeIfAbsent(dependentKey(sqlDependent), MAPPING_FUNCTION)
-                                .add(sqlDependent);
-                    }
-                }
-            }
-            Map<Dml, Map<Integer, List<SqlDependent>>> dmlListMap = new IdentityHashMap<>();
-            for (List<SqlDependent> value : dependentMap.values()) {
-                SqlDependent sqlDependent = value.get(0);
-                dmlListMap.computeIfAbsent(sqlDependent.getDml(), k -> new LinkedHashMap<>())
-                        .computeIfAbsent(sqlDependent.getIndex(), k -> new ArrayList<>())
-                        .addAll(value);
-            }
-            return dmlListMap;
-        }
-
-        private List<DmlDTO> convert(Map<Dml, Map<Integer, List<SqlDependent>>> dmlListMap) {
-            List<DmlDTO> list = new ArrayList<>();
-            for (Map.Entry<Dml, Map<Integer, List<SqlDependent>>> entry : dmlListMap.entrySet()) {
-                Dml dml = entry.getKey();
-                for (Map.Entry<Integer, List<SqlDependent>> entry1 : entry.getValue().entrySet()) {
-                    List<SqlDependent> sqlDependentList = entry1.getValue();
-                    SqlDependent f = sqlDependentList.get(0);
-                    List<DmlDTO.Dependent> descList = new ArrayList<>();
-                    for (SqlDependent sqlDependent : sqlDependentList) {
-                        SchemaItem schemaItem = sqlDependent.getSchemaItem();
-                        DmlDTO.Dependent desc = new DmlDTO.Dependent();
-                        desc.setEffect(sqlDependent.isEffect());
-                        desc.setName(schemaItem.getDesc());
-                        desc.setEsIndex(schemaItem.getEsMapping().get_index());
-                        descList.add(desc);
-                    }
-                    DmlDTO dmlDTO = new DmlDTO();
-                    dmlDTO.setTableName(dml.getTable());
-                    dmlDTO.setDatabase(dml.getDatabase());
-                    dmlDTO.setPkNames(dml.getPkNames());
-                    dmlDTO.setEs(dml.getEs());
-                    dmlDTO.setTs(dml.getTs());
-                    dmlDTO.setType(dml.getType());
-                    dmlDTO.setOld(f.getOldMap());
-                    dmlDTO.setData(f.getDataMap());
-                    dmlDTO.setDependents(descList);
-                    dmlDTO.setAdapterName(adapterName);
-                    list.add(dmlDTO);
-                }
-            }
-            return list;
-        }
-    }
-
-    @Override
-    public String toString() {
-        return configuration.getName() + "{" +
-                "address='" + Arrays.toString(configuration.getEs7x().getAddress()) + '\'' +
-                ", refresh=" + refresh +
-                ", onlyEffect=" + onlyEffect +
-                ", refreshThreshold=" + refreshThreshold +
-                ", joinUpdateSize=" + joinUpdateSize +
-                ", streamChunkSize=" + streamChunkSize +
-                ", maxIdIn=" + maxIdIn +
-                '}';
     }
 }
