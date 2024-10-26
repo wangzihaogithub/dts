@@ -502,7 +502,7 @@ public class IntES7xETLService {
 
                         @Override
                         public void done() {
-                            if (done.incrementAndGet() == 0) {
+                            if (done.decrementAndGet() == 0) {
                                 if (log.isInfoEnabled()) {
                                     log.info("syncAll done {}", this);
                                 }
