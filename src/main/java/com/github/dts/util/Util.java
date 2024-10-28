@@ -63,6 +63,16 @@ public class Util {
         throw (E) t;
     }
 
+    public static <K, V, E extends Map<K, V>> E trimToSize(E e, BiFunction<Integer, Float, E> newInstance) {
+        // 优化空间： size=5的数据，原hashMap的 table[16] => table[4]
+        E apply = newInstance.apply((e.size() / 2) + 1, 2.5F);
+        for (Map.Entry<K, V> kvEntry : e.entrySet()) {
+            // 不用Map.putAll是为了防止table增长
+            apply.put(kvEntry.getKey(), kvEntry.getValue());
+        }
+        return apply;
+    }
+
     public static String encodeBasicAuth(String username, String password, Charset charset) {
         String credentialsString = username + ":" + password;
         byte[] encodedBytes = Base64.getEncoder().encode(credentialsString.getBytes(charset));

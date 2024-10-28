@@ -96,15 +96,13 @@ public class Dml implements Serializable {
             return;
         }
         for (Map<String, Object> dml : data) {
-            if (dml.isEmpty()) {
-                continue;
+            if (!dml.isEmpty()) {
+                LinkedHashMap<String, Object> copy = new LinkedHashMap<>(dml);
+                dml.clear();
+                for (Map.Entry<String, Object> entry : copy.entrySet()) {
+                    dml.put(cache(entry.getKey(), cache), cache(entry.getValue(), cache));
+                }
             }
-            Map<String, Object> compress = new LinkedHashMap<>();
-            for (Map.Entry<String, Object> entry : dml.entrySet()) {
-                compress.put(cache(entry.getKey(), cache), cache(entry.getValue(), cache));
-            }
-            dml.clear();
-            dml.putAll(compress);
         }
     }
 

@@ -201,12 +201,14 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
             msg.setLogfileOffset(entry.getHeader().getLogfileOffset());
 
             msgs.add(msg);
-            List<Map<String, Object>> data = new ArrayList<>();
-            List<Map<String, Object>> old = new ArrayList<>();
 
             if (!rowChange.getIsDdl()) {
+                ArrayList<Map<String, Object>> data = new ArrayList<>();
+                ArrayList<Map<String, Object>> old = new ArrayList<>();
+                ArrayList<String> pkNames = new ArrayList<>();
+
                 Set<String> updateSet = new HashSet<>();
-                msg.setPkNames(new ArrayList<>());
+                msg.setPkNames(pkNames);
                 int i = 0;
                 for (CanalEntry.RowData rowData : rowChange.getRowDatasList()) {
                     if (eventType != CanalEntry.EventType.INSERT && eventType != CanalEntry.EventType.UPDATE
@@ -225,41 +227,43 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
 
                     Map<String, String> mysqlType = new HashMap<>();
                     for (CanalEntry.Column column : columns) {
+                        String columnName = column.getName();
                         if (i == 0) {
                             if (column.getIsKey()) {
-                                msg.getPkNames().add(column.getName());
+                                pkNames.add(columnName);
                             }
                         }
                         if (column.getIsNull()) {
-                            row.put(column.getName(), null);
+                            row.put(columnName, null);
                         } else {
-                            row.put(column.getName(),
+                            row.put(columnName,
                                     JdbcTypeUtil.typeConvert(msg.getTable(),
-                                            column.getName(),
+                                            columnName,
                                             column.getValue(),
                                             column.getSqlType(),
                                             column.getMysqlType()));
-                            mysqlType.put(column.getName(), mysqlType(column.getMysqlType()));
+                            mysqlType.put(columnName, mysqlType(column.getMysqlType()));
                         }
                         // 获取update为true的字段
                         if (column.getUpdated()) {
-                            updateSet.add(column.getName());
+                            updateSet.add(columnName);
                         }
                     }
-                    msg.setMysqlType(mysqlType);
+                    msg.setMysqlType(Util.trimToSize(mysqlType, HashMap::new));
                     if (!row.isEmpty()) {
-                        data.add(row);
+                        data.add(Util.trimToSize(row, LinkedHashMap::new));
                     }
 
                     if (eventType == CanalEntry.EventType.UPDATE) {
                         Map<String, Object> rowOld = new LinkedHashMap<>();
                         for (CanalEntry.Column column : rowData.getBeforeColumnsList()) {
-                            if (updateSet.contains(column.getName())) {
+                            String columnName = column.getName();
+                            if (updateSet.contains(columnName)) {
                                 if (column.getIsNull()) {
-                                    rowOld.put(column.getName(), null);
+                                    rowOld.put(columnName, null);
                                 } else {
-                                    rowOld.put(column.getName(), JdbcTypeUtil.typeConvert(msg.getTable(),
-                                            column.getName(),
+                                    rowOld.put(columnName, JdbcTypeUtil.typeConvert(msg.getTable(),
+                                            columnName,
                                             column.getValue(),
                                             column.getSqlType(),
                                             column.getMysqlType()));
@@ -268,18 +272,21 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
                         }
                         // update操作将记录修改前的值
                         if (!rowOld.isEmpty()) {
-                            old.add(rowOld);
+                            old.add(Util.trimToSize(rowOld, LinkedHashMap::new));
                         }
                     }
 
                     i++;
                 }
                 if (!data.isEmpty()) {
+                    data.trimToSize();
                     msg.setData(data);
                 }
                 if (!old.isEmpty()) {
+                    old.trimToSize();
                     msg.setOld(old);
                 }
+                pkNames.trimToSize();
             }
         }
 
