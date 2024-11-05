@@ -99,7 +99,7 @@ public class ES7xConnection {
                     .build();
             if (basicHeader != null) {
                 httpClientBuilder.setDefaultHeaders(Collections.singletonList(basicHeader));
-            } else {
+            } else if (name != null && !name.trim().isEmpty()) {
                 CredentialsProvider credentialsProvider = new BasicCredentialsProvider();
                 credentialsProvider.setCredentials(AuthScope.ANY, new UsernamePasswordCredentials(name, pwd));
                 httpClientBuilder.setDefaultCredentialsProvider(credentialsProvider);
