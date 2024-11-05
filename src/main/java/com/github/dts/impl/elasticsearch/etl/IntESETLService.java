@@ -1,9 +1,9 @@
-package com.github.dts.impl.elasticsearch7x.etl;
+package com.github.dts.impl.elasticsearch.etl;
 
 import com.github.dts.canal.StartupServer;
-import com.github.dts.impl.elasticsearch7x.ES7xAdapter;
-import com.github.dts.impl.elasticsearch7x.nested.MergeJdbcTemplateSQL;
-import com.github.dts.impl.elasticsearch7x.nested.SQL;
+import com.github.dts.impl.elasticsearch.ESAdapter;
+import com.github.dts.impl.elasticsearch.nested.MergeJdbcTemplateSQL;
+import com.github.dts.impl.elasticsearch.nested.SQL;
 import com.github.dts.util.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,23 +25,23 @@ import java.util.stream.Collectors;
 /**
  * 根据自增ID的全量灌数据，可以继承这个Controller
  * <pre>
- * curl "<a href="http://localhost:8080/es7x/myxxx/syncById?id=1,2">http://localhost:8080/es7x/myxxx/syncById?id=1,2</a>"
- * curl "<a href="http://localhost:8080/es7x/myxxx/syncAll">http://localhost:8080/es7x/myxxx/syncAll</a>"
- * curl "<a href="http://localhost:8080/es7x/myxxx/stop">http://localhost:8080/es7x/myxxx/stop</a>"
+ * curl "<a href="http://localhost:8080/es/myxxx/syncById?id=1,2">http://localhost:8080/es/myxxx/syncById?id=1,2</a>"
+ * curl "<a href="http://localhost:8080/es/myxxx/syncAll">http://localhost:8080/es/myxxx/syncAll</a>"
+ * curl "<a href="http://localhost:8080/es/myxxx/stop">http://localhost:8080/es/myxxx/stop</a>"
  * </pre>
  */
-public class IntES7xETLService {
-    private static final Logger log = LoggerFactory.getLogger(IntES7xETLService.class);
+public class IntESETLService {
+    private static final Logger log = LoggerFactory.getLogger(IntESETLService.class);
     protected final StartupServer startupServer;
     private final ExecutorService executorService;
     private final String name;
     private boolean stop = false;
 
-    public IntES7xETLService(String name, StartupServer startupServer) {
+    public IntESETLService(String name, StartupServer startupServer) {
         this(name, startupServer, 1000);
     }
 
-    public IntES7xETLService(String name, StartupServer startupServer, int threads) {
+    public IntESETLService(String name, StartupServer startupServer, int threads) {
         this.name = name;
         this.startupServer = startupServer;
         this.executorService = Util.newFixedThreadPool(threads, 5000L,
@@ -55,31 +55,35 @@ public class IntES7xETLService {
     public List<SyncRunnable> syncAll(String esIndexName) {
         return syncAll(esIndexName,
                 50, 0, null, 500,
-                true, false, true, 100, null);
+                true, false, true, 100, null, null);
     }
 
     public Object syncById(Long[] id,
                            String esIndexName) {
-        return syncById(id, esIndexName, true, null);
+        return syncById(id, esIndexName, true, null, null);
     }
 
     public int updateEsDiff(String esIndexName) {
-        return updateEsDiff(esIndexName, null, null, 1000, null, 500);
+        return updateEsDiff(esIndexName, null, null, 1000, null, 500, null);
     }
 
     public int deleteEsTrim(String esIndexName) {
-        return deleteEsTrim(esIndexName, null, null, 1000, 1000);
+        return deleteEsTrim(esIndexName, null, null, 1000, 1000, null);
     }
 
     public int deleteEsTrim(String esIndexName,
                             Long startId,
                             Long endId,
                             int offsetAdd,
-                            int maxSendMessageDeleteIdSize) {
+                            int maxSendMessageDeleteIdSize,
+                            List<String> adapterNames) {
         this.stop = false;
-        List<ES7xAdapter> adapterList = startupServer.getAdapter(ES7xAdapter.class);
+        List<ESAdapter> adapterList = getAdapterList(adapterNames);
+        if (adapterList.isEmpty()) {
+            return 0;
+        }
         int r = 0;
-        for (ES7xAdapter adapter : adapterList) {
+        for (ESAdapter adapter : adapterList) {
             r += adapter.getEsSyncConfigByIndex(esIndexName).size();
         }
         if (r == 0) {
@@ -87,7 +91,7 @@ public class IntES7xETLService {
         }
 
         AbstractMessageService messageService = startupServer.getMessageService();
-        for (ES7xAdapter adapter : adapterList) {
+        for (ESAdapter adapter : adapterList) {
             executorService.execute(() -> {
                 long hitListSize = 0;
                 long deleteSize = 0;
@@ -156,11 +160,15 @@ public class IntES7xETLService {
                             Long endId,
                             int offsetAdd,
                             Set<String> diffFields,
-                            int maxSendMessageSize) {
+                            int maxSendMessageSize,
+                            List<String> adapterNames) {
         this.stop = false;
-        List<ES7xAdapter> adapterList = startupServer.getAdapter(ES7xAdapter.class);
+        List<ESAdapter> adapterList = getAdapterList(adapterNames);
+        if (adapterList.isEmpty()) {
+            return 0;
+        }
         int r = 0;
-        for (ES7xAdapter adapter : adapterList) {
+        for (ESAdapter adapter : adapterList) {
             r += adapter.getEsSyncConfigByIndex(esIndexName).size();
         }
         if (r == 0) {
@@ -168,7 +176,7 @@ public class IntES7xETLService {
         }
 
         AbstractMessageService messageService = startupServer.getMessageService();
-        for (ES7xAdapter adapter : adapterList) {
+        for (ESAdapter adapter : adapterList) {
             executorService.execute(() -> {
                 String lastId = null;
                 long hitListSize = 0;
@@ -188,7 +196,7 @@ public class IntES7xETLService {
                         String pkFieldExpr = config.getEsMapping().getSchemaItem().getIdField().getOwnerAndColumnName();
                         String[] selectFields = esMapping.getSchemaItem().getSelectFields().keySet().toArray(new String[0]);
 
-                        ES7xTemplate esTemplate = adapter.getEsTemplate();
+                        DefaultESTemplate esTemplate = adapter.getEsTemplate();
 
                         Object[] searchAfter = startId == null ? null : new Object[]{startId - 1L};
                         do {
@@ -247,7 +255,7 @@ public class IntES7xETLService {
     }
 
     public int updateEsNestedDiff(String esIndexName) {
-        return updateEsNestedDiff(esIndexName, null, null, 1000, null, 1000);
+        return updateEsNestedDiff(esIndexName, null, null, 1000, null, 1000, null);
     }
 
     public int updateEsNestedDiff(String esIndexName,
@@ -255,11 +263,15 @@ public class IntES7xETLService {
                                   Long endId,
                                   int offsetAdd,
                                   Set<String> diffFields,
-                                  int maxSendMessageSize) {
+                                  int maxSendMessageSize,
+                                  List<String> adapterNames) {
         this.stop = false;
-        List<ES7xAdapter> adapterList = startupServer.getAdapter(ES7xAdapter.class);
+        List<ESAdapter> adapterList = getAdapterList(adapterNames);
+        if (adapterList.isEmpty()) {
+            return 0;
+        }
         int r = 0;
-        for (ES7xAdapter adapter : adapterList) {
+        for (ESAdapter adapter : adapterList) {
             r += adapter.getEsSyncConfigByIndex(esIndexName).size();
         }
         if (r == 0) {
@@ -268,8 +280,8 @@ public class IntES7xETLService {
 
         int maxIdInCount = 1000;
         AbstractMessageService messageService = startupServer.getMessageService();
-        for (ES7xAdapter adapter : adapterList) {
-            ES7xTemplate esTemplate = adapter.getEsTemplate();
+        for (ESAdapter adapter : adapterList) {
+            DefaultESTemplate esTemplate = adapter.getEsTemplate();
             AtomicBoolean done = new AtomicBoolean(false);
             AtomicBoolean commit = new AtomicBoolean(false);
             executorService.execute(() -> {
@@ -426,6 +438,17 @@ public class IntES7xETLService {
         return r;
     }
 
+    protected List<ESAdapter> getAdapterList(List<String> adapterNames) {
+        List<ESAdapter> adapterList = startupServer.getAdapter(ESAdapter.class);
+        if (adapterNames == null || adapterNames.isEmpty()) {
+            return adapterList;
+        } else {
+            return adapterList.stream()
+                    .filter(e -> adapterNames.contains(e.getConfiguration().getName()))
+                    .collect(Collectors.toList());
+        }
+    }
+
     public List<SyncRunnable> syncAll(
             String esIndexName,
             int threads,
@@ -436,15 +459,16 @@ public class IntES7xETLService {
             boolean discard,
             boolean onlyCurrentIndex,
             int joinUpdateSize,
-            Set<String> onlyFieldNameSet) {
+            Set<String> onlyFieldNameSet,
+            List<String> adapterNames) {
         this.stop = false;
-        List<ES7xAdapter> adapterList = startupServer.getAdapter(ES7xAdapter.class);
+        List<ESAdapter> adapterList = getAdapterList(adapterNames);
         if (adapterList.isEmpty()) {
             return new ArrayList<>();
         }
 
         List<SyncRunnable> runnableList = new ArrayList<>();
-        for (ES7xAdapter adapter : adapterList) {
+        for (ESAdapter adapter : adapterList) {
             Map<String, ESSyncConfig> configMap = adapter.getEsSyncConfigByIndex(esIndexName);
             if (configMap.isEmpty()) {
                 continue;
@@ -459,7 +483,7 @@ public class IntES7xETLService {
                     }
                 }).start();
             }
-            setSuspendEs7x(true, clientIdentity);
+            setSuspendEs(true, clientIdentity);
 
             AbstractMessageService messageService = startupServer.getMessageService();
             AtomicInteger configDone = new AtomicInteger(configMap.values().size());
@@ -507,7 +531,7 @@ public class IntES7xETLService {
                                     log.info("syncAll done {}", this);
                                 }
                                 if (configDone.decrementAndGet() == 0) {
-                                    setSuspendEs7x(false, clientIdentity);
+                                    setSuspendEs(false, clientIdentity);
                                 }
                                 sendDone(messageService, runnableList, timestamp, dmlSize.longValue(), onlyFieldNameSet, adapter, config, onlyCurrentIndex);
                             }
@@ -525,11 +549,14 @@ public class IntES7xETLService {
     public int syncById(Long[] id,
                         String esIndexName,
                         boolean onlyCurrentIndex,
-                        Set<String> onlyFieldNameSet) {
-        List<ES7xAdapter> adapterList = startupServer.getAdapter(ES7xAdapter.class);
-
+                        Set<String> onlyFieldNameSet,
+                        List<String> adapterNames) {
+        List<ESAdapter> adapterList = getAdapterList(adapterNames);
+        if (adapterList.isEmpty()) {
+            return 0;
+        }
         int count = 0;
-        for (ES7xAdapter adapter : adapterList) {
+        for (ESAdapter adapter : adapterList) {
             Map<String, ESSyncConfig> configMap = adapter.getEsSyncConfigByIndex(esIndexName);
             for (ESSyncConfig config : configMap.values()) {
                 JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(config.getDataSourceKey());
@@ -553,7 +580,7 @@ public class IntES7xETLService {
         return list;
     }
 
-    private void setSuspendEs7x(boolean suspend, String clientIdentity) {
+    private void setSuspendEs(boolean suspend, String clientIdentity) {
         List<StartupServer.ThreadRef> canalThread = startupServer.getCanalThread(clientIdentity);
         for (StartupServer.ThreadRef thread : canalThread) {
             if (suspend) {
@@ -570,7 +597,7 @@ public class IntES7xETLService {
 
     protected int syncById(JdbcTemplate jdbcTemplate, String catalog, Collection<Long> id,
                            boolean onlyCurrentIndex, Collection<String> onlyFieldNameSet,
-                           ES7xAdapter esAdapter, ESSyncConfig config) {
+                           ESAdapter esAdapter, ESSyncConfig config) {
         this.stop = false;
         if (id == null || id.isEmpty()) {
             return 0;
@@ -592,11 +619,12 @@ public class IntES7xETLService {
     protected void sendDone(AbstractMessageService messageService, List<SyncRunnable> runnableList,
                             Date startTime, long dmlSize,
                             Set<String> onlyFieldNameSet,
-                            ES7xAdapter adapter, ESSyncConfig config, boolean onlyCurrentIndex) {
+                            ESAdapter adapter, ESSyncConfig config, boolean onlyCurrentIndex) {
         String title = "ES搜索全量刷数据-结束";
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
                 + ",\n\n 对象 = " + getName()
+                + ",\n\n 使用实现 = " + adapter.getConfiguration().getName()
                 + ",\n\n 索引 = " + config.getEsMapping().get_index()
                 + ",\n\n 开始时间 = " + startTime
                 + ",\n\n 结束时间 = " + new Timestamp(System.currentTimeMillis())
@@ -610,7 +638,7 @@ public class IntES7xETLService {
     protected void sendError(AbstractMessageService messageService, Throwable throwable,
                              SyncRunnable runnable, Long minOffset,
                              Set<String> onlyFieldNameSet,
-                             ES7xAdapter adapter, ESSyncConfig config, boolean onlyCurrentIndex) {
+                             ESAdapter adapter, ESSyncConfig config, boolean onlyCurrentIndex) {
         String title = "ES搜索全量刷数据-异常";
         StringWriter writer = new StringWriter();
         throwable.printStackTrace(new PrintWriter(writer));
@@ -618,6 +646,7 @@ public class IntES7xETLService {
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
                 + ",\n\n 对象 = " + getName()
+                + ",\n\n 使用实现 = " + adapter.getConfiguration().getName()
                 + ",\n\n 索引 = " + config.getEsMapping().get_index()
                 + ",\n\n 是否需要更新关联索引 = " + !onlyCurrentIndex
                 + ",\n\n 影响字段 = " + (onlyFieldNameSet == null ? "全部" : onlyFieldNameSet)
@@ -631,11 +660,12 @@ public class IntES7xETLService {
 
     protected void sendTrimDone(AbstractMessageService messageService, Date startTime,
                                 long dmlSize, long deleteSize, List<String> deleteIdList,
-                                ES7xAdapter adapter, ESSyncConfig config) {
+                                ESAdapter adapter, ESSyncConfig config) {
         String title = "ES搜索全量校验Trim数据-结束";
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
                 + ",\n\n 对象 = " + getName()
+                + ",\n\n 使用实现 = " + adapter.getConfiguration().getName()
                 + ",\n\n 索引 = " + config.getEsMapping().get_index()
                 + ",\n\n 开始时间 = " + startTime
                 + ",\n\n 结束时间 = " + new Timestamp(System.currentTimeMillis())
@@ -647,7 +677,7 @@ public class IntES7xETLService {
 
     protected void sendTrimError(AbstractMessageService messageService, Throwable throwable,
                                  Date timestamp, long dmlSize, long deleteSize, List<String> deleteIdList,
-                                 ES7xAdapter adapter, ESSyncConfig config, String lastId) {
+                                 ESAdapter adapter, ESSyncConfig config, String lastId) {
         String title = "ES搜索全量校验Trim数据-异常";
         StringWriter writer = new StringWriter();
         throwable.printStackTrace(new PrintWriter(writer));
@@ -655,6 +685,7 @@ public class IntES7xETLService {
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
                 + ",\n\n 对象 = " + getName()
+                + ",\n\n 使用实现 = " + adapter.getConfiguration().getName()
                 + ",\n\n 索引 = " + config.getEsMapping().get_index()
                 + ",\n\n 开始时间 = " + timestamp
                 + ",\n\n 校验条数 = " + dmlSize
@@ -670,11 +701,12 @@ public class IntES7xETLService {
                                 long dmlSize, long deleteSize, List<String> deleteIdList,
                                 long updateSize, List<String> updateIdList,
                                 Set<String> diffFields,
-                                ES7xAdapter adapter, ESSyncConfig config) {
+                                ESAdapter adapter, ESSyncConfig config) {
         String title = "ES搜索全量校验Diff数据-结束";
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
                 + ",\n\n 对象 = " + getName()
+                + ",\n\n 使用实现 = " + adapter.getConfiguration().getName()
                 + ",\n\n 索引 = " + config.getEsMapping().get_index()
                 + ",\n\n 开始时间 = " + startTime
                 + ",\n\n 结束时间 = " + new Timestamp(System.currentTimeMillis())
@@ -691,7 +723,7 @@ public class IntES7xETLService {
                                  Date timestamp, long dmlSize, long deleteSize, List<String> deleteIdList,
                                  long updateSize, List<String> updateIdList,
                                  Set<String> diffFields,
-                                 ES7xAdapter adapter, ESSyncConfig config, String lastId) {
+                                 ESAdapter adapter, ESSyncConfig config, String lastId) {
         String title = "ES搜索全量校验Diff数据-异常";
         StringWriter writer = new StringWriter();
         throwable.printStackTrace(new PrintWriter(writer));
@@ -699,6 +731,7 @@ public class IntES7xETLService {
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
                 + ",\n\n 对象 = " + getName()
+                + ",\n\n 使用实现 = " + adapter.getConfiguration().getName()
                 + ",\n\n 索引 = " + config.getEsMapping().get_index()
                 + ",\n\n 开始时间 = " + timestamp
                 + ",\n\n 比较字段(不含nested) = " + (diffFields == null ? "全部" : diffFields)
@@ -717,11 +750,12 @@ public class IntES7xETLService {
                                       long dmlSize,
                                       long updateSize, List<String> updateIdList,
                                       Set<String> diffFields,
-                                      ES7xAdapter adapter, ESSyncConfig config) {
+                                      ESAdapter adapter, ESSyncConfig config) {
         String title = "ES搜索全量校验嵌套Diff数据-结束";
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
                 + ",\n\n 对象 = " + getName()
+                + ",\n\n 使用实现 = " + adapter.getConfiguration().getName()
                 + ",\n\n 索引 = " + config.getEsMapping().get_index()
                 + ",\n\n 开始时间 = " + startTime
                 + ",\n\n 结束时间 = " + new Timestamp(System.currentTimeMillis())
@@ -736,7 +770,7 @@ public class IntES7xETLService {
                                        Date timestamp, long dmlSize,
                                        long updateSize, List<String> updateIdList,
                                        Set<String> diffFields,
-                                       ES7xAdapter adapter, ESSyncConfig config,
+                                       ESAdapter adapter, ESSyncConfig config,
                                        String lastId) {
         String title = "ES搜索全量校验嵌套Diff数据-异常";
         StringWriter writer = new StringWriter();
@@ -745,6 +779,7 @@ public class IntES7xETLService {
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
                 + ",\n\n 对象 = " + getName()
+                + ",\n\n 使用实现 = " + adapter.getConfiguration().getName()
                 + ",\n\n 索引 = " + config.getEsMapping().get_index()
                 + ",\n\n 开始时间 = " + timestamp
                 + ",\n\n 比较nested字段 = " + (diffFields == null ? "全部" : diffFields)
@@ -815,19 +850,19 @@ public class IntES7xETLService {
         private final long offset;
         private final long endOffset;
         private final long offsetStart;
-        private final IntES7xETLService service;
+        private final IntESETLService service;
         private final String name;
         private final Set<String> onlyFieldNameSet;
-        private final ES7xAdapter adapter;
+        private final ESAdapter adapter;
         private final ESSyncConfig config;
         private final boolean onlyCurrentIndex;
         protected long currOffset;
         private boolean done;
 
-        public SyncRunnable(String name, IntES7xETLService service,
+        public SyncRunnable(String name, IntESETLService service,
                             int threadIndex, long offsetStart, long maxId, int threads,
                             Set<String> onlyFieldNameSet,
-                            ES7xAdapter adapter,
+                            ESAdapter adapter,
                             ESSyncConfig config, boolean onlyCurrentIndex) {
             this.name = name;
             this.onlyCurrentIndex = onlyCurrentIndex;

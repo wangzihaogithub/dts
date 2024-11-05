@@ -1,7 +1,7 @@
-package com.github.dts.impl.elasticsearch7x.basic;
+package com.github.dts.impl.elasticsearch.basic;
 
-import com.github.dts.impl.elasticsearch7x.nested.JdbcTemplateSQL;
-import com.github.dts.impl.elasticsearch7x.nested.SQL;
+import com.github.dts.impl.elasticsearch.nested.JdbcTemplateSQL;
+import com.github.dts.impl.elasticsearch.nested.SQL;
 import com.github.dts.util.SqlDependent;
 import com.github.dts.util.Dml;
 import com.github.dts.util.ESSyncConfig;

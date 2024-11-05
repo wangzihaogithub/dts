@@ -1,8 +1,8 @@
-package com.github.dts.impl.elasticsearch7x;
+package com.github.dts.impl.elasticsearch;
 
-import com.github.dts.impl.elasticsearch7x.NestedFieldWriter.DependentSQL;
-import com.github.dts.impl.elasticsearch7x.nested.MergeJdbcTemplateSQL;
-import com.github.dts.impl.elasticsearch7x.nested.SQL;
+import com.github.dts.impl.elasticsearch.NestedFieldWriter.DependentSQL;
+import com.github.dts.impl.elasticsearch.nested.MergeJdbcTemplateSQL;
+import com.github.dts.impl.elasticsearch.nested.SQL;
 import com.github.dts.util.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,7 +14,7 @@ import java.util.concurrent.CompletableFuture;
 class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnable {
     private static final Logger log = LoggerFactory.getLogger(NestedSlaveTableRunnable.class);
     private final List<SqlDependent> updateDmlList;
-    private final ES7xTemplate es7xTemplate;
+    private final DefaultESTemplate esTemplate;
     private final Timestamp timestamp;
     private final JoinByParentSlaveTableForeignKey joinForeignKey = new JoinByParentSlaveTableForeignKey();
     private final JoinBySlaveTable joinBySlaveTable = new JoinBySlaveTable();
@@ -27,22 +27,22 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
     private final NestedSlaveTableRunnable newRun;
 
     NestedSlaveTableRunnable(List<SqlDependent> updateDmlList,
-                             ES7xTemplate es7xTemplate,
+                             DefaultESTemplate esTemplate,
                              ESTemplate.BulkRequestList bulkRequestList,
                              ESTemplate.CommitListener commitListener,
                              CacheMap cacheMap, Timestamp timestamp, int chunkSize, int streamChunkSize) {
-        this(updateDmlList, es7xTemplate, bulkRequestList, commitListener, cacheMap, timestamp, chunkSize, streamChunkSize, null, null);
+        this(updateDmlList, esTemplate, bulkRequestList, commitListener, cacheMap, timestamp, chunkSize, streamChunkSize, null, null);
     }
 
     NestedSlaveTableRunnable(List<SqlDependent> updateDmlList,
-                             ES7xTemplate es7xTemplate,
+                             DefaultESTemplate esTemplate,
                              ESTemplate.BulkRequestList bulkRequestList,
                              ESTemplate.CommitListener commitListener,
                              CacheMap cacheMap, Timestamp timestamp, int chunkSize, int streamChunkSize,
                              NestedSlaveTableRunnable oldRun, NestedSlaveTableRunnable newRun) {
         this.timestamp = timestamp == null ? new Timestamp(System.currentTimeMillis()) : timestamp;
         this.updateDmlList = updateDmlList;
-        this.es7xTemplate = es7xTemplate;
+        this.esTemplate = esTemplate;
         this.chunkSize = chunkSize;
         this.bulkRequestList = bulkRequestList;
         this.commitListener = commitListener;
@@ -56,7 +56,7 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
         List<SqlDependent> dmlList = new ArrayList<>(oldRun.updateDmlList.size() + newRun.updateDmlList.size());
         dmlList.addAll(oldRun.updateDmlList);
         dmlList.addAll(newRun.updateDmlList);
-        return new NestedSlaveTableRunnable(dmlList, oldRun.es7xTemplate,
+        return new NestedSlaveTableRunnable(dmlList, oldRun.esTemplate,
                 oldRun.bulkRequestList.fork(newRun.bulkRequestList),
                 ESTemplate.merge(oldRun.commitListener, newRun.commitListener),
                 oldRun.cacheMap, oldRun.timestamp, oldRun.chunkSize, oldRun.streamChunkSize,
@@ -74,7 +74,7 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
             ESTemplate.BulkRequestList bulkRequestList = this.bulkRequestList.fork(BulkPriorityEnum.LOW);
             if (!joinBySlaveTable.nestedMainSqlList.isEmpty()) {
                 List<MergeJdbcTemplateSQL<DependentSQL>> merge = MergeJdbcTemplateSQL.merge(joinBySlaveTable.nestedMainSqlList, chunkSize);
-                MergeJdbcTemplateSQL.executeQueryList(merge, cacheMap, (sql, list) -> NestedFieldWriter.executeEsTemplateUpdate(bulkRequestList, es7xTemplate, sql, list));
+                MergeJdbcTemplateSQL.executeQueryList(merge, cacheMap, (sql, list) -> NestedFieldWriter.executeEsTemplateUpdate(bulkRequestList, esTemplate, sql, list));
             }
 
             if (!joinForeignKey.parentSqlList.isEmpty()) {
@@ -89,14 +89,14 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
                         if (!pkList.isEmpty()) {
                             List<Map<String, Object>> parentData = parentGetterMap.get(dmlUniqueColumnKey);
                             SchemaItem schemaItem = chunk.source.getSchemaItem();
-                            NestedFieldWriter.executeEsTemplateUpdate(bulkRequestList, es7xTemplate, pkList, schemaItem, parentData);
+                            NestedFieldWriter.executeEsTemplateUpdate(bulkRequestList, esTemplate, pkList, schemaItem, parentData);
                         }
                     });
-                    bulkRequestList.commit(es7xTemplate);
+                    bulkRequestList.commit(esTemplate);
                 }
             }
 
-            bulkRequestList.commit(es7xTemplate);
+            bulkRequestList.commit(esTemplate);
             log.info("NestedMainJoinTable={}ms, rowCount={}, dml={}, ts={}",
                     System.currentTimeMillis() - timestamp.getTime(),
                     updateDmlList,

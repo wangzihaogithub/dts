@@ -1,6 +1,6 @@
 package com.github.dts.util;
 
-import com.github.dts.impl.elasticsearch7x.nested.SQL;
+import com.github.dts.impl.elasticsearch.nested.SQL;
 import com.github.dts.util.ESSyncConfig.ESMapping;
 import com.github.dts.util.SchemaItem.TableItem;
 import org.joda.time.DateTime;
@@ -49,15 +49,19 @@ public class ESSyncUtil {
         File[] files = configDir.listFiles();
         if (files != null) {
             for (File file : files) {
-                String fileName = file.getName();
-                if (!fileName.endsWith(".yml") && !fileName.endsWith(".yaml")) {
-                    continue;
-                }
-                try {
-                    byte[] bytes = Files.readAllBytes(file.toPath());
-                    map.put(fileName, bytes);
-                } catch (IOException e) {
-                    throw new RuntimeException("Read " + configDir + "mapping config: " + fileName + " error. ", e);
+                if(file.isDirectory()){
+                    map.putAll(loadYamlToBytes(file));
+                }else {
+                    String fileName = file.getName();
+                    if (!fileName.endsWith(".yml") && !fileName.endsWith(".yaml")) {
+                        continue;
+                    }
+                    try {
+                        byte[] bytes = Files.readAllBytes(file.toPath());
+                        map.put(fileName, bytes);
+                    } catch (IOException e) {
+                        throw new RuntimeException("Read " + configDir + "mapping config: " + fileName + " error. ", e);
+                    }
                 }
             }
         }

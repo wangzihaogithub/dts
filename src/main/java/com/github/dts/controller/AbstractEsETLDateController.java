@@ -1,7 +1,7 @@
 package com.github.dts.controller;
 
 import com.github.dts.canal.StartupServer;
-import com.github.dts.impl.elasticsearch7x.ES7xAdapter;
+import com.github.dts.impl.elasticsearch.ESAdapter;
 import com.github.dts.util.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,12 +21,12 @@ import java.util.stream.Collectors;
 /**
  * 根据日期全量灌数据，可以继承这个Controller
  * <pre>
- * curl "<a href="http://localhost:8080/es7x/myxxx/syncAll?fieldName=create_time&offsetStart=2022-03-01&offsetEnd=2024-10-01">http://localhost:8080/es7x/myxxx/syncAll</a>"
- * curl "<a href="http://localhost:8080/es7x/myxxx/stop">http://localhost:8080/es7x/myxxx/stop</a>"
+ * curl "<a href="http://localhost:8080/es/myxxx/syncAll?fieldName=create_time&offsetStart=2022-03-01&offsetEnd=2024-10-01">http://localhost:8080/es/myxxx/syncAll</a>"
+ * curl "<a href="http://localhost:8080/es/myxxx/stop">http://localhost:8080/es/myxxx/stop</a>"
  * </pre>
  */
-public abstract class AbstractEs7xETLDateController {
-    private static final Logger log = LoggerFactory.getLogger(AbstractEs7xETLDateController.class);
+public abstract class AbstractEsETLDateController {
+    private static final Logger log = LoggerFactory.getLogger(AbstractEsETLDateController.class);
 
     private final ExecutorService executorService = Util.newFixedThreadPool(1000, 5000L,
             getClass().getSimpleName(), true);
@@ -36,12 +36,12 @@ public abstract class AbstractEs7xETLDateController {
 
     protected abstract Date selectMaxDate(JdbcTemplate jdbcTemplate);
 
-    protected abstract ES7xAdapter getES7xAdapter();
+    protected abstract ESAdapter getESAdapter();
 
     protected abstract List<Dml> convertDmlList(JdbcTemplate jdbcTemplate, String catalog, Timestamp minId, Timestamp maxId);
 
-    protected ES7xAdapter getES7xAdapter(String name) {
-        return startupServer.getAdapter(name, ES7xAdapter.class);
+    protected ESAdapter getESAdapter(String name) {
+        return startupServer.getAdapter(name, ESAdapter.class);
     }
 
     @RequestMapping("/syncAll")
@@ -58,7 +58,7 @@ public abstract class AbstractEs7xETLDateController {
             @RequestParam(required = false, defaultValue = "true") boolean onlyCurrentIndex,
             @RequestParam(required = false, defaultValue = "100") int joinUpdateSize,
             String[] onlyFieldName) {
-        List<ES7xAdapter> adapterList = startupServer.getAdapter(ES7xAdapter.class);
+        List<ESAdapter> adapterList = startupServer.getAdapter(ESAdapter.class);
         if (adapterList.isEmpty()) {
             return new ArrayList<>();
         }
@@ -72,7 +72,7 @@ public abstract class AbstractEs7xETLDateController {
         Long offsetEndDate = offsetEndParse == null ? null : offsetEndParse.getTime();
 
         Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(Util::isNotBlank).collect(Collectors.toCollection(LinkedHashSet::new));
-        String clientIdentity = getES7xAdapter().getClientIdentity();
+        String clientIdentity = getESAdapter().getClientIdentity();
         if (discard) {
             new Thread(() -> {
                 try {
@@ -85,9 +85,9 @@ public abstract class AbstractEs7xETLDateController {
 
         AbstractMessageService messageService = startupServer.getMessageService();
         List<SyncRunnable> runnableList = new ArrayList<>();
-        setSuspendEs7x(true, clientIdentity);
+        setSuspendEs(true, clientIdentity);
         this.stop = false;
-        for (ES7xAdapter adapter : adapterList) {
+        for (ESAdapter adapter : adapterList) {
             Map<String, ESSyncConfig> configMap = adapter.getEsSyncConfigByIndex(esIndexName);
             for (ESSyncConfig config : configMap.values()) {
                 long maxId = offsetEndDate == null ?
@@ -121,7 +121,7 @@ public abstract class AbstractEs7xETLDateController {
                                 if (log.isInfoEnabled()) {
                                     log.info("syncAll done {}", this);
                                 }
-                                setSuspendEs7x(false, clientIdentity);
+                                setSuspendEs(false, clientIdentity);
                                 sendDone(runnableList, timestamp, dmlSize.intValue());
                             }
                         }
@@ -149,7 +149,7 @@ public abstract class AbstractEs7xETLDateController {
         return list;
     }
 
-    private void setSuspendEs7x(boolean suspend, String clientIdentity) {
+    private void setSuspendEs(boolean suspend, String clientIdentity) {
         List<StartupServer.ThreadRef> canalThread = startupServer.getCanalThread(clientIdentity);
         for (StartupServer.ThreadRef thread : canalThread) {
             if (suspend) {
@@ -166,7 +166,7 @@ public abstract class AbstractEs7xETLDateController {
 
     protected int syncAll(JdbcTemplate jdbcTemplate, String catalog, String fieldName,
                           long minId, long maxId, boolean append, boolean onlyCurrentIndex, int joinUpdateSize, Collection<String> onlyFieldName,
-                          ES7xAdapter adapter, ESSyncConfig config) {
+                          ESAdapter adapter, ESSyncConfig config) {
         Timestamp minIdDate = new Timestamp(minId);
         Timestamp maxIdDate = new Timestamp(maxId);
 
@@ -174,7 +174,7 @@ public abstract class AbstractEs7xETLDateController {
         if (dmlList.isEmpty()) {
             return 0;
         }
-        ES7xAdapter esAdapter = getES7xAdapter();
+        ESAdapter esAdapter = getESAdapter();
         for (Dml dml : dmlList) {
             dml.setDestination(esAdapter.getConfiguration().getCanalAdapter().getDestination());
         }

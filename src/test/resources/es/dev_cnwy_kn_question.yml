@@ -1,5 +1,6 @@
 dataSourceKey: defaultDS
 destination: cnwybinlog
+adapterNamePattern: adapterES716
 esMapping:
   env: dev
   pk: id

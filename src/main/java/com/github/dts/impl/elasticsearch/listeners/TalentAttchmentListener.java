@@ -1,4 +1,4 @@
-package com.github.dts.impl.elasticsearch7x.listeners;//package com.github.dts.listeners;
+package com.github.dts.impl.elasticsearch.listeners;//package com.github.dts.listeners;
 //
 //import com.alibaba.fastjson.util.TypeUtils;
 //import com.alibaba.otter.canal.client.adapter.OuterAdapter;

@@ -5,6 +5,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/kn_scene")
-public class KnSceneController extends AbstractEs7xETLIntController {
+public class KnSceneController extends AbstractEsETLIntController {
 
 }

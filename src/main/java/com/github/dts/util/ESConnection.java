@@ -52,27 +52,27 @@ import java.util.stream.Collectors;
  * @author rewerma 2019-08-01
  * @version 1.0.0
  */
-public class ES7xConnection {
-    public static final ES7xBulkResponse EMPTY_RESPONSE = new ES7xBulkResponse(Collections.emptyList());
-    private static final Logger logger = LoggerFactory.getLogger(ES7xConnection.class);
+public class ESConnection {
+    public static final ESBulkResponseImpl EMPTY_RESPONSE = new ESBulkResponseImpl(Collections.emptyList());
+    private static final Logger logger = LoggerFactory.getLogger(ESConnection.class);
     private final RestHighLevelClient restHighLevelClient;
     private final int concurrentBulkRequest;
     private final int bulkCommitSize;
     private final int maxRetryCount;
     private final int bulkRetryCount;
     private final int minAvailableSpaceHighBulkRequests;
-    private final Map<String, CompletableFuture<ESBulkRequest.EsRefreshResponse>> refreshAsyncCache = new ConcurrentHashMap<>(2);
+    private final Map<String, CompletableFuture<com.github.dts.util.ESBulkRequest.EsRefreshResponse>> refreshAsyncCache = new ConcurrentHashMap<>(2);
     private final Map<String, CompletableFuture<Map<String, Object>>> getMappingAsyncCache = new ConcurrentHashMap<>(2);
     private final int updateByQueryChunkSize;
 
-    public ES7xConnection(CanalConfig.OuterAdapterConfig.EsAccount es7x) {
-        String[] elasticsearchUri = es7x.getAddress();
+    public ESConnection(CanalConfig.OuterAdapterConfig.EsAccount esAccount) {
+        String[] elasticsearchUri = esAccount.getAddress();
         HttpHost[] httpHosts = Arrays.stream(elasticsearchUri).map(HttpHost::create).toArray(HttpHost[]::new);
-        String name = es7x.getUsername();
-        String pwd = es7x.getPassword();
-        String apiKey = es7x.getApiKey();
-        String clusterName = es7x.getClusterName();
-        int concurrentBulkRequest = es7x.getConcurrentBulkRequest();
+        String name = esAccount.getUsername();
+        String pwd = esAccount.getPassword();
+        String apiKey = esAccount.getApiKey();
+        String clusterName = esAccount.getClusterName();
+        int concurrentBulkRequest = esAccount.getConcurrentBulkRequest();
 
         BasicHeader basicHeader;
         if (apiKey != null && !apiKey.isEmpty()) {
@@ -84,9 +84,9 @@ public class ES7xConnection {
         final RestClientBuilder clientBuilder = RestClient
                 .builder(httpHosts)
                 .setRequestConfigCallback(requestConfigBuilder -> requestConfigBuilder
-                        .setConnectTimeout(es7x.getHttpConnectTimeout())
-                        .setConnectionRequestTimeout(es7x.getHttpRequestTimeout())
-                        .setSocketTimeout(es7x.getHttpSocketTimeout()));
+                        .setConnectTimeout(esAccount.getHttpConnectTimeout())
+                        .setConnectionRequestTimeout(esAccount.getHttpRequestTimeout())
+                        .setSocketTimeout(esAccount.getHttpSocketTimeout()));
 
         if (basicHeader != null) {
             clientBuilder.setDefaultHeaders(new Header[]{basicHeader});
@@ -107,17 +107,17 @@ public class ES7xConnection {
             httpClientBuilder.setMaxConnTotal(concurrentBulkRequest);
             httpClientBuilder.setMaxConnPerRoute(concurrentBulkRequest);
             httpClientBuilder.setDefaultIOReactorConfig(reactorConfig);
-            httpClientBuilder.setKeepAliveStrategy((response, context) -> TimeUnit.MINUTES.toMillis(es7x.getHttpKeepAliveMinutes()));
+            httpClientBuilder.setKeepAliveStrategy((response, context) -> TimeUnit.MINUTES.toMillis(esAccount.getHttpKeepAliveMinutes()));
             return httpClientBuilder;
         });
         if (clusterName != null && !clusterName.isEmpty()) {
             clientBuilder.setPathPrefix(clusterName);
         }
-        this.updateByQueryChunkSize = es7x.getUpdateByQueryChunkSize();
-        this.minAvailableSpaceHighBulkRequests = es7x.getMinAvailableSpaceHighBulkRequests();
-        this.maxRetryCount = es7x.getMaxRetryCount();
-        this.bulkRetryCount = es7x.getBulkRetryCount();
-        this.bulkCommitSize = es7x.getBulkCommitSize();
+        this.updateByQueryChunkSize = esAccount.getUpdateByQueryChunkSize();
+        this.minAvailableSpaceHighBulkRequests = esAccount.getMinAvailableSpaceHighBulkRequests();
+        this.maxRetryCount = esAccount.getMaxRetryCount();
+        this.bulkRetryCount = esAccount.getBulkRetryCount();
+        this.bulkCommitSize = esAccount.getBulkCommitSize();
         this.concurrentBulkRequest = concurrentBulkRequest;
         this.restHighLevelClient = new RestHighLevelClient(clientBuilder);
     }
@@ -138,12 +138,12 @@ public class ES7xConnection {
         }
     }
 
-    public CompletableFuture<ESBulkRequest.EsRefreshResponse> refreshAsync(String... indices) {
+    public CompletableFuture<com.github.dts.util.ESBulkRequest.EsRefreshResponse> refreshAsync(String... indices) {
         if (indices.length == 0) {
             return CompletableFuture.completedFuture(null);
         }
         return refreshAsyncCache.computeIfAbsent(String.join(",", indices), key -> {
-            CompletableFuture<ESBulkRequest.EsRefreshResponse> future = new CompletableFuture<>();
+            CompletableFuture<com.github.dts.util.ESBulkRequest.EsRefreshResponse> future = new CompletableFuture<>();
             RefreshRequest request = new RefreshRequest(indices);
             Cancellable cancellable = restHighLevelClient.indices().refreshAsync(request, RequestOptions.DEFAULT, new ActionListener<RefreshResponse>() {
                 @Override
@@ -184,10 +184,18 @@ public class ES7xConnection {
                             if (mappingMetaData == null && !mappings.isEmpty()) {
                                 mappingMetaData = mappings.values().iterator().next();
                             }
+
                             if (mappingMetaData != null) {
-                                future.complete(mappingMetaData.getSourceAsMap());
+                                Map<String, Object> sourceAsMap = mappingMetaData.getSourceAsMap();
+                                if (sourceAsMap == null || sourceAsMap.isEmpty()) {
+                                    future.completeExceptionally(new IllegalStateException(
+                                            String.format("Empty mapping info of index: %s. you can check url, GET /%s/_mapping", index, index)));
+                                } else {
+                                    future.complete(sourceAsMap);
+                                }
                             } else {
-                                future.completeExceptionally(new IllegalArgumentException("Not found the mapping info of index: " + index));
+                                future.completeExceptionally(new IllegalArgumentException(
+                                        String.format("Not found the mapping info of index: %s. you can check url, GET /%s/_mapping", index, index)));
                             }
                         }
 
@@ -203,7 +211,7 @@ public class ES7xConnection {
 
     @Override
     public String toString() {
-        return "ES7xConnection{" +
+        return "ESConnection{" +
                 "concurrentBulkRequest=" + concurrentBulkRequest +
                 ", bulkCommitSize=" + bulkCommitSize +
                 ", updateByQueryChunkSize=" + updateByQueryChunkSize +
@@ -212,7 +220,7 @@ public class ES7xConnection {
                 '}';
     }
 
-    public static class Es7RefreshResponse implements ESBulkRequest.EsRefreshResponse {
+    public static class Es7RefreshResponse implements com.github.dts.util.ESBulkRequest.EsRefreshResponse {
         private final RefreshResponse refreshResponse;
         private final String[] indices;
 
@@ -232,11 +240,11 @@ public class ES7xConnection {
         }
     }
 
-    public static class ES7xBulkResponse implements ESBulkRequest.ESBulkResponse {
+    public static class ESBulkResponseImpl implements com.github.dts.util.ESBulkRequest.ESBulkResponse {
 
         private final List<BulkRequestResponse> bulkResponse;
 
-        public ES7xBulkResponse(List<BulkRequestResponse> bulkResponse) {
+        public ESBulkResponseImpl(List<BulkRequestResponse> bulkResponse) {
             this.bulkResponse = bulkResponse;
         }
 
@@ -309,17 +317,17 @@ public class ES7xConnection {
         }
     }
 
-    public static class ES7xUpdateByQueryRequest extends UpdateByQueryRequest implements ESBulkRequest.ESUpdateByQueryRequest {
+    public static class ESUpdateByQueryRequestImpl extends UpdateByQueryRequest implements com.github.dts.util.ESBulkRequest.ESUpdateByQueryRequest {
 
         private final Map<String, Object> params = new HashMap<>();
         private int size = 1;
 
-        public ES7xUpdateByQueryRequest(String index) {
+        public ESUpdateByQueryRequestImpl(String index) {
             super(index);
         }
 
-        public static ES7xUpdateByQueryRequest byIds(String index, String[] ids, String fieldName, Object fieldValue) {
-            ES7xUpdateByQueryRequest updateByQueryRequest = new ES7xUpdateByQueryRequest(index);
+        public static ESUpdateByQueryRequestImpl byIds(String index, String[] ids, String fieldName, Object fieldValue) {
+            ESUpdateByQueryRequestImpl updateByQueryRequest = new ESUpdateByQueryRequestImpl(index);
             updateByQueryRequest.params.put("v", fieldValue);
             updateByQueryRequest.size = ids.length;
             updateByQueryRequest.setQuery(QueryBuilders.idsQuery().addIds(ids));
@@ -345,18 +353,18 @@ public class ES7xConnection {
             return size;
         }
 
-        public ES7xUpdateByQueryRequest build() {
+        public ESUpdateByQueryRequestImpl build() {
             return this;
         }
     }
 
-    public static class ES7xUpdateRequest extends UpdateRequest implements ESBulkRequest.ESUpdateRequest {
+    public static class ESUpdateRequestImpl extends UpdateRequest implements com.github.dts.util.ESBulkRequest.ESUpdateRequest {
         private final String index;
         private final String id;
         private final Map source;
         private final boolean shouldUpsertDoc;
 
-        public ES7xUpdateRequest(String index, String id, Map source, boolean shouldUpsertDoc, int retryOnConflict) {
+        public ESUpdateRequestImpl(String index, String id, Map source, boolean shouldUpsertDoc, int retryOnConflict) {
             super(index, id);
             docAsUpsert(shouldUpsertDoc);
             retryOnConflict(retryOnConflict);
@@ -381,10 +389,10 @@ public class ES7xConnection {
 
         @Override
         public boolean isOverlap(TrimRequest prev) {
-            if (prev instanceof ES7xDeleteRequest) {
+            if (prev instanceof ESDeleteRequestImpl) {
                 return false;
-            } else if (prev instanceof ES7xUpdateRequest) {
-                ES7xUpdateRequest that = ((ES7xUpdateRequest) prev);
+            } else if (prev instanceof ESUpdateRequestImpl) {
+                ESUpdateRequestImpl that = ((ESUpdateRequestImpl) prev);
                 return Objects.equals(this.id, that.id) && Objects.equals(this.index, that.index)
                         && this.shouldUpsertDoc == that.shouldUpsertDoc && equalsSourceKey(this.source.keySet(), that.source.keySet());
             } else {
@@ -417,12 +425,12 @@ public class ES7xConnection {
         }
     }
 
-    public static class ES7xDeleteRequest extends DeleteRequest implements ESBulkRequest.ESDeleteRequest {
+    public static class ESDeleteRequestImpl extends DeleteRequest implements com.github.dts.util.ESBulkRequest.ESDeleteRequest {
 
         private final String index;
         private final String id;
 
-        public ES7xDeleteRequest(String index, String id) {
+        public ESDeleteRequestImpl(String index, String id) {
             super(index, id);
             this.index = index;
             this.id = id;
@@ -435,12 +443,12 @@ public class ES7xConnection {
 
         @Override
         public boolean isOverlap(TrimRequest prev) {
-            if (prev instanceof ES7xDeleteRequest) {
-                ES7xDeleteRequest that = ((ES7xDeleteRequest) prev);
+            if (prev instanceof ESDeleteRequestImpl) {
+                ESDeleteRequestImpl that = ((ESDeleteRequestImpl) prev);
                 return Objects.equals(this.index, that.index)
                         && Objects.equals(this.id, that.id);
-            } else if (prev instanceof ES7xUpdateRequest) {
-                ES7xUpdateRequest that = ((ES7xUpdateRequest) prev);
+            } else if (prev instanceof ESUpdateRequestImpl) {
+                ESUpdateRequestImpl that = ((ESUpdateRequestImpl) prev);
                 return Objects.equals(this.index, that.index)
                         && Objects.equals(this.id, that.id);
             } else {
@@ -456,7 +464,7 @@ public class ES7xConnection {
     public static class ConcurrentBulkRequest extends BulkRequest {
         private final ReentrantLock lock = new ReentrantLock();
         private final int id;
-        private final List<ES7xUpdateByQueryRequest> updateByQueryRequests = new ArrayList<>();
+        private final List<ESUpdateByQueryRequestImpl> updateByQueryRequests = new ArrayList<>();
         private long beforeEstimatedSizeInBytes;
 
         public ConcurrentBulkRequest(int id) {
@@ -486,16 +494,16 @@ public class ES7xConnection {
 
         public void beforeBulk() {
             for (DocWriteRequest<?> request : requests()) {
-                if (request instanceof ESBulkRequest.ESRequest) {
-                    ((ESBulkRequest.ESRequest) request).beforeBulk();
+                if (request instanceof com.github.dts.util.ESBulkRequest.ESRequest) {
+                    ((com.github.dts.util.ESBulkRequest.ESRequest) request).beforeBulk();
                 }
             }
-            for (ES7xUpdateByQueryRequest request : updateByQueryRequests) {
+            for (ESUpdateByQueryRequestImpl request : updateByQueryRequests) {
                 request.beforeBulk();
             }
         }
 
-        public void add(ES7xUpdateByQueryRequest updateByQueryRequest) {
+        public void add(ESUpdateByQueryRequestImpl updateByQueryRequest) {
             updateByQueryRequests.add(updateByQueryRequest);
         }
 
@@ -503,7 +511,7 @@ public class ES7xConnection {
             return super.numberOfActions() + updateByQueryRequests.size();
         }
 
-        public ES7xUpdateByQueryRequest pollUpdateByQuery() {
+        public ESUpdateByQueryRequestImpl pollUpdateByQuery() {
             int size = updateByQueryRequests.size();
             return size == 0 ? null : updateByQueryRequests.remove(size - 1);
         }
@@ -575,7 +583,7 @@ public class ES7xConnection {
             return errorRespList;
         }
 
-        public void addUpdateByQueryResponse(ES7xUpdateByQueryRequest request, BulkByScrollResponse response) {
+        public void addUpdateByQueryResponse(ESUpdateByQueryRequestImpl request, BulkByScrollResponse response) {
             updateByQueryList.add(new UpdateByQuery(request, response));
         }
 
@@ -611,10 +619,10 @@ public class ES7xConnection {
         }
 
         private static class UpdateByQuery {
-            ES7xUpdateByQueryRequest request;
+            ESUpdateByQueryRequestImpl request;
             BulkByScrollResponse response;
 
-            private UpdateByQuery(ES7xUpdateByQueryRequest request, BulkByScrollResponse response) {
+            private UpdateByQuery(ESUpdateByQueryRequestImpl request, BulkByScrollResponse response) {
                 this.request = request;
                 this.response = response;
             }
@@ -658,9 +666,9 @@ public class ES7xConnection {
             return this;
         }
 
-        public SearchResponse getResponse(ES7xConnection es7xConnection) {
+        public SearchResponse getResponse(ESConnection esConnection) {
             try {
-                return es7xConnection.restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
+                return esConnection.restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
             } catch (Exception e) {
                 Util.sneakyThrows(e);
                 return null;
@@ -668,18 +676,18 @@ public class ES7xConnection {
         }
     }
 
-    public static class ES7xBulkRequest implements ESBulkRequest {
+    public static class ESBulkRequest implements com.github.dts.util.ESBulkRequest {
         private final ConcurrentBulkRequest[] bulkRequests;
         // high list = [0,1,2,3,4,5,6,7]
         private final List<ConcurrentBulkRequest> highBulkRequests;
         // low list = [7,6,5,4,3,2]
         private final List<ConcurrentBulkRequest> lowBulkRequests;
-        private final ES7xConnection connection;
+        private final ESConnection connection;
         private final int bulkCommitSize;
         private final int maxRetryCount;
         private final Map<DocWriteRequest<?>, Integer> retryCounter = new ConcurrentHashMap<>();
 
-        public ES7xBulkRequest(ES7xConnection connection) {
+        public ESBulkRequest(ESConnection connection) {
             this.connection = connection;
             this.maxRetryCount = connection.maxRetryCount;
             this.bulkCommitSize = Math.max(1, connection.bulkCommitSize);
@@ -741,7 +749,7 @@ public class ES7xConnection {
         }
 
         @Override
-        public ESBulkRequest add(Collection<ESRequest> requests, BulkPriorityEnum priorityEnum) {
+        public com.github.dts.util.ESBulkRequest add(Collection<ESRequest> requests, BulkPriorityEnum priorityEnum) {
             if (requests.isEmpty()) {
                 return this;
             }
@@ -751,12 +759,12 @@ public class ES7xConnection {
                     if (bulkRequest.requestNumberOfActions() < bulkCommitSize && bulkRequest.tryLock()) {
                         try {
                             for (Object request : requests) {
-                                if (request instanceof ES7xUpdateByQueryRequest) {
-                                    bulkRequest.add(((ES7xUpdateByQueryRequest) request).build());
-                                } else if (request instanceof ES7xUpdateRequest) {
-                                    bulkRequest.add(((ES7xUpdateRequest) request).build());
-                                } else if (request instanceof ES7xDeleteRequest) {
-                                    bulkRequest.add(((ES7xDeleteRequest) request).build());
+                                if (request instanceof ESUpdateByQueryRequestImpl) {
+                                    bulkRequest.add(((ESUpdateByQueryRequestImpl) request).build());
+                                } else if (request instanceof ESUpdateRequestImpl) {
+                                    bulkRequest.add(((ESUpdateRequestImpl) request).build());
+                                } else if (request instanceof ESDeleteRequestImpl) {
+                                    bulkRequest.add(((ESDeleteRequestImpl) request).build());
                                 } else {
                                     throw new IllegalArgumentException("Unknown request type: " + request.getClass());
                                 }
@@ -772,8 +780,8 @@ public class ES7xConnection {
         }
 
         @Override
-        public ESBulkRequest add(ESUpdateByQueryRequest esUpdateRequest) {
-            ES7xUpdateByQueryRequest eir = (ES7xUpdateByQueryRequest) esUpdateRequest;
+        public com.github.dts.util.ESBulkRequest add(ESUpdateByQueryRequest esUpdateRequest) {
+            ESUpdateByQueryRequestImpl eir = (ESUpdateByQueryRequestImpl) esUpdateRequest;
             while (true) {
                 for (ConcurrentBulkRequest bulkRequest : bulkRequests) {
                     if (bulkRequest.requestNumberOfActions() < bulkCommitSize && bulkRequest.tryLock()) {
@@ -790,8 +798,8 @@ public class ES7xConnection {
         }
 
         @Override
-        public ES7xBulkRequest add(ESUpdateRequest esUpdateRequest) {
-            ES7xUpdateRequest eur = (ES7xUpdateRequest) esUpdateRequest;
+        public ESBulkRequest add(ESUpdateRequest esUpdateRequest) {
+            ESUpdateRequestImpl eur = (ESUpdateRequestImpl) esUpdateRequest;
             while (true) {
                 for (ConcurrentBulkRequest bulkRequest : bulkRequests) {
                     if (bulkRequest.requestNumberOfActions() < bulkCommitSize && bulkRequest.tryLock()) {
@@ -808,8 +816,8 @@ public class ES7xConnection {
         }
 
         @Override
-        public ES7xBulkRequest add(ESDeleteRequest esDeleteRequest) {
-            ES7xDeleteRequest edr = (ES7xDeleteRequest) esDeleteRequest;
+        public ESBulkRequest add(ESDeleteRequest esDeleteRequest) {
+            ESDeleteRequestImpl edr = (ESDeleteRequestImpl) esDeleteRequest;
             while (true) {
                 for (ConcurrentBulkRequest bulkRequest : bulkRequests) {
                     if (bulkRequest.requestNumberOfActions() < bulkCommitSize && bulkRequest.tryLock()) {
@@ -847,7 +855,7 @@ public class ES7xConnection {
         @Override
         public ESBulkResponse bulk() {
             List<BulkRequestResponse> bulkResponse = new ArrayList<>(bulkRequests.length);
-            ES7xBulkResponse es7xBulkResponse = new ES7xBulkResponse(bulkResponse);
+            ESBulkResponseImpl esBulkResponseImpl = new ESBulkResponseImpl(bulkResponse);
             for (ConcurrentBulkRequest bulkRequest : bulkRequests) {
                 if (bulkRequest.requestNumberOfActions() > 0 && bulkRequest.tryLock()) {
                     try {
@@ -861,7 +869,7 @@ public class ES7xConnection {
                     }
                 }
             }
-            return es7xBulkResponse;
+            return esBulkResponseImpl;
         }
 
         private BulkResponse bulk(BulkRequest bulkRequest) throws IOException {
@@ -915,7 +923,7 @@ public class ES7xConnection {
             }
 
             while (true) {
-                ES7xUpdateByQueryRequest updateByQueryRequest = bulkRequest.pollUpdateByQuery();
+                ESUpdateByQueryRequestImpl updateByQueryRequest = bulkRequest.pollUpdateByQuery();
                 if (updateByQueryRequest == null) {
                     break;
                 }

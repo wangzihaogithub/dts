@@ -5,6 +5,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/corp")
-public class CorpController extends AbstractEs7xETLStringController {
+public class CorpController extends AbstractEsETLStringController {
 
 }

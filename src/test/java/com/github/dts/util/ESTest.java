@@ -4,7 +4,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.Map;
 
-public class ES7XTest {
+public class ESTest {
 
     public static void main(String[] args) {
         test1();
@@ -39,23 +39,23 @@ public class ES7XTest {
     private static void test2() {
         LinkedList<TrimRequest> requests1 = new LinkedList<>();
 
-        requests1.add(new ES7xConnection.ES7xUpdateRequest("123",
+        requests1.add(new ESConnection.ESUpdateRequestImpl("123",
                 "1", asMap("k", "v"), false, 1));
-        requests1.add(new ES7xConnection.ES7xDeleteRequest("123",
+        requests1.add(new ESConnection.ESDeleteRequestImpl("123",
                 "1"));
-        requests1.add(new ES7xConnection.ES7xUpdateRequest("123",
+        requests1.add(new ESConnection.ESUpdateRequestImpl("123",
                 "1", asMap("k", "v"), true, 1));
-        requests1.add(new ES7xConnection.ES7xDeleteRequest("123",
+        requests1.add(new ESConnection.ESDeleteRequestImpl("123",
                 "1"));
-        requests1.add(new ES7xConnection.ES7xUpdateRequest("123",
+        requests1.add(new ESConnection.ESUpdateRequestImpl("123",
                 "1", asMap("k", "v"), false, 1));
-        requests1.add(new ES7xConnection.ES7xUpdateRequest("123",
+        requests1.add(new ESConnection.ESUpdateRequestImpl("123",
                 "1", asMap("k", "v"), false, 1));
-        requests1.add(new ES7xConnection.ES7xUpdateRequest("123",
+        requests1.add(new ESConnection.ESUpdateRequestImpl("123",
                 "1", asMap("k", "v"), false, 1));
-        requests1.add(new ES7xConnection.ES7xUpdateRequest("123",
+        requests1.add(new ESConnection.ESUpdateRequestImpl("123",
                 "1", asMap("ka", "v2"), true, 1));
-        requests1.add(new ES7xConnection.ES7xUpdateRequest("123",
+        requests1.add(new ESConnection.ESUpdateRequestImpl("123",
                 "2", asMap("k", "v2"), true, 1));
         TrimRequest.trim(requests1);
         System.out.println("requests1 = " + requests1);

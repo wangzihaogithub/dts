@@ -1,7 +1,7 @@
 package com.github.dts.controller;
 
 import com.github.dts.canal.StartupServer;
-import com.github.dts.impl.elasticsearch7x.etl.StringEs7xETLService;
+import com.github.dts.impl.elasticsearch.etl.StringEsETLService;
 import com.github.dts.util.Util;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -23,17 +23,17 @@ import java.util.stream.Collectors;
  * 2024071120001563920040989	苏州城市建设投资发展集团	苏州物资控股（集团）有限责任公司
  * </pre>
  * <pre>
- * curl "<a href="http://localhost:8080/es7x/myxxx/syncById?id=2024071120255559720056013,2024071118325561520000001">http://localhost:8080/es7x/myxxx/syncById?id=2024071120255559720056013,2024071118325561520000001</a>"
- * curl "<a href="http://localhost:8080/es7x/myxxx/syncAll">http://localhost:8080/es7x/myxxx/syncAll</a>"
- * curl "<a href="http://localhost:8080/es7x/myxxx/stop">http://localhost:8080/es7x/myxxx/stop</a>"
+ * curl "<a href="http://localhost:8080/es/myxxx/syncById?id=2024071120255559720056013,2024071118325561520000001">http://localhost:8080/es/myxxx/syncById?id=2024071120255559720056013,2024071118325561520000001</a>"
+ * curl "<a href="http://localhost:8080/es/myxxx/syncAll">http://localhost:8080/es/myxxx/syncAll</a>"
+ * curl "<a href="http://localhost:8080/es/myxxx/stop">http://localhost:8080/es/myxxx/stop</a>"
  * </pre>
  */
-public abstract class AbstractEs7xETLStringController {
-    private StringEs7xETLService stringEs7xETLService;
+public abstract class AbstractEsETLStringController {
+    private StringEsETLService stringEsETLService;
 
     @Autowired(required = false)
     public void setStartupServer(StartupServer startupServer) {
-        this.stringEs7xETLService = new StringEs7xETLService(getClass().getSimpleName(), startupServer);
+        this.stringEsETLService = new StringEsETLService(getClass().getSimpleName(), startupServer);
     }
 
     @RequestMapping("/updateEsNestedDiff")
@@ -42,9 +42,11 @@ public abstract class AbstractEs7xETLStringController {
                                   String startId,
                                   // 比较字段：必须是嵌套字段：空=全部，
                                   String[] diffFields,
+                                  String[] adapterNames,
                                   @RequestParam(required = false, defaultValue = "500") int maxSendMessageSize) {
-        return stringEs7xETLService.updateEsNestedDiff(esIndexName, startId, offsetAdd,
-                diffFields == null ? null : new LinkedHashSet<>(Arrays.asList(diffFields)), maxSendMessageSize);
+        return stringEsETLService.updateEsNestedDiff(esIndexName, startId, offsetAdd,
+                diffFields == null ? null : new LinkedHashSet<>(Arrays.asList(diffFields)), maxSendMessageSize,
+                adapterNames == null ? null : Arrays.asList(adapterNames));
     }
 
     @RequestMapping("/updateEsDiff")
@@ -52,16 +54,20 @@ public abstract class AbstractEs7xETLStringController {
                             @RequestParam(required = false, defaultValue = "1000") int offsetAdd,
                             // 比较字段：不含嵌套字段：空=全部，
                             String[] diffFields,
+                            String[] adapterNames,
                             @RequestParam(required = false, defaultValue = "500") int maxSendMessageSize) {
-        return stringEs7xETLService.updateEsDiff(esIndexName, offsetAdd,
-                diffFields == null ? null : new LinkedHashSet<>(Arrays.asList(diffFields)), maxSendMessageSize);
+        return stringEsETLService.updateEsDiff(esIndexName, offsetAdd,
+                diffFields == null ? null : new LinkedHashSet<>(Arrays.asList(diffFields)), maxSendMessageSize,
+                adapterNames == null ? null : Arrays.asList(adapterNames));
     }
 
     @RequestMapping("/deleteEsTrim")
     public int deleteEsTrim(@RequestParam String esIndexName,
+                            String[] adapterNames,
                             @RequestParam(required = false, defaultValue = "1000") int offsetAdd,
                             @RequestParam(required = false, defaultValue = "1000") int maxSendMessageDeleteIdSize) {
-        return stringEs7xETLService.deleteEsTrim(esIndexName, offsetAdd, maxSendMessageDeleteIdSize);
+        return stringEsETLService.deleteEsTrim(esIndexName, offsetAdd, maxSendMessageDeleteIdSize,
+                adapterNames == null ? null : Arrays.asList(adapterNames));
     }
 
     @RequestMapping("/syncAll")
@@ -72,30 +78,34 @@ public abstract class AbstractEs7xETLStringController {
             @RequestParam(required = false, defaultValue = "true") boolean append,
             @RequestParam(required = false, defaultValue = "true") boolean onlyCurrentIndex,
             @RequestParam(required = false, defaultValue = "100") int joinUpdateSize,
-            String[] onlyFieldName) {
+            String[] onlyFieldName,
+            String[] adapterNames) {
         Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(Util::isNotBlank).collect(Collectors.toCollection(LinkedHashSet::new));
-        return stringEs7xETLService.syncAll(esIndexName, offsetStart, offsetAdd,
-                append, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet);
+        return stringEsETLService.syncAll(esIndexName, offsetStart, offsetAdd,
+                append, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet,
+                adapterNames == null ? null : Arrays.asList(adapterNames));
     }
 
     @RequestMapping("/syncById")
     public Object syncById(@RequestParam String[] id,
                            @RequestParam String esIndexName,
                            @RequestParam(required = false, defaultValue = "true") boolean onlyCurrentIndex,
-                           String[] onlyFieldName) {
+                           String[] onlyFieldName,
+                           String[] adapterNames) {
         Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(Util::isNotBlank).collect(Collectors.toCollection(LinkedHashSet::new));
-        return stringEs7xETLService.syncById(id, esIndexName, onlyCurrentIndex, onlyFieldNameSet);
+        return stringEsETLService.syncById(id, esIndexName, onlyCurrentIndex, onlyFieldNameSet,
+                adapterNames == null ? null : Arrays.asList(adapterNames));
     }
 
     @RequestMapping("/stop")
     public boolean stop() {
-        stringEs7xETLService.stopSync();
+        stringEsETLService.stopSync();
         return true;
     }
 
     @RequestMapping("/discard")
     public List discard(@RequestParam String clientIdentity) throws InterruptedException {
-        return stringEs7xETLService.discard(clientIdentity);
+        return stringEsETLService.discard(clientIdentity);
     }
 
 }

@@ -3,7 +3,7 @@ package com.github.dts.util;
 import com.alibaba.druid.pool.DruidDataSource;
 import com.github.dts.canal.CanalConnector;
 import com.github.dts.canal.StartupServer;
-import com.github.dts.impl.elasticsearch7x.ES7xAdapter;
+import com.github.dts.impl.elasticsearch.ESAdapter;
 import com.github.dts.impl.rds.RDSAdapter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -565,22 +565,27 @@ public class CanalConfig {
     }
 
     public static class OuterAdapterConfig {
-        private final Es7x es7x = new Es7x();
+        private final Es es = new Es();
         private final Rds rds = new Rds();
         private Group connectorGroup;
         private CanalAdapter canalAdapter;
         private String name;       // 适配器名称, 如: logger, hbase, es
 
         public Class<? extends Adapter> adapterClass() {
-            if (es7x.getAddress() != null && es7x.getAddress().length > 0) {
-                return ES7xAdapter.class;
+            if (es.getAddress() != null && es.getAddress().length > 0) {
+                return ESAdapter.class;
             } else {
                 return RDSAdapter.class;
             }
         }
 
-        public Es7x getEs7x() {
-            return es7x;
+        @Deprecated
+        public Es getEs7x() {
+            return es;
+        }
+
+        public Es getEs() {
+            return es;
         }
 
         public Rds getRds() {
@@ -760,7 +765,7 @@ public class CanalConfig {
             }
         }
 
-        public static class Es7x extends EsAccount {
+        public static class Es extends EsAccount {
             private final SlaveNestedField slaveNestedField = new SlaveNestedField();
             private final MainJoinNestedField mainJoinNestedField = new MainJoinNestedField();
             private String resourcesDir = "es";

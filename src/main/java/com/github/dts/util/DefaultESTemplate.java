@@ -22,17 +22,17 @@ import java.util.function.Function;
 /**
  * ES 操作模板
  */
-public class ES7xTemplate implements ESTemplate {
-    private static final Logger logger = LoggerFactory.getLogger(ES7xTemplate.class);
+public class DefaultESTemplate implements ESTemplate {
+    private static final Logger logger = LoggerFactory.getLogger(DefaultESTemplate.class);
     private static final ConcurrentMap<String, ESFieldTypesCache> esFieldTypes = new ConcurrentHashMap<>(2);
-    private final ES7xConnection esConnection;
-    private final ES7xConnection.ES7xBulkRequest esBulkRequest;
+    private final ESConnection esConnection;
+    private final ESConnection.ESBulkRequest esBulkRequest;
     private final BulkRequestListAddAfter bulkRequestListAddAfter = new BulkRequestListAddAfter();
     private int deleteByIdRangeBatch = 1000;
 
-    public ES7xTemplate(ES7xConnection esConnection) {
+    public DefaultESTemplate(ESConnection esConnection) {
         this.esConnection = esConnection;
-        this.esBulkRequest = new ES7xConnection.ES7xBulkRequest(esConnection);
+        this.esBulkRequest = new ESConnection.ESBulkRequest(esConnection);
     }
 
     private static boolean isInteger(String id) {
@@ -88,7 +88,7 @@ public class ES7xTemplate implements ESTemplate {
         setterIndexUpdatedTime(mapping, esFieldData);
 
         esFieldData = copyAndConvertType(esFieldData, mapping);
-        ESBulkRequest.ESUpdateRequest updateRequest = new ES7xConnection.ES7xUpdateRequest(mapping.get_index(),
+        ESBulkRequest.ESUpdateRequest updateRequest = new ESConnection.ESUpdateRequestImpl(mapping.get_index(),
                 pkVal.toString(), esFieldData, true, mapping.getRetryOnConflict());
         addRequest(updateRequest, bulkRequestList);
     }
@@ -212,30 +212,30 @@ public class ES7xTemplate implements ESTemplate {
         }
         String indexName = mapping.get_index();
         int add = deleteByIdRangeBatch;
-        ES7xConnection.ES7xBulkRequest bulkRequest = new ES7xConnection.ES7xBulkRequest(esConnection);
+        ESConnection.ESBulkRequest bulkRequest = new ESConnection.ESBulkRequest(esConnection);
         if (isInteger(minIdString) && isInteger(maxIdString)) {
             int minId = Integer.parseInt(minIdString);
             int maxId = Integer.parseInt(maxIdString);
             for (int i = minId + add, slot = minId; i <= maxId; slot = i, i += add) {
-                ES7xConnection.ESSearchRequest esSearchRequest = new ES7xConnection.ESSearchRequest(indexName)
+                ESConnection.ESSearchRequest esSearchRequest = new ESConnection.ESSearchRequest(indexName)
                         .setQuery(QueryBuilders.rangeQuery(idColName).lte(i).gte(Math.max(slot, minId)))
                         .fetchSource(idColName)
                         .size(add);
                 SearchResponse response = esSearchRequest.getResponse(this.esConnection);
                 for (SearchHit hit : response.getHits()) {
-                    bulkRequest.add(new ES7xConnection.ES7xDeleteRequest(indexName, hit.getId()));
+                    bulkRequest.add(new ESConnection.ESDeleteRequestImpl(indexName, hit.getId()));
                     if (bulkRequest.numberOfActions() > add) {
                         bulkRequest.bulk();
                     }
                 }
             }
         } else {
-            ES7xConnection.ESSearchRequest esSearchRequest = new ES7xConnection.ESSearchRequest(indexName)
+            ESConnection.ESSearchRequest esSearchRequest = new ESConnection.ESSearchRequest(indexName)
                     .setQuery(QueryBuilders.rangeQuery(idColName).lte(maxIdString).gte(minIdString))
                     .fetchSource(idColName);
             SearchResponse response = esSearchRequest.getResponse(this.esConnection);
             for (SearchHit hit : response.getHits()) {
-                bulkRequest.add(new ES7xConnection.ES7xDeleteRequest(indexName, hit.getId()));
+                bulkRequest.add(new ESConnection.ESDeleteRequestImpl(indexName, hit.getId()));
                 if (bulkRequest.numberOfActions() > add) {
                     bulkRequest.bulk();
                 }
@@ -253,7 +253,7 @@ public class ES7xTemplate implements ESTemplate {
             return null;
         }
         String indexName = mapping.get_index();
-        ES7xConnection.ES7xBulkRequest bulkRequest = new ES7xConnection.ES7xBulkRequest(esConnection);
+        ESConnection.ESBulkRequest bulkRequest = new ESConnection.ESBulkRequest(esConnection);
         RangeQueryBuilder queryBuilder = QueryBuilders.rangeQuery(fieldName);
         if (maxValue != null) {
             queryBuilder.lte(maxValue);
@@ -261,7 +261,7 @@ public class ES7xTemplate implements ESTemplate {
         if (minValue != null) {
             queryBuilder.gte(minValue);
         }
-        ES7xConnection.ESSearchRequest esSearchRequest = new ES7xConnection.ESSearchRequest(indexName)
+        ESConnection.ESSearchRequest esSearchRequest = new ESConnection.ESSearchRequest(indexName)
                 .setQuery(queryBuilder)
                 .fetchSource(fieldName);
         if (limit != null) {
@@ -269,7 +269,7 @@ public class ES7xTemplate implements ESTemplate {
         }
         SearchResponse response = esSearchRequest.getResponse(this.esConnection);
         for (SearchHit hit : response.getHits()) {
-            bulkRequest.add(new ES7xConnection.ES7xDeleteRequest(indexName, hit.getId()));
+            bulkRequest.add(new ESConnection.ESDeleteRequestImpl(indexName, hit.getId()));
         }
         return bulkRequest.bulk();
     }
@@ -281,7 +281,7 @@ public class ES7xTemplate implements ESTemplate {
 
     @Override
     public ESSearchResponse searchAfter(ESMapping mapping, String[] includes, String[] excludes, Object[] searchAfter, Integer limit) {
-        ES7xConnection.ESSearchRequest esSearchRequest = new ES7xConnection.ESSearchRequest(mapping.get_index());
+        ESConnection.ESSearchRequest esSearchRequest = new ESConnection.ESSearchRequest(mapping.get_index());
         if (searchAfter != null) {
             esSearchRequest.searchAfter(searchAfter);
         }
@@ -309,7 +309,7 @@ public class ES7xTemplate implements ESTemplate {
         if (pkVal == null || "".equals(pkVal)) {
             return;
         }
-        ES7xConnection.ES7xDeleteRequest esDeleteRequest = new ES7xConnection.ES7xDeleteRequest(mapping.get_index(),
+        ESConnection.ESDeleteRequestImpl esDeleteRequest = new ESConnection.ESDeleteRequestImpl(mapping.get_index(),
                 pkVal.toString());
         addRequest(esDeleteRequest, bulkRequestList);
     }
@@ -322,7 +322,7 @@ public class ES7xTemplate implements ESTemplate {
     @Override
     public ESBulkRequest.ESBulkResponse commit() {
         if (esBulkRequest.isEmpty()) {
-            return ES7xConnection.EMPTY_RESPONSE;
+            return ESConnection.EMPTY_RESPONSE;
         }
         long timestamp = System.currentTimeMillis();
         ESBulkRequest.ESBulkResponse response = esBulkRequest.bulk();
@@ -398,13 +398,13 @@ public class ES7xTemplate implements ESTemplate {
                             && fieldName.equals(mapping.getIndexUpdatedTime())) {
                         continue;
                     }
-                    addRequest(ES7xConnection.ES7xUpdateByQueryRequest.byIds(mapping.get_index(), pkArr, fieldName, entry.getValue()), bulkRequestList);
+                    addRequest(ESConnection.ESUpdateByQueryRequestImpl.byIds(mapping.get_index(), pkArr, fieldName, entry.getValue()), bulkRequestList);
                 }
             }
         } else {
             String pkToString = pkVal.toString();
             String index = mapping.get_index();
-            ES7xConnection.ES7xUpdateRequest esUpdateRequest = new ES7xConnection.ES7xUpdateRequest(index,
+            ESConnection.ESUpdateRequestImpl esUpdateRequest = new ESConnection.ESUpdateRequestImpl(index,
                     pkToString, esFieldData, mapping.isUpsert(), mapping.getRetryOnConflict());
             trimRemoveIndexUpdateTime(mapping, bulkRequestList, esFieldData, index, pkToString);
             addRequest(esUpdateRequest, bulkRequestList);
@@ -701,7 +701,7 @@ public class ES7xTemplate implements ESTemplate {
 
     @Override
     public String toString() {
-        return "ES7xTemplate{" +
+        return "DefaultESTemplate{" +
                 "esConnection=" + esConnection +
                 ", esBulkRequest=" + esBulkRequest +
                 '}';
@@ -724,14 +724,14 @@ public class ES7xTemplate implements ESTemplate {
         public void add(ESBulkRequest.ESRequest request) {
             synchronized (requests) {
                 requests.add(request);
-                if (request instanceof ES7xConnection.ES7xUpdateByQueryRequest) {
-                    size += ((ES7xConnection.ES7xUpdateByQueryRequest) request).size();
+                if (request instanceof ESConnection.ESUpdateByQueryRequestImpl) {
+                    size += ((ESConnection.ESUpdateByQueryRequestImpl) request).size();
                 } else {
                     size++;
                 }
             }
-            if (request instanceof ES7xConnection.ES7xUpdateRequest) {
-                ES7xConnection.ES7xUpdateRequest u = ((ES7xConnection.ES7xUpdateRequest) request);
+            if (request instanceof ESConnection.ESUpdateRequestImpl) {
+                ESConnection.ESUpdateRequestImpl u = ((ESConnection.ESUpdateRequestImpl) request);
                 indexPkUpdateMap.computeIfAbsent(u.getIndex(),
                                 e -> Collections.newSetFromMap(new ConcurrentHashMap<>()))
                         .add(u.getId());

@@ -4,7 +4,7 @@ import com.github.dts.canal.StartupServer;
 import com.github.dts.cluster.DiscoveryService;
 import com.github.dts.cluster.SdkSubscriber;
 import com.github.dts.cluster.SdkSubscriberHttpServlet;
-import com.github.dts.impl.elasticsearch7x.ES7xAdapter;
+import com.github.dts.impl.elasticsearch.ESAdapter;
 import com.github.dts.impl.rds.RDSAdapter;
 import com.github.dts.util.AbstractMessageService;
 import com.github.dts.util.CanalConfig;
@@ -59,8 +59,8 @@ public class DtsAutoConfiguration {
 
     @Bean
     @Scope("prototype")
-    public ES7xAdapter es7xAdapter() {
-        return new ES7xAdapter();
+    public ESAdapter esAdapter() {
+        return new ESAdapter();
     }
 
     @Bean

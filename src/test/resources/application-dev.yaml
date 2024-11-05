@@ -32,7 +32,7 @@ canal.conf:
       groups:
         - outerAdapters:
             - name: 'adapterES716'
-              es7x:
+              es:
                 concurrentBulkRequest: 4
                 address: 'https://my-elasticsearch-project-f10e79.es.ap-southeast-1.aws.elastic.cloud:443'
                 api-key: ${ES_API_KEY}

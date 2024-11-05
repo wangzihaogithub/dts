@@ -62,7 +62,11 @@ public class TypeLlmVectorAPI {
 
     public CompletableFuture<float[]> vector(String content) {
         VectorCompletableFuture future = new VectorCompletableFuture(content, this::commit);
-        futureList.add(future);
+        try {
+            futureList.put(future);
+        } catch (InterruptedException e) {
+            Util.sneakyThrows(e);
+        }
         if (llmVector.isContentSizeThreshold(futureList.size())) {
             commit();
         }

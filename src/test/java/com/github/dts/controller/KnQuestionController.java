@@ -5,6 +5,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/kn_question")
-public class KnQuestionController extends AbstractEs7xETLIntController {
+public class KnQuestionController extends AbstractEsETLIntController {
 
 }

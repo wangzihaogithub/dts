@@ -1,10 +1,10 @@
-package com.github.dts.impl.elasticsearch7x;
+package com.github.dts.impl.elasticsearch;
 
 import com.github.dts.cluster.DiscoveryService;
 import com.github.dts.cluster.MessageTypeEnum;
 import com.github.dts.cluster.SdkInstanceClient;
 import com.github.dts.cluster.SdkMessage;
-import com.github.dts.impl.elasticsearch7x.basic.ESSyncConfigSQL;
+import com.github.dts.impl.elasticsearch.basic.ESSyncConfigSQL;
 import com.github.dts.util.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,15 +22,15 @@ import java.util.stream.Collectors;
 /**
  * ES外部适配器
  */
-public class ES7xAdapter implements Adapter {
+public class ESAdapter implements Adapter {
     private static final Map<Object, ReferenceCounted<CacheMap>> IDENTITY_CACHE_MAP = Collections.synchronizedMap(new IdentityHashMap<>());
-    private static final Logger log = LoggerFactory.getLogger(ES7xAdapter.class);
+    private static final Logger log = LoggerFactory.getLogger(ESAdapter.class);
     private final Map<String, ESSyncConfig> esSyncConfig = new ConcurrentHashMap<>(); // 文件名对应配置
     private final Map<String, Map<String, ESSyncConfig>> dbTableEsSyncConfig = new ConcurrentHashMap<>(); // schema-table对应配置
     private final List<ESSyncServiceListener> listenerList = new ArrayList<>();
-    private ES7xConnection esConnection;
+    private ESConnection esConnection;
     private CanalConfig.OuterAdapterConfig configuration;
-    private ES7xTemplate esTemplate;
+    private DefaultESTemplate esTemplate;
     private ExecutorService listenerExecutor;
     private Executor slaveTableExecutor;
     private Executor mainJoinTableExecutor;
@@ -51,38 +51,38 @@ public class ES7xAdapter implements Adapter {
                      CanalConfig.OuterAdapterConfig configuration, Properties envProperties,
                      DiscoveryService discoveryService) {
         this.configuration = configuration;
-        this.connectorCommitListener = discoveryService == null ? null : new RealtimeListener(discoveryService, configuration.getName(), configuration.getEs7x().getCommitEventPublishScheduledTickMs(), configuration.getEs7x().getCommitEventPublishMaxBlockCount());
-        this.onlyEffect = configuration.getEs7x().isOnlyEffect();
-        this.joinUpdateSize = configuration.getEs7x().getJoinUpdateSize();
-        this.streamChunkSize = configuration.getEs7x().getStreamChunkSize();
-        this.refresh = configuration.getEs7x().isRefresh();
-        this.refreshThreshold = configuration.getEs7x().getRefreshThreshold();
-        this.esConnection = new ES7xConnection(configuration.getEs7x());
-        this.esTemplate = new ES7xTemplate(esConnection);
-        this.maxIdIn = configuration.getEs7x().getMaxIdIn();
+        this.connectorCommitListener = discoveryService == null ? null : new RealtimeListener(discoveryService, configuration.getName(), configuration.getEs().getCommitEventPublishScheduledTickMs(), configuration.getEs().getCommitEventPublishMaxBlockCount());
+        this.onlyEffect = configuration.getEs().isOnlyEffect();
+        this.joinUpdateSize = configuration.getEs().getJoinUpdateSize();
+        this.streamChunkSize = configuration.getEs().getStreamChunkSize();
+        this.refresh = configuration.getEs().isRefresh();
+        this.refreshThreshold = configuration.getEs().getRefreshThreshold();
+        this.esConnection = new ESConnection(configuration.getEs());
+        this.esTemplate = new DefaultESTemplate(esConnection);
+        this.maxIdIn = configuration.getEs().getMaxIdIn();
         this.basicFieldWriter = new BasicFieldWriter(esTemplate);
         this.listenerExecutor = Util.newFixedThreadPool(
-                configuration.getEs7x().getListenerThreads(),
+                configuration.getEs().getListenerThreads(),
                 60_000L, "ES-listener", false);
-        CanalConfig.OuterAdapterConfig.Es7x.SlaveNestedField slaveNestedField = configuration.getEs7x().getSlaveNestedField();
+        CanalConfig.OuterAdapterConfig.Es.SlaveNestedField slaveNestedField = configuration.getEs().getSlaveNestedField();
         this.slaveTableExecutor = slaveNestedField.isBlock() ?
                 Runnable::run :
                 Util.newFixedThreadPool(1, slaveNestedField.getThreads(),
                         60_000L, "ESNestedSlave", true, false, slaveNestedField.getQueues(), NestedSlaveTableRunnable::merge);
-        CanalConfig.OuterAdapterConfig.Es7x.MainJoinNestedField mainJoinNestedField = configuration.getEs7x().getMainJoinNestedField();
+        CanalConfig.OuterAdapterConfig.Es.MainJoinNestedField mainJoinNestedField = configuration.getEs().getMainJoinNestedField();
         this.mainJoinTableExecutor = mainJoinNestedField.isBlock() ?
                 Runnable::run :
                 Util.newFixedThreadPool(1, mainJoinNestedField.getThreads(),
                         60_000L, "ESNestedMainJoin", true, false, mainJoinNestedField.getQueues(), NestedMainJoinTableRunnable::merge);
-        ESSyncConfig.loadESSyncConfig(dbTableEsSyncConfig, esSyncConfig, envProperties, canalAdapter, configuration.getEs7x().resourcesDir(), env);
+        ESSyncConfig.loadESSyncConfig(dbTableEsSyncConfig, esSyncConfig, envProperties, canalAdapter, configuration.getName(),configuration.getEs().resourcesDir(), env);
 
         this.listenerList.sort(AnnotationAwareOrderComparator.INSTANCE);
         this.listenerList.forEach(item -> item.init(esSyncConfig));
-        this.nestedFieldWriter = new NestedFieldWriter(configuration.getEs7x().getNestedFieldThreads(), esSyncConfig, esTemplate);
+        this.nestedFieldWriter = new NestedFieldWriter(configuration.getEs().getNestedFieldThreads(), esSyncConfig, esTemplate);
     }
 
     private ReferenceCounted<CacheMap> newCacheMap(Object id) {
-        Function<Object, ReferenceCounted<CacheMap>> cacheFactory = k -> new ReferenceCounted<CacheMap>(new CacheMap(configuration.getEs7x().getMaxQueryCacheSize())) {
+        Function<Object, ReferenceCounted<CacheMap>> cacheFactory = k -> new ReferenceCounted<CacheMap>(new CacheMap(configuration.getEs().getMaxQueryCacheSize())) {
             @Override
             public void close() {
                 super.close();
@@ -92,7 +92,7 @@ public class ES7xAdapter implements Adapter {
                 }
             }
         };
-        if (configuration.getEs7x().isShareAdapterCache()) {
+        if (configuration.getEs().isShareAdapterCache()) {
             while (true) {
                 ReferenceCounted<CacheMap> counted = IDENTITY_CACHE_MAP.computeIfAbsent(id, cacheFactory);
                 try {
@@ -367,7 +367,7 @@ public class ES7xAdapter implements Adapter {
         this.listenerList.addAll(listenerList);
     }
 
-    public ES7xTemplate getEsTemplate() {
+    public DefaultESTemplate getEsTemplate() {
         return esTemplate;
     }
 
@@ -406,7 +406,7 @@ public class ES7xAdapter implements Adapter {
     @Override
     public String toString() {
         return configuration.getName() + "{" +
-                "address='" + Arrays.toString(configuration.getEs7x().getAddress()) + '\'' +
+                "address='" + Arrays.toString(configuration.getEs().getAddress()) + '\'' +
                 ", refresh=" + refresh +
                 ", onlyEffect=" + onlyEffect +
                 ", refreshThreshold=" + refreshThreshold +

@@ -1,9 +1,10 @@
 package com.github.dts.util;
 
-import com.github.dts.impl.elasticsearch7x.ES7xAdapter;
-import com.github.dts.impl.elasticsearch7x.NestedFieldWriter;
+import com.github.dts.impl.elasticsearch.ESAdapter;
+import com.github.dts.impl.elasticsearch.NestedFieldWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.util.AntPathMatcher;
 
 import java.io.File;
 import java.util.*;
@@ -21,6 +22,7 @@ public class ESSyncConfig {
     private static final Logger log = LoggerFactory.getLogger(ESSyncConfig.class);
     private String dataSourceKey;   // 数据源key
     private String destination;     // canal destination
+    private String[] adapterNamePattern;
     private ESMapping esMapping;
     private String md5;
 
@@ -30,13 +32,19 @@ public class ESSyncConfig {
 
     public static void loadESSyncConfig(Map<String, Map<String, ESSyncConfig>> map,
                                         Map<String, ESSyncConfig> configMap,
-                                        Properties envProperties, CanalConfig.CanalAdapter canalAdapter, File resourcesDir, String env) {
+                                        Properties envProperties, CanalConfig.CanalAdapter canalAdapter,
+                                        String adapterName,
+                                        File resourcesDir, String env) {
         Map<String, ESSyncConfig> load = loadYamlToBean(envProperties, canalAdapter, resourcesDir, env);
         for (Map.Entry<String, ESSyncConfig> entry : load.entrySet()) {
             ESSyncConfig config = entry.getValue();
             if (!config.getEsMapping().isEnable()) {
                 continue;
             }
+            if (!config.isMatchAdapterName(adapterName)) {
+                continue;
+            }
+
             String configName = entry.getKey();
             configMap.put(configName, config);
             String schema = CanalConfig.DatasourceConfig.getCatalog(config.getDataSourceKey());
@@ -44,8 +52,8 @@ public class ESSyncConfig {
                 map.computeIfAbsent(getEsSyncConfigKey(config.getDestination(), schema, item.getTableName()),
                         k -> new ConcurrentHashMap<>()).put(configName, config);
             }
-            for (Map.Entry<String, ESSyncConfig.ObjectField> e : config.getEsMapping().getObjFields().entrySet()) {
-                ESSyncConfig.ObjectField v = e.getValue();
+            for (Map.Entry<String, ObjectField> e : config.getEsMapping().getObjFields().entrySet()) {
+                ObjectField v = e.getValue();
                 if (v == null) {
                     continue;
                 }
@@ -191,6 +199,37 @@ public class ESSyncConfig {
 
     public void setEsMapping(ESMapping esMapping) {
         this.esMapping = esMapping;
+    }
+
+    public String[] getAdapterNamePattern() {
+        return adapterNamePattern;
+    }
+
+    public void setAdapterNamePattern(String[] adapterNamePattern) {
+        this.adapterNamePattern = adapterNamePattern;
+    }
+
+    public boolean isMatchAdapterName(String adapterName) {
+        String[] adapterNamePattern = this.adapterNamePattern;
+        if (adapterNamePattern == null || adapterNamePattern.length == 0) {
+            return true;
+        }
+        AntPathMatcher matcher = null;
+        for (String s : adapterNamePattern) {
+            if (s.equals("*")) {
+                return true;
+            } else if (Objects.equals(s, adapterName)) {
+                return true;
+            } else {
+                if (matcher == null) {
+                    matcher = new AntPathMatcher("-");
+                }
+                if (matcher.match(s, adapterName)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     public static class ESMapping {
@@ -401,7 +440,7 @@ public class ESSyncConfig {
          * @param mapping mapping
          * @param row     row
          * @return ES对象
-         * @see ESSyncServiceListener#onSyncAfter(List, ES7xAdapter, ESTemplate.BulkRequestList)
+         * @see ESSyncServiceListener#onSyncAfter(List, ESAdapter, ESTemplate.BulkRequestList)
          */
         public Object parse(Object val, ESMapping mapping, Map<String, Object> row) {
             switch (type) {
@@ -690,7 +729,7 @@ public class ESSyncConfig {
          * https://www.elastic.co/guide/en/elasticsearch/reference/current/dense-vector.html#dense-vector-params
          */
         public static class ParamLlmVector {
-            private Class<? extends LlmEmbeddingModel> modelClass = com.github.dts.util.OpenAiLlmEmbeddingModel.class;
+            private Class<? extends LlmEmbeddingModel> modelClass = OpenAiLlmEmbeddingModel.class;
             private String apiKey;
             private String baseUrl;
             private String modelName;

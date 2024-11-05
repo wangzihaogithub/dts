@@ -1,6 +1,6 @@
 package com.github.dts.util;
 
-import com.github.dts.impl.elasticsearch7x.ES7xAdapter;
+import com.github.dts.impl.elasticsearch.ESAdapter;
 
 import java.util.List;
 import java.util.Map;
@@ -14,6 +14,6 @@ public interface ESSyncServiceListener {
 
     void init(Map<String, ESSyncConfig> map);
 
-    void onSyncAfter(List<Dml> dml, ES7xAdapter adapter, ESTemplate.BulkRequestList bulkRequestList);
+    void onSyncAfter(List<Dml> dml, ESAdapter adapter, ESTemplate.BulkRequestList bulkRequestList);
 
 }

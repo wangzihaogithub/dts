@@ -5,6 +5,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/job")
-public class JobController extends AbstractEs7xETLIntController {
+public class JobController extends AbstractEsETLIntController {
 
 }

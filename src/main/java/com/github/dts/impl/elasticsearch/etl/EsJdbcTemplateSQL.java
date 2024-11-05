@@ -1,6 +1,6 @@
-package com.github.dts.impl.elasticsearch7x.etl;
+package com.github.dts.impl.elasticsearch.etl;
 
-import com.github.dts.impl.elasticsearch7x.nested.JdbcTemplateSQL;
+import com.github.dts.impl.elasticsearch.nested.JdbcTemplateSQL;
 import com.github.dts.util.ColumnItem;
 import com.github.dts.util.ESTemplate;
 

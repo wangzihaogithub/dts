@@ -1,8 +1,8 @@
-package com.github.dts.impl.elasticsearch7x;
+package com.github.dts.impl.elasticsearch;
 
-import com.github.dts.impl.elasticsearch7x.NestedFieldWriter.DependentSQL;
-import com.github.dts.impl.elasticsearch7x.nested.MergeJdbcTemplateSQL;
-import com.github.dts.impl.elasticsearch7x.nested.SQL;
+import com.github.dts.impl.elasticsearch.NestedFieldWriter.DependentSQL;
+import com.github.dts.impl.elasticsearch.nested.MergeJdbcTemplateSQL;
+import com.github.dts.impl.elasticsearch.nested.SQL;
 import com.github.dts.util.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,7 +17,7 @@ import java.util.stream.Collectors;
 class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Runnable {
     private static final Logger log = LoggerFactory.getLogger(NestedMainJoinTableRunnable.class);
     private final List<SqlDependent> dmlList;
-    private final ES7xTemplate es7xTemplate;
+    private final DefaultESTemplate esTemplate;
     private final int maxIdInCount;
     private final int streamChunkSize;
     private final Timestamp maxTimestamp;
@@ -26,21 +26,21 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
     private final ESTemplate.BulkRequestList bulkRequestList;
     private final ESTemplate.CommitListener commitListener;
 
-    NestedMainJoinTableRunnable(List<SqlDependent> dmlList, ES7xTemplate es7xTemplate,
+    NestedMainJoinTableRunnable(List<SqlDependent> dmlList, DefaultESTemplate esTemplate,
                                 ESTemplate.BulkRequestList bulkRequestList,
                                 ESTemplate.CommitListener commitListener,
                                 int maxIdInCount, int streamChunkSize, Timestamp maxTimestamp) {
-        this(dmlList, es7xTemplate, bulkRequestList, commitListener, maxIdInCount, streamChunkSize, maxTimestamp, null, null);
+        this(dmlList, esTemplate, bulkRequestList, commitListener, maxIdInCount, streamChunkSize, maxTimestamp, null, null);
     }
 
-    NestedMainJoinTableRunnable(List<SqlDependent> dmlList, ES7xTemplate es7xTemplate,
+    NestedMainJoinTableRunnable(List<SqlDependent> dmlList, DefaultESTemplate esTemplate,
                                 ESTemplate.BulkRequestList bulkRequestList,
                                 ESTemplate.CommitListener commitListener,
                                 int maxIdInCount, int streamChunkSize, Timestamp maxTimestamp,
                                 NestedMainJoinTableRunnable oldRun,
                                 NestedMainJoinTableRunnable newRun) {
         this.dmlList = dmlList;
-        this.es7xTemplate = es7xTemplate;
+        this.esTemplate = esTemplate;
         this.commitListener = commitListener;
         this.maxIdInCount = maxIdInCount;
         this.bulkRequestList = bulkRequestList;
@@ -54,7 +54,7 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
         List<SqlDependent> dmlList = new ArrayList<>(oldRun.dmlList.size() + newRun.dmlList.size());
         dmlList.addAll(oldRun.dmlList);
         dmlList.addAll(newRun.dmlList);
-        return new NestedMainJoinTableRunnable(dmlList, oldRun.es7xTemplate,
+        return new NestedMainJoinTableRunnable(dmlList, oldRun.esTemplate,
                 oldRun.bulkRequestList.fork(newRun.bulkRequestList),
                 ESTemplate.merge(oldRun.commitListener, newRun.commitListener),
                 oldRun.maxIdInCount, oldRun.streamChunkSize, oldRun.maxTimestamp,
@@ -144,9 +144,9 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
                 childrenCounter.addAndGet(chunk.rowList.size());
                 SchemaItem schemaItem = chunk.source.getSchemaItem();
                 List<Map<String, Object>> parentList = parentGetterMap.get(chunk.source);
-                NestedFieldWriter.executeEsTemplateUpdate(bulkRequestList, es7xTemplate, chunk.rowListFirst(), schemaItem, parentList);
+                NestedFieldWriter.executeEsTemplateUpdate(bulkRequestList, esTemplate, chunk.rowListFirst(), schemaItem, parentList);
             });
-            bulkRequestList.commit(es7xTemplate);
+            bulkRequestList.commit(esTemplate);
         }
 
         log.info("NestedMainJoinTable={}ms, rowCount={}, ts={}, dependentList={}, changeSql={}",
@@ -154,7 +154,7 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
                 childrenCounter.intValue(),
                 maxTimestamp, sqlDependentList, childrenMergeSqlList);
 
-        bulkRequestList.commit(es7xTemplate);
+        bulkRequestList.commit(esTemplate);
     }
 
     @Override

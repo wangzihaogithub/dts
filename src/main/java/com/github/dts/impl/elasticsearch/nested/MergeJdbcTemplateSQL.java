@@ -1,4 +1,4 @@
-package com.github.dts.impl.elasticsearch7x.nested;
+package com.github.dts.impl.elasticsearch.nested;
 
 import com.github.dts.util.CacheMap;
 import com.github.dts.util.ColumnItem;

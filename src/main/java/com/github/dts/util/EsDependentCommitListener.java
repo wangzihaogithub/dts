@@ -1,6 +1,6 @@
 package com.github.dts.util;
 
-import com.github.dts.impl.elasticsearch7x.BasicFieldWriter;
+import com.github.dts.impl.elasticsearch.BasicFieldWriter;
 
 import java.sql.Timestamp;
 import java.util.List;
