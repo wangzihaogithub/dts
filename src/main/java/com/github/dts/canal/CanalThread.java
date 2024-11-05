@@ -9,10 +9,9 @@ import java.io.StringWriter;
 import java.lang.reflect.InvocationTargetException;
 import java.sql.Timestamp;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.function.Consumer;
@@ -20,6 +19,7 @@ import java.util.function.Consumer;
 public class CanalThread extends Thread {
     private static final int DEFAULT_BATCH_SIZE = 50;
     protected final Adapter[] adapterList;                                              // 外部适配器
+    protected final Map<String, ExecutorService> executorServiceMap = new ConcurrentHashMap<>(6);                                       // 组内工作线程池
     private final Logger logger = LoggerFactory.getLogger(this.getClass());
     private final CanalConnector connector;
     private final CanalConfig.CanalAdapter config;
@@ -28,7 +28,6 @@ public class CanalThread extends Thread {
     private final StartupServer startupServer;
     protected String groupId = null;                                                  // groupId
     protected CanalConfig canalConfig;                                               // 配置
-    protected volatile ExecutorService executorService;                                       // 组内工作线程池
     protected volatile boolean running = false;                                                 // 是否运行中
     protected Thread thread = null;
     protected UncaughtExceptionHandler handler = (t, e) -> logger.error("parse events has an error", e);
@@ -175,16 +174,10 @@ public class CanalThread extends Thread {
         connector.close();
     }
 
-    public ExecutorService getExecutor() {
-        if (executorService == null) {
-            synchronized (this) {
-                if (executorService == null) {
-                    executorService = Util.newFixedThreadPool(adapterList.length,
-                            5000L, name + "-fork", false);
-                }
-            }
-        }
-        return executorService;
+    public ExecutorService getExecutor(Adapter adapter) {
+        String key = Objects.toString(adapter.getConfiguration().getName(), "");
+        return executorServiceMap.computeIfAbsent(key, k -> Util.newFixedThreadPool(2,
+                120_000L, limit(this.name, 8) + "-" + k, false));
     }
 
     protected void writeOut(final List<Dml> message) {
@@ -195,7 +188,7 @@ public class CanalThread extends Thread {
         } else {
             // 组间适配器并行运行
             Future<CompletableFuture<Void>>[] submitList = Arrays.stream(adapterList)
-                    .map(e -> getExecutor().submit(() -> e.sync(message)))
+                    .map(e -> getExecutor(e).submit(() -> e.sync(message)))
                     .toArray(Future[]::new);
 
             // 等待所有适配器写入完成
@@ -314,8 +307,12 @@ public class CanalThread extends Thread {
                     // ignore
                 }
             }
-            if (executorService != null) {
-                executorService.shutdown();
+            while (!executorServiceMap.isEmpty()) {
+                HashMap<String, ExecutorService> map = new HashMap<>(executorServiceMap);
+                executorServiceMap.clear();
+                for (ExecutorService value : map.values()) {
+                    value.shutdown();
+                }
             }
             logger.info("destination {} adapters worker thread dead!", this.name);
             for (Adapter adapter : adapterList) {
