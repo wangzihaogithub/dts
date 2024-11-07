@@ -79,11 +79,12 @@ public abstract class AbstractEsETLStringController {
             @RequestParam(required = false, defaultValue = "true") boolean onlyCurrentIndex,
             @RequestParam(required = false, defaultValue = "100") int joinUpdateSize,
             String[] onlyFieldName,
-            String[] adapterNames) {
+            String[] adapterNames,
+            String sqlWhere) {
         Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(Util::isNotBlank).collect(Collectors.toCollection(LinkedHashSet::new));
         return stringEsETLService.syncAll(esIndexName, offsetStart, offsetAdd,
                 append, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet,
-                adapterNames == null ? null : Arrays.asList(adapterNames));
+                adapterNames == null ? null : Arrays.asList(adapterNames), sqlWhere);
     }
 
     @RequestMapping("/syncById")

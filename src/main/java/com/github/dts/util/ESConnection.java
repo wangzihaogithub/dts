@@ -345,7 +345,7 @@ public class ESConnection {
 
         @Override
         public void beforeBulk() {
-            TypeLlmVectorAPI.beforeBulk(params);
+            VectorCompletableFuture.beforeBulk(params);
         }
 
         @Override
@@ -383,7 +383,7 @@ public class ESConnection {
         @Override
         public void beforeBulk() {
             Map source = new LinkedHashMap(this.source);
-            TypeLlmVectorAPI.beforeBulk(source);
+            VectorCompletableFuture.beforeBulk(source);
             doc(source);
         }
 

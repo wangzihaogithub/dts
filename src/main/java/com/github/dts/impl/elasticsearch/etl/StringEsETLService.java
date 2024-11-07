@@ -71,7 +71,7 @@ public class StringEsETLService {
 
     public void syncAll(
             String esIndexName) {
-        syncAll(esIndexName, "0", 500, true, true, 100, null, null);
+        syncAll(esIndexName, "0", 500, true, true, 100, null, null, null);
     }
 
     public Object syncById(String[] id,
@@ -95,7 +95,9 @@ public class StringEsETLService {
             boolean onlyCurrentIndex,
             int joinUpdateSize,
             Set<String> onlyFieldNameSet,
-            List<String> adapterNames) {
+            List<String> adapterNames,
+            String sqlWhere) {
+        String trimWhere = ESSyncUtil.trimWhere(sqlWhere);
         this.stop = false;
         List<ESAdapter> adapterList = getAdapterList(adapterNames);
         if (adapterList.isEmpty()) {
@@ -125,7 +127,7 @@ public class StringEsETLService {
                             if (stop) {
                                 break;
                             }
-                            list = syncAll(jdbcTemplate, catalog, minId, offsetAdd, append, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet, adapter, config);
+                            list = syncAll(jdbcTemplate, catalog, minId, offsetAdd, append, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet, adapter, config, trimWhere);
                             dmlSize.addAndGet(list.size());
                             if (log.isInfoEnabled()) {
                                 log.info("syncAll dmlSize = {}, minOffset = {} ", dmlSize.intValue(), minId);
@@ -234,7 +236,7 @@ public class StringEsETLService {
                         sendTrimDone(messageService, timestamp, hitListSize, deleteSize, deleteIdList, config, adapter);
                     }
                 } catch (Exception e) {
-                    sendTrimError(messageService, e, timestamp, hitListSize, deleteSize, deleteIdList, esIndexName,adapter);
+                    sendTrimError(messageService, e, timestamp, hitListSize, deleteSize, deleteIdList, esIndexName, adapter);
                 }
             });
         }
@@ -341,10 +343,10 @@ public class StringEsETLService {
 
     protected List<Dml> syncAll(JdbcTemplate jdbcTemplate, String catalog, String minId, int limit, boolean append, boolean onlyCurrentIndex,
                                 int joinUpdateSize, Collection<String> onlyFieldNameSet,
-                                ESAdapter esAdapter, ESSyncConfig config) {
+                                ESAdapter esAdapter, ESSyncConfig config, String where) {
         String tableName = config.getEsMapping().getSchemaItem().getMainTable().getTableName();
         String pk = config.getEsMapping().getPk();
-        List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, minId, limit, tableName, pk, config);
+        List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, minId, limit, tableName, pk, config, where);
         if (dmlList.isEmpty()) {
             return dmlList;
         }
@@ -369,7 +371,7 @@ public class StringEsETLService {
             if (stop) {
                 break;
             }
-            List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, i, 1, tableName, pk, config);
+            List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, i, 1, tableName, pk, config, null);
             for (Dml dml : dmlList) {
                 dml.setDestination(esAdapter.getConfiguration().getCanalAdapter().getDestination());
             }
@@ -378,7 +380,6 @@ public class StringEsETLService {
         }
         return count;
     }
-
 
     public int updateEsNestedDiff(String esIndexName) {
         return updateEsNestedDiff(esIndexName, null, 500, null, 1000, null);
@@ -656,7 +657,7 @@ public class StringEsETLService {
         messageService.send(title, content);
     }
 
-    protected void sendTrimError(AbstractMessageService messageService, Throwable throwable, Date timestamp, int dmlSize, int deleteSize, List<String> deleteIdList, String esIndexName,ESAdapter adapter) {
+    protected void sendTrimError(AbstractMessageService messageService, Throwable throwable, Date timestamp, int dmlSize, int deleteSize, List<String> deleteIdList, String esIndexName, ESAdapter adapter) {
         String title = "ES搜索全量校验Trim数据-异常";
         StringWriter writer = new StringWriter();
         throwable.printStackTrace(new PrintWriter(writer));
@@ -723,8 +724,8 @@ public class StringEsETLService {
         messageService.send(title, content);
     }
 
-    protected List<Dml> convertDmlList(JdbcTemplate jdbcTemplate, String catalog, String minId, int limit, String tableName, String idColumnName, ESSyncConfig config) {
-        List<Map<String, Object>> jobList = selectList(jdbcTemplate, minId, limit, tableName, idColumnName);
+    protected List<Dml> convertDmlList(JdbcTemplate jdbcTemplate, String catalog, String minId, int limit, String tableName, String idColumnName, ESSyncConfig config, String where) {
+        List<Map<String, Object>> jobList = selectList(jdbcTemplate, minId, limit, tableName, idColumnName, where);
         List<Dml> dmlList = new ArrayList<>();
         for (Map<String, Object> row : jobList) {
             dmlList.addAll(Dml.convertInsert(Arrays.asList(row), Arrays.asList(idColumnName), tableName, catalog, new String[]{config.getDestination()}));
@@ -732,12 +733,20 @@ public class StringEsETLService {
         return dmlList;
     }
 
-    protected List<Map<String, Object>> selectList(JdbcTemplate jdbcTemplate, String minId, int limit, String tableName, String idColumnName) {
+    protected List<Map<String, Object>> selectList(JdbcTemplate jdbcTemplate, String minId, int limit, String tableName, String idColumnName, String where) {
         String sql;
         if (limit == 1) {
-            sql = "select * from " + tableName + " where " + idColumnName + " = ? limit ?";
+            sql = "select * from " + tableName + " where " + idColumnName + " = ?";
         } else {
-            sql = "select * from " + tableName + " where " + idColumnName + " > ? limit ?";
+            sql = "select * from " + tableName + " where " + idColumnName + " > ?";
+        }
+        boolean whereAppend = Util.isNotBlank(where);
+        if (whereAppend) {
+            sql += " and (" + where + ")";
+        }
+        sql += " limit ?";
+        if (whereAppend) {
+            log.info("selectList sql = {}", sql);
         }
         return jdbcTemplate.queryForList(sql, minId, limit);
     }

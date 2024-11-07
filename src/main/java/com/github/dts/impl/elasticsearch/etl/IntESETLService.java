@@ -55,7 +55,7 @@ public class IntESETLService {
     public List<SyncRunnable> syncAll(String esIndexName) {
         return syncAll(esIndexName,
                 50, 0, null, 500,
-                true, false, true, 100, null, null);
+                true, false, true, 100, null, null, null);
     }
 
     public Object syncById(Long[] id,
@@ -460,7 +460,9 @@ public class IntESETLService {
             boolean onlyCurrentIndex,
             int joinUpdateSize,
             Set<String> onlyFieldNameSet,
-            List<String> adapterNames) {
+            List<String> adapterNames,
+            String sqlWhere) {
+        String trimWhere = ESSyncUtil.trimWhere(sqlWhere);
         this.stop = false;
         List<ESAdapter> adapterList = getAdapterList(adapterNames);
         if (adapterList.isEmpty()) {
@@ -507,7 +509,7 @@ public class IntESETLService {
                             if (stop) {
                                 return Long.MAX_VALUE;
                             }
-                            List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, offset, offsetAdd, tableName, pk, config);
+                            List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, offset, offsetAdd, tableName, pk, config, trimWhere);
 
                             if (!append) {
                                 Long dmlListMaxId = getDmlListMaxId(dmlList);
@@ -609,7 +611,7 @@ public class IntESETLService {
             if (stop) {
                 break;
             }
-            List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, i, 1, tableName, pk, config);
+            List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, i, 1, tableName, pk, config, null);
             esAdapter.sync(dmlList, false, false, onlyCurrentIndex, 1, onlyFieldNameSet, null);
             count += dmlList.size();
         }
@@ -792,8 +794,8 @@ public class IntESETLService {
         messageService.send(title, content);
     }
 
-    protected List<Dml> convertDmlList(JdbcTemplate jdbcTemplate, String catalog, Long minId, int limit, String tableName, String idColumnName, ESSyncConfig config) {
-        List<Map<String, Object>> jobList = selectList(jdbcTemplate, minId, limit, tableName, idColumnName);
+    protected List<Dml> convertDmlList(JdbcTemplate jdbcTemplate, String catalog, Long minId, int limit, String tableName, String idColumnName, ESSyncConfig config, String where) {
+        List<Map<String, Object>> jobList = selectList(jdbcTemplate, minId, limit, tableName, idColumnName, where);
         List<Dml> dmlList = new ArrayList<>();
         for (Map<String, Object> row : jobList) {
             dmlList.addAll(Dml.convertInsert(Collections.singletonList(row), Collections.singletonList(idColumnName), tableName, catalog, new String[]{config.getDestination()}));
@@ -801,12 +803,20 @@ public class IntESETLService {
         return dmlList;
     }
 
-    protected List<Map<String, Object>> selectList(JdbcTemplate jdbcTemplate, Long minId, int limit, String tableName, String idColumnName) {
+    protected List<Map<String, Object>> selectList(JdbcTemplate jdbcTemplate, Long minId, int limit, String tableName, String idColumnName, String where) {
         String sql;
         if (limit == 1) {
-            sql = "select * from " + tableName + " where " + idColumnName + " = ? limit ?";
+            sql = "select * from " + tableName + " where " + idColumnName + " = ?";
         } else {
-            sql = "select * from " + tableName + " where " + idColumnName + " > ? limit ?";
+            sql = "select * from " + tableName + " where " + idColumnName + " > ?";
+        }
+        boolean whereAppend = Util.isNotBlank(where);
+        if (whereAppend) {
+            sql += " and (" + where + ")";
+        }
+        sql += " limit ?";
+        if (whereAppend) {
+            log.info("selectList sql = {}", sql);
         }
         return jdbcTemplate.queryForList(sql, minId, limit);
     }

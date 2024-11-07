@@ -746,10 +746,30 @@ public class ESSyncConfig {
              * 每次请求最多几条
              */
             private int requestMaxContentSize = 6;
+            /**
+             * 每分钟调用次数（QPM）
+             * 阿里云：为了保证用户调用模型的公平性，百炼设置了基础限流。
+             * 限流是基于模型维度的，并且和调用用户的阿里云主账号相关联，按照该账号下所有API-KEY调用该模型的总和计算限流。
+             * 如果超出调用限制，用户的API请求将会因为限流而失败，用户需等到不满足限流条件时才能再次调用。
+             */
+            private int qpm = 60;
+            /**
+             * 使用队列名称
+             */
+            private String requestQueueName;
+
             private volatile transient TypeLlmVectorAPI typeLlmVectorAPI;
 
             private void init(ObjectField objectField) {
-                getTypeLlmVectorAPI();
+                if (Util.isBlank(requestQueueName)) {
+                    /*
+                     * 加队列：每分钟调用次数（QPM）
+                     * 阿里云：为了保证用户调用模型的公平性，百炼设置了基础限流。
+                     * 限流是基于模型维度的，并且和调用用户的阿里云主账号相关联，按照该账号下所有API-KEY调用该模型的总和计算限流。
+                     * 如果超出调用限制，用户的API请求将会因为限流而失败，用户需等到不满足限流条件时才能再次调用。
+                     */
+                    requestQueueName = apiKey + "_" + modelName;
+                }
                 if (Util.isBlank(etlEqualsFieldName)) {
                     SchemaItem.FieldItem fieldItem = etlEqualsFieldName(objectField);
                     if (fieldItem == null) {
@@ -758,6 +778,23 @@ public class ESSyncConfig {
                         this.etlEqualsFieldName = fieldItem.getFieldName();
                     }
                 }
+                getTypeLlmVectorAPI();
+            }
+
+            public int getQpm() {
+                return qpm;
+            }
+
+            public void setQpm(int qpm) {
+                this.qpm = qpm;
+            }
+
+            public String getRequestQueueName() {
+                return requestQueueName;
+            }
+
+            public void setRequestQueueName(String requestQueueName) {
+                this.requestQueueName = requestQueueName;
             }
 
             public Class<? extends LlmEmbeddingModel> getModelClass() {

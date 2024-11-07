@@ -80,10 +80,11 @@ public abstract class AbstractEsETLIntController {
             @RequestParam(required = false, defaultValue = "true") boolean onlyCurrentIndex,
             @RequestParam(required = false, defaultValue = "100") int joinUpdateSize,
             String[] onlyFieldName,
-            String[] adapterNames) {
+            String[] adapterNames,
+            String sqlWhere) {
         Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(Util::isNotBlank).collect(Collectors.toCollection(LinkedHashSet::new));
         return intESETLService.syncAll(esIndexName, threads, offsetStart, offsetEnd, offsetAdd, append, discard, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet,
-                adapterNames == null ? null : Arrays.asList(adapterNames));
+                adapterNames == null ? null : Arrays.asList(adapterNames), sqlWhere);
     }
 
     @RequestMapping("/syncById")

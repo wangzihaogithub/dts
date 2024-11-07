@@ -39,8 +39,24 @@ public class ESSyncUtil {
         }
     });
 
-    public static String getEsSyncConfigKey(String destination, String database, String table) {
-        return destination + "_" + database + "_" + table;
+    public static String trimWhere(String where) {
+        if (where == null) {
+            return null;
+        }
+        where = where.trim();
+        while (where.startsWith("where")) {
+            where = where.substring("where".length());
+        }
+        while (where.startsWith("WHERE")) {
+            where = where.substring("WHERE".length());
+        }
+        while (where.startsWith("and")) {
+            where = where.substring("and".length());
+        }
+        while (where.startsWith("AND")) {
+            where = where.substring("AND".length());
+        }
+        return where;
     }
 
     public static Map<String, byte[]> loadYamlToBytes(File configDir) {
@@ -49,9 +65,9 @@ public class ESSyncUtil {
         File[] files = configDir.listFiles();
         if (files != null) {
             for (File file : files) {
-                if(file.isDirectory()){
+                if (file.isDirectory()) {
                     map.putAll(loadYamlToBytes(file));
-                }else {
+                } else {
                     String fileName = file.getName();
                     if (!fileName.endsWith(".yml") && !fileName.endsWith(".yaml")) {
                         continue;
