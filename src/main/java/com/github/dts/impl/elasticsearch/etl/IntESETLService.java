@@ -808,9 +808,9 @@ public class IntESETLService {
     protected List<Map<String, Object>> selectList(JdbcTemplate jdbcTemplate, Long minId, int limit, String tableName, String idColumnName, String where) {
         String sql;
         if (limit == 1) {
-            sql = "select * from " + tableName + " where " + idColumnName + " = ?";
+            sql = "select * from " + tableName + " " + tableName + " where " + tableName + "." + idColumnName + " = ?";
         } else {
-            sql = "select * from " + tableName + " where " + idColumnName + " > ?";
+            sql = "select * from " + tableName + " " + tableName + " where " + tableName + "." + idColumnName + " > ?";
         }
         boolean whereAppend = Util.isNotBlank(where);
         if (whereAppend) {
