@@ -64,9 +64,11 @@ public class ESConnection {
     private final Map<String, CompletableFuture<com.github.dts.util.ESBulkRequest.EsRefreshResponse>> refreshAsyncCache = new ConcurrentHashMap<>(2);
     private final Map<String, CompletableFuture<Map<String, Object>>> getMappingAsyncCache = new ConcurrentHashMap<>(2);
     private final int updateByQueryChunkSize;
+    private final String[] elasticsearchUri;
 
     public ESConnection(CanalConfig.OuterAdapterConfig.EsAccount esAccount) {
         String[] elasticsearchUri = esAccount.getAddress();
+        this.elasticsearchUri = elasticsearchUri;
         HttpHost[] httpHosts = Arrays.stream(elasticsearchUri).map(HttpHost::create).toArray(HttpHost[]::new);
         String name = esAccount.getUsername();
         String pwd = esAccount.getPassword();
@@ -207,6 +209,10 @@ public class ESConnection {
                     });
             return future;
         });
+    }
+
+    public String[] getElasticsearchUri() {
+        return elasticsearchUri;
     }
 
     @Override

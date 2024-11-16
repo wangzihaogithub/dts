@@ -334,7 +334,7 @@ public class DefaultESTemplate implements ESTemplate {
                         Arrays.toString(response.requestBytesToString())
                 );
             }
-            response.processFailBulkResponse("ES7 sync commit error. ");
+            response.processFailBulkResponse(" sync commit error. host: " + Arrays.toString(esConnection.getElasticsearchUri()) + ", detail:");
         }
         return response;
     }
