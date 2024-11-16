@@ -89,6 +89,7 @@ public class CanalConfig {
         private String username;                                 // jdbc username
         private String password;                                 // jdbc password
         private Integer maxActive = 100;                         // 连接池最大连接数,默认为3
+        private Integer maxWait = 120000;
         private boolean lazy = true;
 
         public static boolean contains(DataSource dataSource) {
@@ -165,7 +166,7 @@ public class CanalConfig {
             ds.setInitialSize(1);
             ds.setMinIdle(1);
             ds.setMaxActive(config.getMaxActive());
-            ds.setMaxWait(60000);
+            ds.setMaxWait(config.getMaxWait());
             ds.setTimeBetweenEvictionRunsMillis(60000);
             ds.setMinEvictableIdleTimeMillis(300000);
             ds.setValidationQuery("select 1");
@@ -233,6 +234,14 @@ public class CanalConfig {
 
         public void setPassword(String password) {
             this.password = password;
+        }
+
+        public Integer getMaxWait() {
+            return maxWait;
+        }
+
+        public void setMaxWait(Integer maxWait) {
+            this.maxWait = maxWait;
         }
 
         public Integer getMaxActive() {
