@@ -354,8 +354,19 @@ public class ESSyncUtil {
                 res = JsonUtil.toMap(val.toString(), true);
             }
         } else {
-            // 其他类全以字符串处理
-            res = val.toString();
+            if (val instanceof Date) {
+                DateTime dateTime = new DateTime(((Date) val).getTime());
+                return dateTime.toString("yyyy-MM-dd HH:mm:ss.SSS");
+            } else if (val instanceof Map) {
+                return val;
+            } else if (val instanceof Collection) {
+                return val;
+            } else if (val.getClass().isArray()) {
+                return val;
+            } else {
+                // 其他类全以字符串处理
+                res = val.toString();
+            }
         }
 
         return res;
@@ -389,7 +400,7 @@ public class ESSyncUtil {
                 return new byte[0];
             }
         } catch (IOException | SQLException e) {
-            log.error(e.getMessage());
+            log.error("blobToBytes error {}, ", e.toString(), e);
             return null;
         }
     }
@@ -538,13 +549,21 @@ public class ESSyncUtil {
                 return es != null;
             }
             case LLM_VECTOR: {
-                String refTextFieldName = objectField.getParamLlmVector().getEtlEqualsFieldName();
-                if (refTextFieldName == null || refTextFieldName.isEmpty()) {
-                    return true;
+                boolean mysqlEmpty = mysql == null || "".equals(mysql);
+                boolean esEmpty = es == null || "".equals(es);
+                if (esEmpty) {
+                    return mysqlEmpty;
+                } else if (mysqlEmpty) {
+                    return false;
+                } else {
+                    String refTextFieldName = objectField.getParamLlmVector().getEtlEqualsFieldName();
+                    if (refTextFieldName == null || refTextFieldName.isEmpty()) {
+                        return true;
+                    }
+                    Object refEs = esRowData.get(refTextFieldName);
+                    Object refMysql = mysqlRowData.get(refTextFieldName);
+                    return Objects.equals(refEs, refMysql);
                 }
-                Object refEs = esRowData.get(refTextFieldName);
-                Object refMysql = mysqlRowData.get(refTextFieldName);
-                return Objects.equals(refEs, refMysql);
             }
             case ARRAY: {
                 if (es == null && mysql == null) {
