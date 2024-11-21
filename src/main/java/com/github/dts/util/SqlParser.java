@@ -312,6 +312,9 @@ public class SqlParser {
             fieldItem.setFieldName(cleanColumn(selectItem.getAlias()));
             fieldItem.setExpr(selectItem.toString());
             visitColumn(selectItem.getExpr(), fieldItem);
+            if (fieldItem.getFieldName() == null) {
+                throw new IllegalArgumentException("sql parse error! columnName is null. Please check your SQL statement. error sql = " + sqlSelectQueryBlock);
+            }
             return fieldItem;
         }).collect(Collectors.toList());
     }
