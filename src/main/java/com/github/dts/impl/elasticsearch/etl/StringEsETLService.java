@@ -309,7 +309,8 @@ public class StringEsETLService {
                                         if (updateIdList.size() < maxSendMessageSize) {
                                             updateIdList.add(id);
                                         }
-                                        esTemplate.update(esMapping, id, db, null);
+                                        Map<String, Object> esUpdateData = ESSyncUtil.convertValueTypeCopyMap(db, esTemplate, esMapping, null);
+                                        esTemplate.update(esMapping, id, esUpdateData, null);
                                     }
                                 } else {
                                     esTemplate.delete(esMapping, id, null);

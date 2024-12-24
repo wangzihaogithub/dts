@@ -607,12 +607,12 @@ public class ESSyncUtil {
     public static List<Map<String, Object>> convertValueTypeCopyList(List<Map<String, Object>> rowList,
                                                                      ESTemplate esTemplate,
                                                                      ESMapping esMapping,
-                                                                     String fileName) {
+                                                                     String parentFieldName) {
         List<Map<String, Object>> rowListCopy = new ArrayList<>();
         if (rowList != null) {
             for (Map<String, Object> row : rowList) {
                 Map<String, Object> rowCopy = new LinkedHashMap<>(row);
-                esTemplate.convertValueType(esMapping, fileName, rowCopy);
+                esTemplate.convertValueType(esMapping, parentFieldName, rowCopy);
                 rowListCopy.add(rowCopy);
             }
         }
@@ -622,11 +622,25 @@ public class ESSyncUtil {
     public static Map<String, Object> convertValueTypeCopyMap(List<Map<String, Object>> rowList,
                                                               ESTemplate esTemplate,
                                                               ESMapping esMapping,
-                                                              String fileName) {
+                                                              String parentFieldName) {
         Map<String, Object> rowCopy;
         if (rowList != null && !rowList.isEmpty()) {
             rowCopy = new LinkedHashMap<>(rowList.get(0));
-            esTemplate.convertValueType(esMapping, fileName, rowCopy);
+            esTemplate.convertValueType(esMapping, parentFieldName, rowCopy);
+        } else {
+            rowCopy = null;
+        }
+        return rowCopy;
+    }
+
+    public static Map<String, Object> convertValueTypeCopyMap(Map<String, Object> row,
+                                                              ESTemplate esTemplate,
+                                                              ESMapping esMapping,
+                                                              String parentFieldName) {
+        Map<String, Object> rowCopy;
+        if (row != null && !row.isEmpty()) {
+            rowCopy = new LinkedHashMap<>(row);
+            esTemplate.convertValueType(esMapping, parentFieldName, rowCopy);
         } else {
             rowCopy = null;
         }
