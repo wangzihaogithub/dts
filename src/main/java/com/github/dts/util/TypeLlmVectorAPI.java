@@ -4,8 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.InvocationTargetException;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 
@@ -50,7 +49,7 @@ public class TypeLlmVectorAPI {
         }
         while (true) {
             try {
-                List<float[]> vectorList = llmEmbeddingModel.embedAll(contentList);
+                List<float[]> vectorList = embedAll(contentList);
                 for (int i = 0, size = vectorList.size(); i < size; i++) {
                     float[] vector = vectorList.get(i);
                     VectorCompletableFuture future = futureList.get(i);
@@ -72,5 +71,20 @@ public class TypeLlmVectorAPI {
                 }
             }
         }
+    }
+
+    private List<float[]> embedAll(List<String> requestList) {
+        List<String> textSet = new ArrayList<>(new LinkedHashSet<>(requestList));
+        List<float[]> embeddingSet = llmEmbeddingModel.embedAll(textSet);
+
+        Map<String, float[]> vectorMap = new HashMap<>(embeddingSet.size());
+        for (int i = 0, size = embeddingSet.size(); i < size; i++) {
+            vectorMap.put(textSet.get(i), embeddingSet.get(i));
+        }
+        List<float[]> result = new ArrayList<>(requestList.size());
+        for (String request : requestList) {
+            result.add(vectorMap.get(request));
+        }
+        return result;
     }
 }
