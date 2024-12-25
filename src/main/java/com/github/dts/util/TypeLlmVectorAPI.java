@@ -77,8 +77,8 @@ public class TypeLlmVectorAPI {
         List<String> textSet = new ArrayList<>(new LinkedHashSet<>(requestList));
         List<float[]> embeddingSet = llmEmbeddingModel.embedAll(textSet);
 
-        Map<String, float[]> vectorMap = new HashMap<>(embeddingSet.size());
-        for (int i = 0, size = embeddingSet.size(); i < size; i++) {
+        Map<String, float[]> vectorMap = new HashMap<>(textSet.size());
+        for (int i = 0, size = textSet.size(); i < size; i++) {
             vectorMap.put(textSet.get(i), embeddingSet.get(i));
         }
         List<float[]> result = new ArrayList<>(requestList.size());
