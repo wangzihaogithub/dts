@@ -445,7 +445,7 @@ public class StringEsETLService {
                         JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(config.getDataSourceKey());
 
                         if (diffFields == null || diffFields.isEmpty()) {
-                            diffFieldsFinal = esMapping.getObjFields().entrySet().stream().filter(e -> e.getValue().getType().isSqlType()).map(Map.Entry::getKey).collect(Collectors.toCollection(LinkedHashSet::new));
+                            diffFieldsFinal = esMapping.getObjFields().entrySet().stream().filter(e -> e.getValue().isSqlType()).map(Map.Entry::getKey).collect(Collectors.toCollection(LinkedHashSet::new));
                         } else {
                             diffFieldsFinal = diffFields;
                         }
@@ -529,14 +529,8 @@ public class StringEsETLService {
                                     if (updateIdList.size() < maxSendMessageSize) {
                                         updateIdList.add(id);
                                     }
-                                    Object esUpdateData;
-                                    if (objectField.getType() == ESSyncConfig.ObjectField.Type.OBJECT_SQL) {
-                                        esUpdateData = ESSyncUtil.convertValueTypeCopyMap(mysqlData, esTemplate, esMapping, objectField.getFieldName());
-                                    } else {
-                                        esUpdateData = ESSyncUtil.convertValueTypeCopyList(mysqlData, esTemplate, esMapping, objectField.getFieldName());
-                                    }
+                                    Object esUpdateData = ESSyncUtil.convertEsUpdateData(objectField, mysqlData, esTemplate, esMapping);
                                     esTemplate.update(esMapping, field, id, Collections.singletonMap(objectField.getFieldName(), esUpdateData), null);
-
                                     if (++uncommit >= 35) {
                                         uncommit = 0;
                                         commit.set(false);

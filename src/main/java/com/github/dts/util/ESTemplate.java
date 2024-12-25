@@ -126,6 +126,16 @@ public interface ESTemplate extends AutoCloseable {
 
     BulkRequestList newBulkRequestList(BulkPriorityEnum priorityEnum);
 
+    Object convertFlatValueTypeCopyMap(List<Map<String, Object>> rowList,
+                                       ESMapping esMapping,
+                                       ESSyncConfig.ObjectField objectField,
+                                       String parentFieldName);
+
+    List<Object> convertFlatValueTypeCopyList(List<Map<String, Object>> rowList,
+                                        ESMapping esMapping,
+                                        ESSyncConfig.ObjectField objectField,
+                                        String parentFieldName);
+
     interface BulkRequestList {
         void add(ESBulkRequest.ESRequest request);
 

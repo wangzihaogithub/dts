@@ -51,24 +51,12 @@ public class NestedFieldWriter {
         }
         ESSyncConfig.ESMapping esMapping = schemaItem.getEsMapping();
         ESSyncConfig.ObjectField objectField = schemaItem.getObjectField();
-        switch (objectField.getType()) {
-            case ARRAY_SQL: {
-                List<Map<String, Object>> rowListCopy = ESSyncUtil.convertValueTypeCopyList(rowList, esTemplate, esMapping, objectField.getFieldName());
-                //更新ES文档 (执行完会统一提交, 这里不用commit)
-                esTemplate.update(esMapping, objectField.getFieldName(), pkValue, Collections.singletonMap(
-                        objectField.getFieldName(), rowListCopy), bulkRequestList);
-                break;
-            }
-            case OBJECT_SQL: {
-                Map<String, Object> rowCopy = ESSyncUtil.convertValueTypeCopyMap(rowList, esTemplate, esMapping, objectField.getFieldName());
-                //更新ES文档 (执行完会统一提交, 这里不用commit)
-                esTemplate.update(esMapping, objectField.getFieldName(), pkValue, Collections.singletonMap(
-                        objectField.getFieldName(), rowCopy), bulkRequestList);
-                break;
-            }
-            default: {
-            }
+        if (!objectField.isSqlType()) {
+            return;
         }
+        Object esUpdateData = ESSyncUtil.convertEsUpdateData(objectField, rowList, esTemplate, esMapping);
+        esTemplate.update(esMapping, objectField.getFieldName(), pkValue,
+                Collections.singletonMap(objectField.getFieldName(), esUpdateData), bulkRequestList);
     }
 
     /**

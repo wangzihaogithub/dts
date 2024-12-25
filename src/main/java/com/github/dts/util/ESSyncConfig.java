@@ -155,6 +155,11 @@ public class ESSyncConfig {
                     throw new IllegalArgumentException("fieldName = " + objectField.fieldName + ", sql type paramSql is null");
                 }
                 paramSql.init(objectField);
+                if (type.isFlatSqlType()) {
+                    if (paramSql.getSchemaItem().getSelectFields().size() != 1) {
+                        throw new IllegalArgumentException("fieldName = " + objectField.fieldName + ", " + type + " must only single select field!");
+                    }
+                }
             } else if (type.isLlmVector()) {
                 ObjectField.ParamLlmVector paramLlmVector = objectField.getParamLlmVector();
                 if (paramLlmVector == null) {
@@ -507,6 +512,8 @@ public class ESSyncConfig {
                 }
                 case ARRAY_SQL:
                 case OBJECT_SQL:
+                case ARRAY_FLAT_SQL:
+                case OBJECT_FLAT_SQL:
                 default: {
                     return val;
                 }
@@ -567,12 +574,56 @@ public class ESSyncConfig {
 
         public enum Type {
             /**
-             * 数组(逗号分割), 对象(JSON.parse), 数组(sql多条查询), 对象(sql单条查询) ,boolean
+             * 数组(逗号分割，任意分隔符分割),
              */
-            ARRAY, OBJECT, ARRAY_SQL, OBJECT_SQL, BOOLEAN, STATIC_METHOD, LLM_VECTOR;
+            ARRAY,
+            /**
+             * 对象(JSON.parse)
+             */
+            OBJECT,
+            /**
+             * 数组(sql多条查询，一对多关系),List《Map》类型
+             */
+            ARRAY_SQL,
+            /**
+             * 对象(sql单条查询，一对一关系)《Map》类型
+             */
+            OBJECT_SQL,
+            /**
+             * 对象(sql单条查询，一对一关系),List《String｜Number|Boolean|基本数据》类型
+             */
+            OBJECT_FLAT_SQL,
+            /**
+             * 数组(sql多条查询，一对多关系),List《String｜Number|Boolean|基本数据》类型
+             */
+            ARRAY_FLAT_SQL,
+            /**
+             * boolean
+             */
+            BOOLEAN,
+            /**
+             * 自定义逻辑：静态方法
+             */
+            STATIC_METHOD,
+            /**
+             * 使用大模型，向量化字段
+             */
+            LLM_VECTOR;
 
             public boolean isSqlType() {
-                return this == Type.OBJECT_SQL || this == Type.ARRAY_SQL;
+                return isObjectSqlType() || isArraySqlType();
+            }
+
+            public boolean isObjectSqlType() {
+                return this == Type.OBJECT_SQL || this == Type.OBJECT_FLAT_SQL;
+            }
+
+            public boolean isArraySqlType() {
+                return this == Type.ARRAY_SQL || this == Type.ARRAY_FLAT_SQL;
+            }
+
+            public boolean isFlatSqlType() {
+                return this == Type.OBJECT_FLAT_SQL || this == Type.ARRAY_FLAT_SQL;
             }
 
             public boolean isLlmVector() {

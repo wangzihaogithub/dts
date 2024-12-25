@@ -126,7 +126,7 @@ public class SchemaItem {
                 } else {
                     if (objectField.getType().isSingleJoinType()) {
                         groupByIdColumns = parseByObjectFieldIdColumns();
-                    } else if (!isJoinByMainTablePrimaryKey() && objectField.getType() == ESSyncConfig.ObjectField.Type.ARRAY_SQL) {
+                    } else if (!isJoinByMainTablePrimaryKey() && objectField.getType().isArraySqlType()) {
                         throw new IllegalArgumentException("the join sql must have group by. sql = " + sql);
                     } else {
                         groupByIdColumns = Collections.emptySet();

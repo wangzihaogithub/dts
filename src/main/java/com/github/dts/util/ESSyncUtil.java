@@ -542,9 +542,11 @@ public class ESSyncUtil {
     public static boolean equalsRowData(Object mysql, Object es, ESSyncConfig.ObjectField objectField, Map<String, Object> mysqlRowData, Map<String, Object> esRowData) {
         ESSyncConfig.ObjectField.Type type = objectField.getType();
         switch (type) {
+            case OBJECT_FLAT_SQL:
             case OBJECT_SQL: {
                 return es != null;
             }
+            case ARRAY_FLAT_SQL:
             case ARRAY_SQL: {
                 return es != null;
             }
@@ -604,10 +606,10 @@ public class ESSyncUtil {
         }
     }
 
-    public static List<Map<String, Object>> convertValueTypeCopyList(List<Map<String, Object>> rowList,
-                                                                     ESTemplate esTemplate,
-                                                                     ESMapping esMapping,
-                                                                     String parentFieldName) {
+    private static List<Map<String, Object>> convertValueTypeCopyList(List<Map<String, Object>> rowList,
+                                                                      ESTemplate esTemplate,
+                                                                      ESMapping esMapping,
+                                                                      String parentFieldName) {
         List<Map<String, Object>> rowListCopy = new ArrayList<>();
         if (rowList != null) {
             for (Map<String, Object> row : rowList) {
@@ -619,10 +621,32 @@ public class ESSyncUtil {
         return rowListCopy;
     }
 
-    public static Map<String, Object> convertValueTypeCopyMap(List<Map<String, Object>> rowList,
-                                                              ESTemplate esTemplate,
-                                                              ESMapping esMapping,
-                                                              String parentFieldName) {
+    public static Object convertEsUpdateData(ESSyncConfig.ObjectField objectField, List<Map<String, Object>> mysqlData, ESTemplate esTemplate, ESSyncConfig.ESMapping esMapping) {
+        ESSyncConfig.ObjectField.Type type = objectField.getType();
+        Object esUpdateData;
+        switch (type) {
+            case OBJECT_SQL:
+                esUpdateData = ESSyncUtil.convertValueTypeCopyMap(mysqlData, esTemplate, esMapping, objectField.getFieldName());
+                break;
+            case ARRAY_SQL:
+                esUpdateData = ESSyncUtil.convertValueTypeCopyList(mysqlData, esTemplate, esMapping, objectField.getFieldName());
+                break;
+            case OBJECT_FLAT_SQL:
+                esUpdateData = esTemplate.convertFlatValueTypeCopyMap(mysqlData, esMapping, objectField, null);
+                break;
+            case ARRAY_FLAT_SQL:
+                esUpdateData = esTemplate.convertFlatValueTypeCopyList(mysqlData, esMapping, objectField, null);
+                break;
+            default:
+                esUpdateData = mysqlData;
+        }
+        return esUpdateData;
+    }
+
+    private static Map<String, Object> convertValueTypeCopyMap(List<Map<String, Object>> rowList,
+                                                               ESTemplate esTemplate,
+                                                               ESMapping esMapping,
+                                                               String parentFieldName) {
         Map<String, Object> rowCopy;
         if (rowList != null && !rowList.isEmpty()) {
             rowCopy = new LinkedHashMap<>(rowList.get(0));
@@ -657,7 +681,7 @@ public class ESSyncUtil {
             }
         } else if (mysqlRowData == null || mysqlRowData.isEmpty()) {
             return isEmpty(esRowData);
-        } else if (objectField.getType().isSqlType()) {
+        } else if (objectField.isSqlType()) {
             if (esRowData instanceof Map) {
                 Map es = ((Map<?, ?>) esRowData);
                 Map<String, Object> mysql = mysqlRowData.get(0);
@@ -705,7 +729,7 @@ public class ESSyncUtil {
         }
         for (String diffField : diffFields) {
             ESSyncConfig.ObjectField objectField = esMapping.getObjectField(null, diffField);
-            if (objectField != null && objectField.getType().isSqlType()) {
+            if (objectField != null && objectField.isSqlType()) {
                 continue;
             }
             Object mysql = mysqlRowData.get(diffField);
