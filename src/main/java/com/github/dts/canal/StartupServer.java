@@ -131,6 +131,7 @@ public class StartupServer implements ApplicationRunner {
             String clientIdentity = canalAdapter.clientIdentity();
             ThreadRef thread = new ThreadRef(canalConfig,
                     canalAdapter, adapterList, messageService, this);
+            thread.startThread();
             canalThreadMap.computeIfAbsent(clientIdentity, e -> new ArrayList<>())
                     .add(thread);
             log.info("Start adapter for canal clientIdentity: {} succeed", clientIdentity);
@@ -233,13 +234,12 @@ public class StartupServer implements ApplicationRunner {
             this.config = config;
             this.adapterList = adapterList;
             this.messageService = messageService;
-            startThread();
         }
 
         public void startThread() {
             try {
                 CanalThread parent = this.canalThread;
-                canalThread = new CanalThread(canalConfig, config, adapterList, messageService,
+                CanalThread fork = new CanalThread(canalConfig, config, adapterList, messageService,
                         startupServer,
                         parent,
                         t -> {
@@ -247,8 +247,9 @@ public class StartupServer implements ApplicationRunner {
                             new Thread(ThreadRef.this::startThread).start();
                         });
                 if (canalConfig.isEnablePull()) {
-                    canalThread.start();
+                    fork.start();
                 }
+                this.canalThread = fork;
             } catch (Throwable t) {
                 Util.sneakyThrows(t);
             }

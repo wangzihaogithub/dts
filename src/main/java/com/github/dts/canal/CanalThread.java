@@ -14,10 +14,12 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 public class CanalThread extends Thread {
     private static final int DEFAULT_BATCH_SIZE = 50;
+    private static final AtomicInteger tid = new AtomicInteger(0);
     protected final Adapter[] adapterList;                                              // 外部适配器
     protected final Map<String, ExecutorService> executorServiceMap = new ConcurrentHashMap<>(6);                                       // 组内工作线程池
     private final Logger logger = LoggerFactory.getLogger(this.getClass());
@@ -44,7 +46,7 @@ public class CanalThread extends Thread {
         this.canalConfig = canalConfig;
         this.config = config;
         this.messageService = messageService;
-        this.name = config.clientIdentity() + limit(connector.getClass().getSimpleName(), 8);
+        this.name = "dts-" + config.clientIdentity() + tid.getAndIncrement();
 
         this.connector = connector;
         connector.rebuildConsumer(new Consumer<CanalConnector>() {

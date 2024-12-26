@@ -71,7 +71,7 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
     private volatile Map<String, Object> discardResult;
     private volatile boolean setDiscard = false;
     private Consumer<CanalConnector> rebuildConsumer;
-    private boolean connect;
+    private volatile boolean connect;
     private MetaDataFileMixedMetaManager metaManager;
 
     public MysqlBinlogCanalConnector(CanalConfig canalConfig,
@@ -548,9 +548,11 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
         if (connect) {
             if (server.isStart(identity.getDestination())) {
                 server.unsubscribe(identity);
+                server.stop(identity.getDestination());
             }
-            server.stop(identity.getDestination());
-            server.stop();
+            if (server.isStart()) {
+                server.stop();
+            }
             this.connect = false;
         }
     }
