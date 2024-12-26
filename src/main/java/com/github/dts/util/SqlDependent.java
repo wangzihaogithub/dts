@@ -99,6 +99,7 @@ public class SqlDependent {
 
     /**
      * 索引主表
+     *
      * @return 索引主表
      */
     public SchemaItem.TableItem getIndexMainTable() {
@@ -107,6 +108,7 @@ public class SqlDependent {
 
     /**
      * 嵌套文档主表
+     *
      * @return 嵌套文档主表
      */
     public SchemaItem.TableItem getNestedMainTable() {
@@ -115,6 +117,7 @@ public class SqlDependent {
 
     /**
      * 嵌套文档从表
+     *
      * @return 嵌套文档从表
      */
     public List<SchemaItem.TableItem> getNestedSlaveTableList() {
@@ -133,10 +136,13 @@ public class SqlDependent {
                 effect = true;
             } else if (dml.isTypeUpdate()) {
                 Map<String, Object> oldMap = getOldMap();
+                // 查找是否存在依赖
                 effect = oldMap != null && !oldMap.isEmpty() && schemaItem.existTableColumn(dml.getTable(), oldMap.keySet());
             } else if (dml.isTypeInsert()) {
+                // 查找是否存在依赖
                 effect = schemaItem.existTableColumn(dml.getTable(), null);
             } else if (dml.isTypeDelete()) {
+                // 查找是否存在依赖
                 effect = schemaItem.existTableColumn(dml.getTable(), null);
             } else {
                 effect = false;

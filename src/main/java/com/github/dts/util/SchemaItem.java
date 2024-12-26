@@ -31,6 +31,14 @@ public class SchemaItem {
     private Map<String, List<String>> onMainTableChangeWhereSqlColumnList;
     private Set<String> onSlaveTableChangeWhereSqlVarList;
     private Set<String> onMainTableChangeWhereSqlVarList;
+    /**
+     * 表的别名和字段的关系 《表的别名，List《字段》》，如果别名为空表示用户没写别名，默认为主表
+     */
+    private Map<String, List<String>> onSlaveTableChangeOrderBySqlColumnList;
+    /**
+     * 表的别名和字段的关系 《表的别名，List《字段》》，如果别名为空表示用户没写别名，默认为主表
+     */
+    private Map<String, List<String>> onMainTableChangeOrderBySqlColumnList;
 
     public SchemaItem() {
     }
@@ -44,7 +52,7 @@ public class SchemaItem {
 
     }
 
-    public static boolean matchColumnItem(ColumnItem columnItem, String tableName, Map<String, TableItem> aliasTableItems, Set<String> fieldNameSet) {
+    private static boolean matchColumnItem(ColumnItem columnItem, String tableName, Map<String, TableItem> aliasTableItems, Set<String> fieldNameSet) {
         TableItem tableItem = aliasTableItems.get(columnItem.getOwner());
         if (tableItem == null || !tableName.equalsIgnoreCase(tableItem.getTableName())) {
             return false;
@@ -94,6 +102,8 @@ public class SchemaItem {
         getOnSlaveTableChangeWhereSqlColumnList();
         getOnMainTableChangeWhereSqlVarList();
         getOnSlaveTableChangeWhereSqlVarList();
+        getOnMainTableChangeOrderBySqlColumnList();
+        getOnSlaveTableChangeOrderBySqlColumnList();
     }
 
     public boolean isIndexMainTable(String tableName) {
@@ -167,6 +177,20 @@ public class SchemaItem {
             this.onSlaveTableChangeWhereSqlVarList = Util.newLinkedCaseInsensitiveSet(SQL.convertToSql(objectField.getParamSql().getOnSlaveTableChangeWhereSql(), Collections.emptyMap()).getArgsMap().keySet());
         }
         return onSlaveTableChangeWhereSqlVarList;
+    }
+
+    public Map<String, List<String>> getOnMainTableChangeOrderBySqlColumnList() {
+        if (onMainTableChangeOrderBySqlColumnList == null && objectField != null && objectField.isSqlType()) {
+            this.onMainTableChangeOrderBySqlColumnList = SqlParser.getOrderByColumnList(objectField.getParamSql().getOnMainTableChangeWhereSql());
+        }
+        return onMainTableChangeOrderBySqlColumnList;
+    }
+
+    public Map<String, List<String>> getOnSlaveTableChangeOrderBySqlColumnList() {
+        if (onSlaveTableChangeOrderBySqlColumnList == null && objectField != null && objectField.isSqlType()) {
+            this.onSlaveTableChangeOrderBySqlColumnList = SqlParser.getOrderByColumnList(objectField.getParamSql().getOnSlaveTableChangeWhereSql());
+        }
+        return onSlaveTableChangeOrderBySqlColumnList;
     }
 
     public Map<String, List<String>> getOnMainTableChangeWhereSqlColumnList() {
@@ -292,9 +316,17 @@ public class SchemaItem {
         return getTableItemAliases().containsKey(tableName);
     }
 
+    /**
+     * 查找是否存在依赖
+     *
+     * @param tableName   查找的表名
+     * @param columnNames 查找的字段集合， 如果是insert，delete，则columnNames为null
+     * @return true=存在依赖，false=无依赖
+     */
     public boolean existTableColumn(String tableName, Collection<String> columnNames) {
         // HashSet 快速搜索
         Set<String> columnNameSet = columnNames == null ? null : Util.newLinkedCaseInsensitiveSet(columnNames);
+        // 查找是否存在依赖select的字段
         for (FieldItem fieldItem : fields.values()) {
             for (ColumnItem columnItem : fieldItem.getColumnItems()) {
                 if (matchColumnItem(columnItem, tableName, aliasTableItems, columnNameSet)) {
@@ -302,19 +334,31 @@ public class SchemaItem {
                 }
             }
         }
+        // 查找是否存在依赖group的字段
         for (ColumnItem groupByIdColumn : groupByIdColumns) {
             if (matchColumnItem(groupByIdColumn, tableName, aliasTableItems, columnNameSet)) {
                 return true;
             }
         }
+        //
         if (objectField != null && objectField.isSqlType()) {
             TableItem mainTable = objectField.getParamSql().getSchemaItem().getMainTable();
             if (tableName.equalsIgnoreCase(mainTable.getTableName())) {
+                // 查找是否存在依赖where的字段
                 if (columnNameSet == null || existColumn(columnNameSet, getOnSlaveTableChangeWhereSqlVarList())) {
                     return true;
                 }
+                // 查找是否存在依赖orderBy的字段
+                if (existOrderByColumn(columnNameSet, tableName, getOnSlaveTableChangeOrderBySqlColumnList())) {
+                    return true;
+                }
             } else if (isIndexMainTable(tableName)) {
+                // 查找是否存在依赖where的字段
                 if (columnNameSet == null || existColumn(columnNameSet, getOnMainTableChangeWhereSqlVarList())) {
+                    return true;
+                }
+                // 查找是否存在依赖orderBy的字段
+                if (existOrderByColumn(columnNameSet, tableName, getOnMainTableChangeOrderBySqlColumnList())) {
                     return true;
                 }
             }
@@ -325,6 +369,47 @@ public class SchemaItem {
     private boolean existColumn(Set<String> columnNameSet, Set<String> varList) {
         for (String s : varList) {
             if (columnNameSet.contains(s)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 根据表名查字段
+     *
+     * @param tableName          表名
+     * @param aliasColumnListMap 表的别名和字段的关系 《表的别名，List《字段》》，如果别名为空表示用户没写别名，默认为主表
+     * @return 这个表名的所有依赖字段
+     */
+    private List<String> getColumnByTableName(String tableName, Map<String, List<String>> aliasColumnListMap) {
+        List<String> result = new ArrayList<>(aliasColumnListMap.size());
+        for (Map.Entry<String, List<String>> entry : aliasColumnListMap.entrySet()) {
+            String alias = entry.getKey();
+            TableItem tableItem = aliasTableItems.get(alias);
+            // 如果别名为空表示用户没写别名，默认为主表
+            if (tableItem == null && isIndexMainTable(tableName)) {
+                result.addAll(entry.getValue());
+            } else if (tableItem != null && tableItem.getTableName().equalsIgnoreCase(tableName)) {
+                // 表的别名
+                result.addAll(entry.getValue());
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 查找是否存在依赖orderBy的字段
+     *
+     * @param columnNameSet      查找的字段集合
+     * @param tableName          查找的表名
+     * @param aliasColumnListMap 被查找的表的别名和字段的关系 《表的别名，List《字段》》，如果别名为空表示用户没写别名，默认为主表
+     * @return true=存在
+     */
+    private boolean existOrderByColumn(Set<String> columnNameSet, String tableName, Map<String, List<String>> aliasColumnListMap) {
+        Collection<String> columnList = getColumnByTableName(tableName, aliasColumnListMap);
+        for (String column : columnList) {
+            if (columnNameSet.contains(column)) {
                 return true;
             }
         }

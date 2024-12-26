@@ -414,6 +414,8 @@ public class ESSyncConfig {
          * object
          * object-sql
          * array-sql
+         * object-flat-sql
+         * array-flat-sql
          * boolean
          * static-method
          * llm-vector
@@ -662,13 +664,31 @@ public class ESSyncConfig {
                 if (!Util.isBlank(sql)) {
                     SchemaItem schemaItem1 = SqlParser.parse(sql);
                     schemaItem1.init(objectField, objectField.esMapping);
-                    if (schemaItem1.getAliasTableItems().isEmpty() || schemaItem1.getSelectFields().isEmpty()) {
-                        throw new RuntimeException("Parse sql error" + sql);
+                    if (schemaItem1.getAliasTableItems().isEmpty()) {
+                        throw new IllegalArgumentException("field " + objectField + ", miss AliasTable! " + sql);
+                    }
+                    if (schemaItem1.getSelectFields().isEmpty()) {
+                        throw new IllegalArgumentException("field " + objectField + ", miss SelectFields! " + sql);
                     }
                     this.schemaItem = schemaItem1;
                 }
                 if (Util.isBlank(joinTableColumnName)) {
                     this.joinTableColumnName = joinTableColumnName();
+                }
+                if (SqlParser.existSelectLimit(sql)) {
+                    throw new IllegalArgumentException("field " + objectField + ", no support limit! " + sql);
+                }
+                if (SqlParser.existInjectLimit(onMainTableChangeWhereSql)) {
+                    throw new IllegalArgumentException("field " + objectField + ", no support limit! " + onMainTableChangeWhereSql);
+                }
+                if (SqlParser.existInjectGroupBy(onMainTableChangeWhereSql)) {
+                    throw new IllegalArgumentException("field " + objectField + ", no support group by! " + onMainTableChangeWhereSql);
+                }
+                if (SqlParser.existInjectLimit(onSlaveTableChangeWhereSql)) {
+                    throw new IllegalArgumentException("field " + objectField + ", no support limit! " + onSlaveTableChangeWhereSql);
+                }
+                if (SqlParser.existInjectGroupBy(onSlaveTableChangeWhereSql)) {
+                    throw new IllegalArgumentException("field " + objectField + ", no support group by! " + onSlaveTableChangeWhereSql);
                 }
             }
 

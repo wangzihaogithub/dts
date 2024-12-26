@@ -1,10 +1,7 @@
 package com.github.dts.util;
 
 import com.alibaba.druid.sql.SQLUtils;
-import com.alibaba.druid.sql.ast.SQLExpr;
-import com.alibaba.druid.sql.ast.SQLLimit;
-import com.alibaba.druid.sql.ast.SQLObject;
-import com.alibaba.druid.sql.ast.SQLStatement;
+import com.alibaba.druid.sql.ast.*;
 import com.alibaba.druid.sql.ast.expr.*;
 import com.alibaba.druid.sql.ast.statement.*;
 import com.alibaba.druid.sql.dialect.mysql.ast.statement.MySqlSelectQueryBlock;
@@ -13,7 +10,6 @@ import com.alibaba.druid.sql.parser.ParserException;
 import com.alibaba.druid.sql.parser.SQLStatementParser;
 import com.alibaba.druid.sql.visitor.SQLASTVisitorAdapter;
 import com.alibaba.druid.sql.visitor.VisitorFeature;
-import com.github.dts.util.ColumnItem;
 import com.github.dts.util.SchemaItem.FieldItem;
 import com.github.dts.util.SchemaItem.RelationFieldsPair;
 import com.github.dts.util.SchemaItem.TableItem;
@@ -33,6 +29,8 @@ public class SqlParser {
     public static final Map<String, String> CHANGE_SELECT_CACHE = new ConcurrentHashMap<>();
     private static final SQLExpr TRUE_EXPR = SQLUtils.toMySqlExpr("true");
     private static final Map<String, Map<String, List<String>>> GET_COLUMN_LIST_CACHE = new ConcurrentHashMap<>();
+    private static final Map<String, Map<String, List<String>>> ORDER_BY_COLUMN_LIST_CACHE = new ConcurrentHashMap<>();
+
     private static final Map<String, String> REMOVE_GROUP_BY_CACHE = new ConcurrentHashMap<>();
 
     public static void main(String[] args) {
@@ -142,12 +140,41 @@ public class SqlParser {
         }
     }
 
+    private static SQLExpr getInjectWhere(String injectCondition) {
+        SQLSelectStatement statement = parseInjectStatement(injectCondition);
+        return statement.getSelect().getQueryBlock().getWhere();
+    }
+
+    private static SQLOrderBy getInjectOrderBy(String injectCondition) {
+        SQLSelectStatement statement = parseInjectStatement(injectCondition);
+        return statement.getSelect().getQueryBlock().getOrderBy();
+    }
+
+    public static boolean existSelectLimit(String selectSql) {
+        SQLSelectStatement statement = (SQLSelectStatement) SQLUtils.parseSingleMysqlStatement(selectSql);
+        return statement.getSelect().getQueryBlock().getLimit() != null;
+    }
+
+    public static boolean existInjectGroupBy(String injectCondition) {
+        SQLSelectStatement statement = parseInjectStatement(injectCondition);
+        return statement.getSelect().getQueryBlock().getGroupBy() != null;
+    }
+
+    public static boolean existInjectLimit(String injectCondition) {
+        SQLSelectStatement statement = parseInjectStatement(injectCondition);
+        return statement.getSelect().getQueryBlock().getLimit() != null;
+    }
+
+    private static SQLSelectStatement parseInjectStatement(String injectCondition) {
+        return (SQLSelectStatement) SQLUtils.parseSingleMysqlStatement("select 1 from dual where " + trimInjectCondition(injectCondition));
+    }
+
     public static List<BinaryOpExpr> getVarColumnList(String injectCondition) {
         if (injectCondition == null || injectCondition.isEmpty()) {
             return Collections.emptyList();
         }
 
-        SQLExpr injectConditionExpr = SQLUtils.toSQLExpr(trimInjectCondition(injectCondition));
+        SQLExpr injectConditionExpr = getInjectWhere(injectCondition);
         List<BinaryOpExpr> list = new ArrayList<>();
         injectConditionExpr.accept(new SQLASTVisitorAdapter() {
 
@@ -190,8 +217,70 @@ public class SqlParser {
             return Collections.emptyMap();
         }
         return GET_COLUMN_LIST_CACHE.computeIfAbsent(injectConditionReq, injectCondition -> {
-            SQLExpr injectConditionExpr = SQLUtils.toSQLExpr(trimInjectCondition(injectCondition));
+            SQLExpr injectConditionExpr = getInjectWhere(injectCondition);
             Map<String, List<String>> map = new LinkedHashMap<>();
+            injectConditionExpr.accept(new SQLASTVisitorAdapter() {
+
+                @Override
+                public boolean visit(SQLInSubQueryExpr statement) {
+                    SQLExpr expr = statement.getExpr();
+                    String owner;
+                    String name;
+                    if (expr instanceof SQLPropertyExpr) {
+                        name = ((SQLPropertyExpr) expr).getName();
+                        owner = Objects.toString(((SQLPropertyExpr) expr).getOwnerName(), "");
+                    } else if (expr instanceof SQLIdentifierExpr) {
+                        name = ((SQLIdentifierExpr) expr).getName();
+                        owner = "";
+                    } else {
+                        return false;
+                    }
+                    String col = normalize(name);
+                    map.computeIfAbsent(owner, e -> new ArrayList<>()).add(col);
+                    return false;
+                }
+
+                @Override
+                public boolean visit(SQLSelectQueryBlock statement) {
+                    return false;
+                }
+
+                @Override
+                public boolean visit(SQLPropertyExpr x) {
+                    String col = normalize(x.getName());
+                    String owner = Objects.toString(x.getOwnerName(), "");
+                    map.computeIfAbsent(owner, e -> new ArrayList<>()).add(col);
+                    return true;
+                }
+
+                @Override
+                public boolean visit(SQLIdentifierExpr x) {
+//                String col = normalize(x.getName());
+//
+//                map.computeIfAbsent("",e-> new ArrayList<>()).add(col);
+                    return true;
+                }
+            });
+            return map;
+        });
+    }
+
+    /**
+     * 表的别名和字段的关系 《表的别名，List《字段》》，如果别名为空表示用户没写别名，默认为主表
+     *
+     * @param injectConditionReq sql条件
+     * @return 表的别名和字段的关系 《表的别名，List《字段》》，如果别名为空表示用户没写别名，默认为主表
+     */
+    public static Map<String, List<String>> getOrderByColumnList(String injectConditionReq) {
+        if (injectConditionReq == null || injectConditionReq.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return ORDER_BY_COLUMN_LIST_CACHE.computeIfAbsent(injectConditionReq, injectCondition -> {
+            SQLOrderBy injectConditionExpr = getInjectOrderBy(injectCondition);
+            Map<String, List<String>> map = new LinkedHashMap<>(2);
+            if (injectConditionExpr == null) {
+                return map;
+            }
             injectConditionExpr.accept(new SQLASTVisitorAdapter() {
 
                 @Override
