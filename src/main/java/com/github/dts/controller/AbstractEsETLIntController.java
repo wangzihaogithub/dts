@@ -37,7 +37,7 @@ public abstract class AbstractEsETLIntController {
                                   Long endId,
                                   String[] diffFields,
                                   String[] adapterNames,
-                                  @RequestParam(required = false, defaultValue = "500") int maxSendMessageSize) {
+                                  @RequestParam(required = false, defaultValue = "50") int maxSendMessageSize) {
         return intESETLService.updateEsNestedDiff(esIndexName, startId, endId, offsetAdd,
                 diffFields == null ? null : new LinkedHashSet<>(Arrays.asList(diffFields)), maxSendMessageSize,
                 adapterNames == null ? null : Arrays.asList(adapterNames));
@@ -51,7 +51,7 @@ public abstract class AbstractEsETLIntController {
                             // 比较字段：不含嵌套字段：空=全部，
                             String[] diffFields,
                             String[] adapterNames,
-                            @RequestParam(required = false, defaultValue = "500") int maxSendMessageSize) {
+                            @RequestParam(required = false, defaultValue = "50") int maxSendMessageSize) {
         return intESETLService.updateEsDiff(esIndexName, startId, endId, offsetAdd,
                 diffFields == null ? null : new LinkedHashSet<>(Arrays.asList(diffFields)), maxSendMessageSize,
                 adapterNames == null ? null : Arrays.asList(adapterNames));
