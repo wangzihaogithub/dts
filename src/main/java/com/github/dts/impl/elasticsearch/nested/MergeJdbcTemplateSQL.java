@@ -3,6 +3,7 @@ package com.github.dts.impl.elasticsearch.nested;
 import com.github.dts.util.CacheMap;
 import com.github.dts.util.ColumnItem;
 import com.github.dts.util.SqlParser;
+import com.github.dts.util.Util;
 import com.google.common.collect.Lists;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -259,7 +260,7 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
         Map<T, List<Map<String, Object>>> result = new LinkedHashMap<>();
         dispatch(list, result::put);
         // trim hash table size
-        return new LinkedHashMap<>(result);
+        return Util.trimToSize(result, LinkedHashMap::new);
     }
 
     public void dispatch(List<Map<String, Object>> list, BiConsumer<T, List<Map<String, Object>>> each) {

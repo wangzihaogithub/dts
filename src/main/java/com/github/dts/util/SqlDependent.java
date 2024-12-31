@@ -69,7 +69,7 @@ public class SqlDependent {
         if (dataMap != null) {
             mergeDataMap.putAll(dataMap);
         }
-        return mergeDataMap;
+        return Util.trimToSize(mergeDataMap, HashMap::new);
     }
 
     public Map<String, Object> getMergeBeforeDataMap() {
@@ -82,7 +82,7 @@ public class SqlDependent {
         if (oldMap != null) {
             mergeDataMap.putAll(oldMap);
         }
-        return mergeDataMap;
+        return Util.trimToSize(mergeDataMap, HashMap::new);
     }
 
     public Dml getDml() {

@@ -894,6 +894,6 @@ public class ESSyncUtil {
                 result.put(k, null);
             }
         }
-        return result;
+        return Util.trimToSize(result, LinkedHashMap::new);
     }
 }
