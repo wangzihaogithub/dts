@@ -19,7 +19,6 @@ import java.sql.Blob;
 import java.sql.SQLException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
 /**
  * ES 同步工具同类
@@ -579,19 +578,9 @@ public class ESSyncUtil {
                 if (es instanceof Collection) {
                     esParse = (Collection) es;
                 } else {
-                    esParse = Arrays.asList(es.toString().split(","));
-                }
-                if (mysqlParse.size() != esParse.size()) {
                     return false;
                 }
-                Set<String> mysqlParseString = mysqlParse.stream().map(String::valueOf).collect(Collectors.toSet());
-                Set<String> esParseString = esParse.stream().map(String::valueOf).collect(Collectors.toSet());
-                for (String esString : esParseString) {
-                    if (!mysqlParseString.contains(esString)) {
-                        return false;
-                    }
-                }
-                return true;
+                return equalsToStringList(mysqlParse, esParse);
             }
             case BOOLEAN: {
                 try {
@@ -604,6 +593,31 @@ public class ESSyncUtil {
                 return Objects.equals(mysql, es);
             }
         }
+    }
+
+    private static boolean equalsToStringList(Collection<?> mysqlList, Collection<?> esList) {
+        if (mysqlList == null && esList == null) {
+            return true;
+        }
+        if (mysqlList == null || esList == null) {
+            return false;
+        }
+        if (mysqlList.size() != esList.size()) {
+            return false;
+        }
+        Iterator<?> mysqlIterator = mysqlList.iterator();
+        for (Object es : esList) {
+            Object mysql = mysqlIterator.next();
+            if (Objects.equals(mysql, es)) {
+                continue;
+            }
+            if (!Objects.equals(
+                    Objects.toString(mysql, null),
+                    Objects.toString(es, null))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static List<Map<String, Object>> convertValueTypeCopyList(List<Map<String, Object>> rowList,
@@ -671,6 +685,18 @@ public class ESSyncUtil {
         return rowCopy;
     }
 
+    public static Object value0(Map<String, Object> row) {
+        return row.isEmpty() ? null : row.values().iterator().next();
+    }
+
+    private static List<Object> flatValue0List(List<Map<String, Object>> rowList) {
+        List<Object> list = new ArrayList<>(rowList.size());
+        for (Map<String, Object> row : rowList) {
+            list.add(value0(row));
+        }
+        return list;
+    }
+
     public static boolean equalsNestedRowData(List<Map<String, Object>> mysqlRowData, Object esRowData, ESSyncConfig.ObjectField objectField) {
         if (isEmpty(esRowData)) {
             if (mysqlRowData == null || mysqlRowData.isEmpty()) {
@@ -694,27 +720,36 @@ public class ESSyncUtil {
                 }
                 return true;
             } else if (esRowData instanceof Collection) {
-                List<?> esList = esRowData instanceof List ? (List<?>) esRowData : new ArrayList<>((Collection<?>) esRowData);
+                Collection<?> esList = (Collection<?>) esRowData;
                 if (esList.size() != mysqlRowData.size()) {
                     return false;
                 }
-                for (int i = 0, size = mysqlRowData.size(); i < size; i++) {
-                    Map<String, Object> mysql = mysqlRowData.get(i);
-                    Map<String, Object> es = (Map<String, Object>) esList.get(i);
-                    for (String field : mysql.keySet()) {
-                        Object mysqlValue = mysql.get(field);
-                        Object esValue = es.get(field);
-                        ESSyncConfig.ObjectField fieldObjectField = objectField.getEsMapping().getObjectField(objectField.getFieldName(), field);
-                        if (fieldObjectField != null) {
-                            if (!equalsRowData(mysqlValue, esValue, fieldObjectField, mysql, es)) {
-                                return false;
-                            }
-                        } else if (!equalsRowData(mysqlValue, esValue)) {
+                if (objectField.getType().isFlatSqlType()) {
+                    List<Object> mysqlRowFlatData = flatValue0List(mysqlRowData);
+                    return equalsToStringList(mysqlRowFlatData, esList);
+                } else {
+                    Iterator<Map<String, Object>> mysqlIterator = mysqlRowData.iterator();
+                    for (Object esObj : esList) {
+                        if (!(esObj instanceof Map)) {
                             return false;
                         }
+                        Map<String, Object> mysql = mysqlIterator.next();
+                        Map<String, Object> es = (Map<String, Object>) esObj;
+                        for (String field : mysql.keySet()) {
+                            Object mysqlValue = mysql.get(field);
+                            Object esValue = es.get(field);
+                            ESSyncConfig.ObjectField fieldObjectField = objectField.getEsMapping().getObjectField(objectField.getFieldName(), field);
+                            if (fieldObjectField != null) {
+                                if (!equalsRowData(mysqlValue, esValue, fieldObjectField, mysql, es)) {
+                                    return false;
+                                }
+                            } else if (!equalsRowData(mysqlValue, esValue)) {
+                                return false;
+                            }
+                        }
                     }
+                    return true;
                 }
-                return true;
             } else {
                 return false;
             }
@@ -764,7 +799,7 @@ public class ESSyncUtil {
         } else if (es instanceof Collection) {
             String mysqlString = mysql.toString();
             for (Object esItem : (Collection) es) {
-                if (esItem != null && !mysqlString.contains(esItem.toString())) {
+                if (esItem == null || !mysqlString.contains(esItem.toString())) {
                     return false;
                 }
             }

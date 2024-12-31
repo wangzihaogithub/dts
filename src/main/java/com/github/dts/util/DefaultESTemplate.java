@@ -69,10 +69,6 @@ public class DefaultESTemplate implements ESTemplate {
         }
     }
 
-    private static Object value0(Map<String, Object> row) {
-        return row.isEmpty() ? null : row.values().iterator().next();
-    }
-
     private boolean isMaxBatchSize(int size) {
         return esConnection.isMaxBatchSize(size);
     }
@@ -606,7 +602,7 @@ public class DefaultESTemplate implements ESTemplate {
                                               String parentFieldName) {
         if (rowList != null && !rowList.isEmpty()) {
             Map<String, Object> map = rowList.get(0);
-            Object value0 = value0(map);
+            Object value0 = ESSyncUtil.value0(map);
             return ESSyncUtil.typeConvert(value0, objectField.getFieldName(), getEsType(esMapping), parentFieldName);
         }
         return null;
@@ -620,7 +616,7 @@ public class DefaultESTemplate implements ESTemplate {
         if (rowList != null && !rowList.isEmpty()) {
             List<Object> list = new ArrayList<>(rowList.size());
             for (Map<String, Object> row : rowList) {
-                Object value0 = value0(row);
+                Object value0 = ESSyncUtil.value0(row);
                 Object cast = ESSyncUtil.typeConvert(value0, objectField.getFieldName(), getEsType(esMapping), parentFieldName);
                 list.add(cast);
             }
