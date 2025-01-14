@@ -55,7 +55,7 @@ public class IntESETLService {
     public List<SyncRunnable> syncAll(String esIndexName) {
         return syncAll(esIndexName,
                 50, 0, null, 500,
-                true, false, true, 100, null, null, null);
+                true, false, true, 100, null, null, null, false);
     }
 
     public Object syncById(Long[] id,
@@ -456,7 +456,8 @@ public class IntESETLService {
             int joinUpdateSize,
             Set<String> onlyFieldNameSet,
             List<String> adapterNames,
-            String sqlWhere) {
+            String sqlWhere,
+            boolean insertIgnore) {
         String trimWhere = ESSyncUtil.trimWhere(sqlWhere);
         this.stop = false;
         List<ESAdapter> adapterList = getAdapterList(adapterNames);
@@ -505,19 +506,23 @@ public class IntESETLService {
                                 return Long.MAX_VALUE;
                             }
                             List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, offset, offsetAdd, tableName, pk, config, trimWhere);
-
+                            Long dmlListMaxId = getDmlListMaxId(dmlList);
+                            List<Dml> filterDmlList;
+                            if (insertIgnore) {
+                                filterDmlList = filter(dmlList, adapter.getEsTemplate(), config.getEsMapping());
+                            } else {
+                                filterDmlList = dmlList;
+                            }
                             if (!append) {
-                                Long dmlListMaxId = getDmlListMaxId(dmlList);
                                 adapter.getEsTemplate().deleteByRange(config.getEsMapping(), ESSyncConfig.ES_ID_FIELD_NAME, offset, dmlListMaxId, offsetAdd);
                             }
-                            if (!dmlList.isEmpty()) {
-                                adapter.sync(dmlList, false, false, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet, null);
+                            if (!filterDmlList.isEmpty()) {
+                                adapter.sync(filterDmlList, false, false, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet, null);
                             }
-                            dmlSize.addAndGet(dmlList.size());
+                            dmlSize.addAndGet(filterDmlList.size());
                             if (log.isInfoEnabled()) {
                                 log.info("syncAll dmlSize = {}, minOffset = {} ", dmlSize.longValue(), SyncRunnable.minOffset(runnableList));
                             }
-                            Long dmlListMaxId = getDmlListMaxId(dmlList);
                             return dmlListMaxId == null ? Long.MAX_VALUE : dmlListMaxId;
                         }
 
@@ -791,6 +796,20 @@ public class IntESETLService {
         messageService.send(title, content);
     }
 
+    protected List<Dml> filter(List<Dml> dmlList, DefaultESTemplate esTemplate, ESSyncConfig.ESMapping esMapping) {
+        List<Long> idList = dmlList.stream().map(this::getDmlId).flatMap(Collection::stream).collect(Collectors.toList());
+        Set<String> esIds = esTemplate.searchByIds(esMapping, idList);
+        List<Dml> result = new ArrayList<>(dmlList.size());
+        for (Dml dml : dmlList) {
+            List<Long> dmlIdList = getDmlId(dml);
+            if (dmlIdList.stream().anyMatch(e -> esIds.contains(String.valueOf(e)))) {
+                continue;
+            }
+            result.add(dml);
+        }
+        return result;
+    }
+
     protected List<Dml> convertDmlList(JdbcTemplate jdbcTemplate, String catalog, Long minId, int limit, String tableName, String idColumnName, ESSyncConfig config, String where) {
         List<Map<String, Object>> jobList = selectList(jdbcTemplate, minId, limit, tableName, idColumnName, where);
         List<Dml> dmlList = new ArrayList<>();
@@ -811,7 +830,7 @@ public class IntESETLService {
         if (whereAppend) {
             sql += " and (" + where + ")";
         }
-        sql += " limit ?";
+        sql += " order by " + tableName + "." + idColumnName + " limit ?";
         if (whereAppend) {
             log.info("selectList sql = {}", sql);
         }
@@ -821,28 +840,38 @@ public class IntESETLService {
     protected Long getDmlListMaxId(List<Dml> list) {
         long maxId = Long.MIN_VALUE;
         for (Dml dml : list) {
-            List<String> pkNames = dml.getPkNames();
-            if (pkNames.size() != 1) {
-                throw new IllegalArgumentException("pkNames.size() != 1: " + pkNames);
-            }
-            String pkName = pkNames.iterator().next();
-            for (Map<String, Object> row : dml.getData()) {
-                Object o = row.get(pkName);
-                if (o == null) {
-                    continue;
-                }
-                long id;
-                if (o instanceof Long) {
-                    id = (Long) o;
-                } else {
-                    id = Long.parseLong(o.toString());
-                }
+            List<Long> dmlIdList = getDmlId(dml);
+            for (Long id : dmlIdList) {
                 if (id > maxId) {
                     maxId = id;
                 }
             }
         }
         return maxId == Long.MIN_VALUE ? null : maxId;
+    }
+
+    protected List<Long> getDmlId(Dml dml) {
+        List<String> pkNames = dml.getPkNames();
+        if (pkNames.size() != 1) {
+            throw new IllegalArgumentException("pkNames.size() != 1: " + pkNames);
+        }
+        String pkName = pkNames.iterator().next();
+        List<Map<String, Object>> data = dml.getData();
+        List<Long> ids = new ArrayList<>(data.size());
+        for (Map<String, Object> row : data) {
+            Object o = row.get(pkName);
+            if (o == null) {
+                continue;
+            }
+            long id;
+            if (o instanceof Long) {
+                id = (Long) o;
+            } else {
+                id = Long.parseLong(o.toString());
+            }
+            ids.add(id);
+        }
+        return ids;
     }
 
     public String getName() {

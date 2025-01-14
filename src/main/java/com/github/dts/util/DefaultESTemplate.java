@@ -298,6 +298,19 @@ public class DefaultESTemplate implements ESTemplate {
         return searchResponse;
     }
 
+    @Override
+    public Set<String> searchByIds(ESMapping mapping, List<?> ids) {
+        ESConnection.ESSearchRequest esSearchRequest = new ESConnection.ESSearchRequest(mapping.get_index());
+        esSearchRequest.setQuery(QueryBuilders.idsQuery().addIds(ids.stream().map(String::valueOf).toArray(String[]::new)));
+        esSearchRequest.fetchSource("");
+        SearchResponse response = esSearchRequest.getResponse(this.esConnection);
+        Set<String> result = new LinkedHashSet<>();
+        for (SearchHit hit : response.getHits()) {
+            result.add(hit.getId());
+        }
+        return result;
+    }
+
     /**
      * 通过主键删除数据
      *

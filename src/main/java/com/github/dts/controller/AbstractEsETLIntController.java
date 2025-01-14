@@ -81,10 +81,11 @@ public abstract class AbstractEsETLIntController {
             @RequestParam(required = false, defaultValue = "100") int joinUpdateSize,
             String[] onlyFieldName,
             String[] adapterNames,
-            String sqlWhere) {
+            String sqlWhere,
+            @RequestParam(required = false, defaultValue = "false") boolean insertIgnore) {
         Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(Util::isNotBlank).collect(Collectors.toCollection(LinkedHashSet::new));
         return intESETLService.syncAll(esIndexName, threads, offsetStart, offsetEnd, offsetAdd, append, discard, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet,
-                adapterNames == null ? null : Arrays.asList(adapterNames), sqlWhere);
+                adapterNames == null ? null : Arrays.asList(adapterNames), sqlWhere, insertIgnore);
     }
 
     @RequestMapping("/syncById")

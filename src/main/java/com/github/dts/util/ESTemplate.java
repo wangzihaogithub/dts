@@ -68,6 +68,8 @@ public interface ESTemplate extends AutoCloseable {
 
     ESSearchResponse searchAfterId(ESMapping mapping, Object[] searchAfter, Integer limit);
 
+    Set<String> searchByIds(ESMapping mapping, List<?> ids);
+
     /**
      * 通过主键删除数据
      *

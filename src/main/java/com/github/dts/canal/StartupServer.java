@@ -181,6 +181,7 @@ public class StartupServer implements ApplicationRunner {
             return adapter;
         } catch (Exception e) {
             log.error("Load canal adapter: {} failed", config.getName(), e);
+            destroy();
             throw e;
         }
     }

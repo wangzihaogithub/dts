@@ -71,7 +71,7 @@ public class StringEsETLService {
 
     public void syncAll(
             String esIndexName) {
-        syncAll(esIndexName, "0", 500, true, true, 100, null, null, null);
+        syncAll(esIndexName, "0", 500, true, true, 100, null, null, null, false);
     }
 
     public Object syncById(String[] id,
@@ -96,7 +96,8 @@ public class StringEsETLService {
             int joinUpdateSize,
             Set<String> onlyFieldNameSet,
             List<String> adapterNames,
-            String sqlWhere) {
+            String sqlWhere,
+            boolean insertIgnore) {
         String trimWhere = ESSyncUtil.trimWhere(sqlWhere);
         this.stop = false;
         List<ESAdapter> adapterList = getAdapterList(adapterNames);
@@ -127,7 +128,7 @@ public class StringEsETLService {
                             if (stop) {
                                 break;
                             }
-                            list = syncAll(jdbcTemplate, catalog, minId, offsetAdd, append, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet, adapter, config, trimWhere);
+                            list = syncAll(jdbcTemplate, catalog, minId, offsetAdd, append, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet, adapter, config, trimWhere, insertIgnore);
                             dmlSize.addAndGet(list.size());
                             if (log.isInfoEnabled()) {
                                 log.info("syncAll dmlSize = {}, minOffset = {} ", dmlSize.intValue(), minId);
@@ -344,19 +345,39 @@ public class StringEsETLService {
 
     protected List<Dml> syncAll(JdbcTemplate jdbcTemplate, String catalog, String minId, int limit, boolean append, boolean onlyCurrentIndex,
                                 int joinUpdateSize, Collection<String> onlyFieldNameSet,
-                                ESAdapter esAdapter, ESSyncConfig config, String where) {
+                                ESAdapter esAdapter, ESSyncConfig config, String where, boolean insertIgnore) {
         String tableName = config.getEsMapping().getSchemaItem().getMainTable().getTableName();
         String pk = config.getEsMapping().getPk();
         List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, minId, limit, tableName, pk, config, where);
-        if (dmlList.isEmpty()) {
-            return dmlList;
+        List<Dml> filterDmlList;
+        if (insertIgnore) {
+            filterDmlList = filter(dmlList, esAdapter.getEsTemplate(), config.getEsMapping());
+        } else {
+            filterDmlList = dmlList;
+        }
+        if (filterDmlList.isEmpty()) {
+            return filterDmlList;
         }
         if (!append) {
             String dmlListMaxId = getDmlListMaxId(dmlList);
             ESBulkRequest.ESBulkResponse esBulkResponse = esAdapter.getEsTemplate().deleteByRange(config.getEsMapping(), ESSyncConfig.ES_ID_FIELD_NAME, minId, dmlListMaxId, limit);
         }
-        esAdapter.sync(dmlList, false, false, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet, null);
-        return dmlList;
+        esAdapter.sync(filterDmlList, false, false, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet, null);
+        return filterDmlList;
+    }
+
+    protected List<Dml> filter(List<Dml> dmlList, DefaultESTemplate esTemplate, ESSyncConfig.ESMapping esMapping) {
+        List<String> idList = dmlList.stream().map(this::getDmlId).flatMap(Collection::stream).collect(Collectors.toList());
+        Set<String> esIds = esTemplate.searchByIds(esMapping, idList);
+        List<Dml> result = new ArrayList<>(dmlList.size());
+        for (Dml dml : dmlList) {
+            List<String> dmlIdList = getDmlId(dml);
+            if (dmlIdList.stream().anyMatch(esIds::contains)) {
+                continue;
+            }
+            result.add(dml);
+        }
+        return result;
     }
 
     protected int syncById(JdbcTemplate jdbcTemplate, String catalog, Collection<String> id, boolean onlyCurrentIndex, Collection<String> onlyFieldNameSet,
@@ -744,7 +765,7 @@ public class StringEsETLService {
         if (whereAppend) {
             sql += " and (" + where + ")";
         }
-        sql += " limit ?";
+        sql += " order by " + tableName + "." + idColumnName + " limit ?";
         if (whereAppend) {
             log.info("selectList sql = {}", sql);
         }
@@ -760,10 +781,22 @@ public class StringEsETLService {
         if (pkNames.size() != 1) {
             throw new IllegalArgumentException("pkNames.size() != 1: " + pkNames);
         }
+        List<String> dmlIdList = getDmlId(dml);
+        return dmlIdList.isEmpty() ? null : dmlIdList.get(dmlIdList.size() - 1);
+    }
+
+    protected List<String> getDmlId(Dml dml) {
+        List<String> pkNames = dml.getPkNames();
+        if (pkNames.size() != 1) {
+            throw new IllegalArgumentException("pkNames.size() != 1: " + pkNames);
+        }
         String pkName = pkNames.iterator().next();
-        Map<String, Object> last = dml.getData().get(dml.getData().size() - 1);
-        Object o = last.get(pkName);
-        return o == null || "".equals(o) ? null : o.toString();
+        List<String> result = new ArrayList<>();
+        for (Map<String, Object> data : dml.getData()) {
+            Object id = data.get(pkName);
+            result.add(id == null || "".equals(id) ? null : id.toString());
+        }
+        return result;
     }
 
     public String getName() {

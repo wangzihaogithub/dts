@@ -579,13 +579,25 @@ public class CanalConfig {
         private Group connectorGroup;
         private CanalAdapter canalAdapter;
         private String name;       // 适配器名称, 如: logger, hbase, es
+        private Class<? extends Adapter> adapterClass;
 
         public Class<? extends Adapter> adapterClass() {
+            if (adapterClass != null) {
+                return adapterClass;
+            }
             if (es.getAddress() != null && es.getAddress().length > 0) {
                 return ESAdapter.class;
             } else {
                 return RDSAdapter.class;
             }
+        }
+
+        public Class<? extends Adapter> getAdapterClass() {
+            return adapterClass;
+        }
+
+        public void setAdapterClass(Class<? extends Adapter> adapterClass) {
+            this.adapterClass = adapterClass;
         }
 
         @Deprecated
@@ -633,7 +645,24 @@ public class CanalConfig {
         }
 
         public static class Rds {
+            private String writeDataSourceKey;
+            private String readDataSourceKey;
 
+            public String getWriteDataSourceKey() {
+                return writeDataSourceKey;
+            }
+
+            public void setWriteDataSourceKey(String writeDataSourceKey) {
+                this.writeDataSourceKey = writeDataSourceKey;
+            }
+
+            public String getReadDataSourceKey() {
+                return readDataSourceKey;
+            }
+
+            public void setReadDataSourceKey(String readDataSourceKey) {
+                this.readDataSourceKey = readDataSourceKey;
+            }
         }
 
         public static class EsAccount {
