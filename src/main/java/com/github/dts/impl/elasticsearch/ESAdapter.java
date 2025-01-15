@@ -61,24 +61,28 @@ public class ESAdapter implements Adapter {
         this.esTemplate = new DefaultESTemplate(esConnection);
         this.maxIdIn = configuration.getEs().getMaxIdIn();
         this.basicFieldWriter = new BasicFieldWriter(esTemplate);
+        String clientIdentity = canalAdapter.clientIdentity();
+
         this.listenerExecutor = Util.newFixedThreadPool(
                 configuration.getEs().getListenerThreads(),
-                60_000L, "ES-listener", false);
+                60_000L, "ESListener-" + clientIdentity, false);
         CanalConfig.OuterAdapterConfig.Es.SlaveNestedField slaveNestedField = configuration.getEs().getSlaveNestedField();
         this.slaveTableExecutor = slaveNestedField.isBlock() ?
                 Runnable::run :
                 Util.newFixedThreadPool(1, slaveNestedField.getThreads(),
-                        60_000L, "ESNestedSlave", true, false, slaveNestedField.getQueues(), NestedSlaveTableRunnable::merge);
+                        60_000L, "ESNestJoinS-" + clientIdentity, true, false, slaveNestedField.getQueues(), NestedSlaveTableRunnable::merge);
         CanalConfig.OuterAdapterConfig.Es.MainJoinNestedField mainJoinNestedField = configuration.getEs().getMainJoinNestedField();
+
         this.mainJoinTableExecutor = mainJoinNestedField.isBlock() ?
                 Runnable::run :
                 Util.newFixedThreadPool(1, mainJoinNestedField.getThreads(),
-                        60_000L, "ESNestedMainJoin", true, false, mainJoinNestedField.getQueues(), NestedMainJoinTableRunnable::merge);
-        ESSyncConfig.loadESSyncConfig(dbTableEsSyncConfig, esSyncConfig, envProperties, canalAdapter, configuration.getName(),configuration.getEs().resourcesDir(), env);
+                        60_000L, "ESJoin-" + clientIdentity, true, false, mainJoinNestedField.getQueues(), NestedMainJoinTableRunnable::merge);
+        ESSyncConfig.loadESSyncConfig(dbTableEsSyncConfig, esSyncConfig, envProperties, canalAdapter, configuration.getName(), configuration.getEs().resourcesDir(), env);
 
         this.listenerList.sort(AnnotationAwareOrderComparator.INSTANCE);
         this.listenerList.forEach(item -> item.init(esSyncConfig));
-        this.nestedFieldWriter = new NestedFieldWriter(configuration.getEs().getNestedFieldThreads(), esSyncConfig, esTemplate);
+        this.nestedFieldWriter = new NestedFieldWriter(configuration.getEs().getNestedFieldThreads(),
+                "ESNestJoinM-", esSyncConfig, esTemplate);
     }
 
     private ReferenceCounted<CacheMap> newCacheMap(Object id) {

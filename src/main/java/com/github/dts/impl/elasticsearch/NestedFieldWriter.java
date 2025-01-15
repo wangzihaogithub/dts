@@ -23,7 +23,7 @@ public class NestedFieldWriter {
     private final ExecutorService mainTableListenerExecutor;
     private final int threads;
 
-    public NestedFieldWriter(int nestedFieldThreads, Map<String, ESSyncConfig> map, ESTemplate esTemplate) {
+    public NestedFieldWriter(int nestedFieldThreads, String name, Map<String, ESSyncConfig> map, ESTemplate esTemplate) {
         this.schemaItemMap = toListenerMap(map, false);
         this.onlyCurrentIndexSchemaItemMap = toListenerMap(map, true);
         this.esTemplate = esTemplate;
@@ -31,7 +31,7 @@ public class NestedFieldWriter {
         this.mainTableListenerExecutor = Util.newFixedThreadPool(
                 1,
                 nestedFieldThreads,
-                60_000L, "ESNestedMainWriter", true, false);
+                60_000L, name, true, false);
     }
 
     public static void executeEsTemplateUpdate(ESTemplate.BulkRequestList bulkRequestList,
