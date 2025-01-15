@@ -135,9 +135,9 @@ public class StringEsETLService {
                             }
                             minId = getDmlListMaxId(list);
                         } while (minId != null);
-                        sendDone(messageService, timestamp, dmlSize.intValue(), onlyFieldNameSet, adapter, config, onlyCurrentIndex, sqlWhere);
+                        sendDone(messageService, timestamp, dmlSize.intValue(), onlyFieldNameSet, adapter, config, onlyCurrentIndex, sqlWhere, insertIgnore);
                     } catch (Exception e) {
-                        sendError(messageService, e, minId, timestamp, dmlSize.get(), onlyFieldNameSet, adapter, config, onlyCurrentIndex, sqlWhere);
+                        sendError(messageService, e, minId, timestamp, dmlSize.get(), onlyFieldNameSet, adapter, config, onlyCurrentIndex, sqlWhere, insertIgnore);
                         throw e;
                     }
                 }
@@ -623,13 +623,14 @@ public class StringEsETLService {
 
     protected void sendDone(AbstractMessageService messageService, Date startTime, int dmlSize,
                             Set<String> onlyFieldNameSet, ESAdapter adapter, ESSyncConfig config, boolean onlyCurrentIndex,
-                            String sqlWhere) {
+                            String sqlWhere, boolean insertIgnore) {
         String title = "ES搜索全量刷数据-结束";
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
                 + ",\n\n 对象 = " + getName()
                 + ",\n\n 使用实现 = " + adapter.getConfiguration().getName()
                 + ",\n\n 索引 = " + config.getEsMapping().get_index()
+                + ",\n\n insertIgnore = " + insertIgnore
                 + ",\n\n 是否需要更新关联索引 = " + !onlyCurrentIndex
                 + ",\n\n 限制条件 = " + sqlWhere
                 + ",\n\n 影响字段 = " + (onlyFieldNameSet == null ? "全部" : onlyFieldNameSet)
@@ -642,7 +643,7 @@ public class StringEsETLService {
     protected void sendError(AbstractMessageService messageService, Throwable throwable, String minId,
                              Date timestamp, int dmlSize, Set<String> onlyFieldNameSet, ESAdapter adapter,
                              ESSyncConfig config, boolean onlyCurrentIndex,
-                             String sqlWhere) {
+                             String sqlWhere, boolean insertIgnore) {
         String title = "ES搜索全量刷数据-异常";
         StringWriter writer = new StringWriter();
         throwable.printStackTrace(new PrintWriter(writer));
@@ -652,6 +653,7 @@ public class StringEsETLService {
                 + ",\n\n 对象 = " + getName()
                 + ",\n\n 使用实现 = " + adapter.getConfiguration().getName()
                 + ",\n\n 索引 = " + config.getEsMapping().get_index()
+                + ",\n\n insertIgnore = " + insertIgnore
                 + ",\n\n 是否需要更新关联索引 = " + !onlyCurrentIndex
                 + ",\n\n 限制条件 = " + sqlWhere
                 + ",\n\n 影响字段 = " + (onlyFieldNameSet == null ? "全部" : onlyFieldNameSet)

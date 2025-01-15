@@ -10,6 +10,7 @@ import org.apache.http.client.CredentialsProvider;
 import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.apache.http.impl.nio.reactor.IOReactorConfig;
 import org.apache.http.message.BasicHeader;
+import org.elasticsearch.ElasticsearchStatusException;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.ActionRequestValidationException;
 import org.elasticsearch.action.DocWriteRequest;
@@ -65,6 +66,7 @@ public class ESConnection {
     private final Map<String, CompletableFuture<Map<String, Object>>> getMappingAsyncCache = new ConcurrentHashMap<>(2);
     private final int updateByQueryChunkSize;
     private final String[] elasticsearchUri;
+    private long requestEntityTooLargeBytes = 0;
 
     public ESConnection(CanalConfig.OuterAdapterConfig.EsAccount esAccount) {
         String[] elasticsearchUri = esAccount.getAddress();
@@ -683,6 +685,7 @@ public class ESConnection {
     }
 
     public static class ESBulkRequest implements com.github.dts.util.ESBulkRequest {
+        private static final int BYTES_1_MB = 1024 * 1024;
         private final ConcurrentBulkRequest[] bulkRequests;
         // high list = [0,1,2,3,4,5,6,7]
         private final List<ConcurrentBulkRequest> highBulkRequests;
@@ -735,6 +738,19 @@ public class ESConnection {
                 }
             }
             return false;
+        }
+
+        private static BulkRequest[] partition(BulkRequest request, int size) {
+            List<DocWriteRequest<?>> requests = request.requests();
+            List<List<DocWriteRequest<?>>> partition = Lists.partition(requests, size);
+            BulkRequest[] result = new BulkRequest[partition.size()];
+            Iterator<List<DocWriteRequest<?>>> iterator = partition.iterator();
+            for (int i = 0; i < result.length; i++) {
+                BulkRequest item = new BulkRequest();
+                iterator.next().forEach(item::add);
+                result[i] = item;
+            }
+            return result;
         }
 
         private Collection<ConcurrentBulkRequest> prioritySort(BulkPriorityEnum priorityEnum) {
@@ -885,17 +901,45 @@ public class ESConnection {
             if (bulkRequest instanceof ConcurrentBulkRequest) {
                 ((ConcurrentBulkRequest) bulkRequest).beforeBulk();
             }
+            if (connection.requestEntityTooLargeBytes > 0 && bulkRequest.estimatedSizeInBytes() > connection.requestEntityTooLargeBytes) {
+                return requestEntityTooLarge(bulkRequest);
+            }
             IOException ioException = null;
             int bulkRetryCount = Math.max(0, connection.bulkRetryCount);
             for (int i = 0; i <= bulkRetryCount; i++) {
                 try {
                     return connection.restHighLevelClient.bulk(bulkRequest, RequestOptions.DEFAULT);
+                } catch (ElasticsearchStatusException e) {
+                    if (e.status() == RestStatus.REQUEST_ENTITY_TOO_LARGE) {
+                        long retlBytes = connection.requestEntityTooLargeBytes;
+                        long estimatedSizeInBytes = bulkRequest.estimatedSizeInBytes();
+                        connection.requestEntityTooLargeBytes = retlBytes > 0 ? Math.min(retlBytes, estimatedSizeInBytes) : estimatedSizeInBytes;
+                        return requestEntityTooLarge(bulkRequest);
+                    } else {
+                        throw e;
+                    }
                 } catch (IOException e) {
                     ioException = e;
                     yieldThread();
                 }
             }
             throw ioException;
+        }
+
+        private BulkResponse requestEntityTooLarge(BulkRequest bulkRequest) throws IOException {
+            int partitionSize = (int) (bulkRequest.estimatedSizeInBytes() / BYTES_1_MB);
+            BulkRequest[] partition = partition(bulkRequest, Math.max(partitionSize, 2));
+            BulkResponse response0 = null;
+            for (BulkRequest request : partition) {
+                BulkResponse response = bulk(request);
+                if (response.hasFailures()) {
+                    return response;
+                }
+                if (response0 == null) {
+                    response0 = response;
+                }
+            }
+            return response0;
         }
 
         private BulkRequestResponse commit(ConcurrentBulkRequest bulkRequest, boolean retry) throws IOException {

@@ -499,7 +499,7 @@ public class IntESETLService {
                 AtomicLong dmlSize = new AtomicLong(0);
                 for (int i = 0; i < threads; i++) {
                     runnableList.add(new SyncRunnable(name, this,
-                            i, offsetStart, maxId, threads, onlyFieldNameSet, adapter, config, onlyCurrentIndex, sqlWhere) {
+                            i, offsetStart, maxId, threads, onlyFieldNameSet, adapter, config, onlyCurrentIndex, sqlWhere, insertIgnore) {
                         @Override
                         public long run0(long offset) {
                             if (stop) {
@@ -535,7 +535,7 @@ public class IntESETLService {
                                 if (configDone.decrementAndGet() == 0) {
                                     setSuspendEs(false, clientIdentity);
                                 }
-                                sendDone(messageService, runnableList, timestamp, dmlSize.longValue(), onlyFieldNameSet, adapter, config, onlyCurrentIndex, sqlWhere);
+                                sendDone(messageService, runnableList, timestamp, dmlSize.longValue(), onlyFieldNameSet, adapter, config, onlyCurrentIndex, sqlWhere, insertIgnore);
                             }
                         }
                     });
@@ -621,13 +621,15 @@ public class IntESETLService {
     protected void sendDone(AbstractMessageService messageService, List<SyncRunnable> runnableList,
                             Date startTime, long dmlSize,
                             Set<String> onlyFieldNameSet,
-                            ESAdapter adapter, ESSyncConfig config, boolean onlyCurrentIndex, String sqlWhere) {
+                            ESAdapter adapter, ESSyncConfig config, boolean onlyCurrentIndex, String sqlWhere,
+                            boolean insertIgnore) {
         String title = "ES搜索全量刷数据-结束";
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
                 + ",\n\n 对象 = " + getName()
                 + ",\n\n 使用实现 = " + adapter.getConfiguration().getName()
                 + ",\n\n 索引 = " + config.getEsMapping().get_index()
+                + ",\n\n insertIgnore = " + insertIgnore
                 + ",\n\n 开始时间 = " + startTime
                 + ",\n\n 结束时间 = " + new Timestamp(System.currentTimeMillis())
                 + ",\n\n 是否需要更新关联索引 = " + !onlyCurrentIndex
@@ -641,7 +643,7 @@ public class IntESETLService {
     protected void sendError(AbstractMessageService messageService, Throwable throwable,
                              SyncRunnable runnable, Long minOffset,
                              Set<String> onlyFieldNameSet,
-                             ESAdapter adapter, ESSyncConfig config, boolean onlyCurrentIndex, String sqlWhere) {
+                             ESAdapter adapter, ESSyncConfig config, boolean onlyCurrentIndex, String sqlWhere, boolean insertIgnore) {
         String title = "ES搜索全量刷数据-异常";
         StringWriter writer = new StringWriter();
         throwable.printStackTrace(new PrintWriter(writer));
@@ -651,6 +653,7 @@ public class IntESETLService {
                 + ",\n\n 对象 = " + getName()
                 + ",\n\n 使用实现 = " + adapter.getConfiguration().getName()
                 + ",\n\n 索引 = " + config.getEsMapping().get_index()
+                + ",\n\n insertIgnore = " + insertIgnore
                 + ",\n\n 是否需要更新关联索引 = " + !onlyCurrentIndex
                 + ",\n\n 限制条件 = " + sqlWhere
                 + ",\n\n 影响字段 = " + (onlyFieldNameSet == null ? "全部" : onlyFieldNameSet)
@@ -893,6 +896,7 @@ public class IntESETLService {
         private final ESSyncConfig config;
         private final boolean onlyCurrentIndex;
         private final String sqlWhere;
+        private final boolean insertIgnore;
         protected long currOffset;
         private boolean done;
 
@@ -901,8 +905,10 @@ public class IntESETLService {
                             Set<String> onlyFieldNameSet,
                             ESAdapter adapter,
                             ESSyncConfig config, boolean onlyCurrentIndex,
-                            String sqlWhere) {
+                            String sqlWhere,
+                            boolean insertIgnore) {
             this.name = name;
+            this.insertIgnore = insertIgnore;
             this.onlyCurrentIndex = onlyCurrentIndex;
             this.onlyFieldNameSet = onlyFieldNameSet;
             this.adapter = adapter;
@@ -966,7 +972,7 @@ public class IntESETLService {
                 }
             } catch (Exception e) {
                 Long minOffset = SyncRunnable.minOffset(SyncRunnable.RUNNABLE_LIST);
-                service.sendError(service.startupServer.getMessageService(), e, this, minOffset, onlyFieldNameSet, adapter, config, onlyCurrentIndex, sqlWhere);
+                service.sendError(service.startupServer.getMessageService(), e, this, minOffset, onlyFieldNameSet, adapter, config, onlyCurrentIndex, sqlWhere, insertIgnore);
                 throw e;
             } finally {
                 done = true;
