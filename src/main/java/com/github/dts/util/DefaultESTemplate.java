@@ -300,6 +300,9 @@ public class DefaultESTemplate implements ESTemplate {
 
     @Override
     public Set<String> searchByIds(ESMapping mapping, List<?> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return Collections.emptySet();
+        }
         ESConnection.ESSearchRequest esSearchRequest = new ESConnection.ESSearchRequest(mapping.get_index());
         esSearchRequest.setQuery(QueryBuilders.idsQuery().addIds(ids.stream().map(String::valueOf).toArray(String[]::new)));
         esSearchRequest.fetchSource("");

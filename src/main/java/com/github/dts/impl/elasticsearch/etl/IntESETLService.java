@@ -800,6 +800,9 @@ public class IntESETLService {
     }
 
     protected List<Dml> filter(List<Dml> dmlList, DefaultESTemplate esTemplate, ESSyncConfig.ESMapping esMapping) {
+        if (dmlList.isEmpty()) {
+            return dmlList;
+        }
         List<Long> idList = dmlList.stream().map(this::getDmlId).flatMap(Collection::stream).collect(Collectors.toList());
         Set<String> esIds = esTemplate.searchByIds(esMapping, idList);
         List<Dml> result = new ArrayList<>(dmlList.size());
