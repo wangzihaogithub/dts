@@ -495,6 +495,13 @@ public class StringEsETLService {
                                 for (String col : cols) {
                                     select.add("`" + col + "`");
                                 }
+                                ESSyncConfig.ObjectField.ParamLlmVector paramLlmVector = objectField.getParamLlmVector();
+                                if (paramLlmVector != null) {
+                                    String etlEqualsFieldName = paramLlmVector.getEtlEqualsFieldName();
+                                    if (Util.isNotBlank(etlEqualsFieldName)) {
+                                        select.add("`" + etlEqualsFieldName + "`");
+                                    }
+                                }
                             }
                             select.add("`" + pkFieldName + "`");
                             String ids = hitList.stream().map(ESTemplate.Hit::getId).collect(Collectors.joining("','"));
