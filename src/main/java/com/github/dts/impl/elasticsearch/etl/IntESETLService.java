@@ -184,6 +184,7 @@ public class IntESETLService {
                 long updateSize = 0;
                 List<String> deleteIdList = new ArrayList<>();
                 List<String> updateIdList = new ArrayList<>();
+                Map<String, AtomicInteger> allRowChangeMap = new LinkedHashMap<>();
                 Timestamp timestamp = new Timestamp(System.currentTimeMillis());
                 ESSyncConfig lastConfig = null;
                 try {
@@ -225,12 +226,14 @@ public class IntESETLService {
                                 lastId = id;
                                 Map<String, Object> db = dbMap.get(id);
                                 if (db != null) {
-                                    if (!ESSyncUtil.equalsRowData(db, hit, diffFields, esMapping)) {
+                                    Collection<String> rowChangeList = ESSyncUtil.getRowChangeList(db, hit, diffFields, esMapping);
+                                    if (!rowChangeList.isEmpty()) {
                                         updateSize++;
+                                        rowChangeList.forEach(e -> allRowChangeMap.computeIfAbsent(e, __ -> new AtomicInteger()).incrementAndGet());
                                         if (updateIdList.size() < maxSendMessageSize) {
                                             updateIdList.add(id);
                                         }
-                                        Map<String, Object> esUpdateData = ESSyncUtil.convertValueTypeCopyMap(db, esTemplate, esMapping, null);
+                                        Map<String, Object> esUpdateData = ESSyncUtil.parseObjectFieldIfNeedCopyMap(db, esTemplate, esMapping, null, rowChangeList);
                                         esTemplate.update(esMapping, id, esUpdateData, null);
                                     }
                                 } else {
@@ -245,10 +248,10 @@ public class IntESETLService {
                             searchAfter = searchResponse.getLastSortValues();
                             log.info("updateEsDiff hits={}, searchAfter = {}", hitListSize, searchAfter);
                         } while (true);
-                        sendDiffDone(messageService, timestamp, hitListSize, deleteSize, deleteIdList, updateSize, updateIdList, diffFields, adapter, config);
+                        sendDiffDone(messageService, timestamp, hitListSize, deleteSize, deleteIdList, updateSize, updateIdList, allRowChangeMap, diffFields, adapter, config);
                     }
                 } catch (Exception e) {
-                    sendDiffError(messageService, e, timestamp, hitListSize, deleteSize, deleteIdList, updateSize, updateIdList, diffFields, adapter, lastConfig, lastId);
+                    sendDiffError(messageService, e, timestamp, hitListSize, deleteSize, deleteIdList, updateSize, updateIdList, allRowChangeMap, diffFields, adapter, lastConfig, lastId);
                 }
             });
         }
@@ -343,19 +346,12 @@ public class IntESETLService {
                             Set<String> select = new LinkedHashSet<>();
                             for (String diffField : diffFieldsFinal) {
                                 ESSyncConfig.ObjectField objectField = esMapping.getObjectField(null, diffField);
-                                if (objectField == null) {
+                                if (objectField == null || !objectField.isSqlType()) {
                                     continue;
                                 }
                                 Set<String> cols = SQL.convertToSql(objectField.getParamSql().getFullSql(true), Collections.emptyMap()).getArgsMap().keySet();
                                 for (String col : cols) {
                                     select.add("`" + col + "`");
-                                }
-                                ESSyncConfig.ObjectField.ParamLlmVector paramLlmVector = objectField.getParamLlmVector();
-                                if (paramLlmVector != null) {
-                                    String etlEqualsFieldName = paramLlmVector.getEtlEqualsFieldName();
-                                    if (Util.isNotBlank(etlEqualsFieldName)) {
-                                        select.add("`" + etlEqualsFieldName + "`");
-                                    }
                                 }
                             }
                             select.add("`" + pkFieldName + "`");
@@ -415,7 +411,7 @@ public class IntESETLService {
                                     if (updateIdList.size() < maxSendMessageSize) {
                                         updateIdList.add(id);
                                     }
-                                    Object esUpdateData = ESSyncUtil.convertEsUpdateData(objectField, mysqlData, esTemplate, esMapping);
+                                    Object esUpdateData = ESSyncUtil.parseObjectFieldIfNeed(objectField, mysqlData, esTemplate, esMapping);
                                     esTemplate.update(esMapping, field, id, Collections.singletonMap(objectField.getFieldName(), esUpdateData), null);
                                     if (++uncommit >= 35) {
                                         uncommit = 0;
@@ -714,6 +710,7 @@ public class IntESETLService {
     protected void sendDiffDone(AbstractMessageService messageService, Date startTime,
                                 long dmlSize, long deleteSize, List<String> deleteIdList,
                                 long updateSize, List<String> updateIdList,
+                                Map<String, AtomicInteger> allRowChangeMap,
                                 Set<String> diffFields,
                                 ESAdapter adapter, ESSyncConfig config) {
         String title = "ES搜索全量校验Diff数据-结束";
@@ -725,6 +722,7 @@ public class IntESETLService {
                 + ",\n\n 开始时间 = " + startTime
                 + ",\n\n 结束时间 = " + new Timestamp(System.currentTimeMillis())
                 + ",\n\n 比较字段(不含nested) = " + (diffFields == null ? "全部" : diffFields)
+                + ",\n\n 影响字段数 = " + allRowChangeMap
                 + ",\n\n 校验条数 = " + dmlSize
                 + ",\n\n 删除条数 = " + deleteSize
                 + ",\n\n 更新条数 = " + updateSize
@@ -736,6 +734,7 @@ public class IntESETLService {
     protected void sendDiffError(AbstractMessageService messageService, Throwable throwable,
                                  Date timestamp, long dmlSize, long deleteSize, List<String> deleteIdList,
                                  long updateSize, List<String> updateIdList,
+                                 Map<String, AtomicInteger> allRowChangeMap,
                                  Set<String> diffFields,
                                  ESAdapter adapter, ESSyncConfig config, String lastId) {
         String title = "ES搜索全量校验Diff数据-异常";
@@ -749,6 +748,7 @@ public class IntESETLService {
                 + ",\n\n 索引 = " + config.getEsMapping().get_index()
                 + ",\n\n 开始时间 = " + timestamp
                 + ",\n\n 比较字段(不含nested) = " + (diffFields == null ? "全部" : diffFields)
+                + ",\n\n 影响字段数 = " + allRowChangeMap
                 + ",\n\n 校验条数 = " + dmlSize
                 + ",\n\n 最近的ID = " + lastId
                 + ",\n\n 异常 = " + throwable

@@ -12,6 +12,7 @@ import javax.sql.DataSource;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Array;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -538,7 +539,56 @@ public class ESSyncUtil {
         return dateEsDateTime.toString(format).equals(dateMysqlDateTime.toString(format));
     }
 
-    public static boolean equalsRowData(Object mysql, Object es, ESSyncConfig.ObjectField objectField, Map<String, Object> mysqlRowData, Map<String, Object> esRowData) {
+    public static boolean equalsValue(Object mysql, Object es) {
+        if (mysql == es) {
+            return true;
+        }
+        if (mysql != null && es == null) {
+            return false;
+        }
+        if (mysql == null && es != null) {
+            return false;
+        }
+        if (mysql.getClass().isArray()) {
+            if (es instanceof Collection) {
+                int mysqlLength = Array.getLength(mysql);
+                Collection<?> esColl = ((Collection<?>) es);
+                int esLength = esColl.size();
+                if (mysqlLength != esLength) {
+                    return false;
+                }
+                Iterator<?> iterator = esColl.iterator();
+                for (int i = 0; i < mysqlLength; i++) {
+                    Object mysqlValue = Array.get(mysql, i);
+                    Object esValue = iterator.next();
+                    if (!equalsEsDate(mysqlValue, esValue)) {
+                        return false;
+                    }
+                }
+                return true;
+            } else if (es.getClass().isArray()) {
+                int mysqlLength = Array.getLength(mysql);
+                int esLength = Array.getLength(es);
+                if (mysqlLength != esLength) {
+                    return false;
+                }
+                for (int i = 0; i < mysqlLength; i++) {
+                    Object mysqlValue = Array.get(mysql, i);
+                    Object esValue = Array.get(es, i);
+                    if (!equalsEsDate(mysqlValue, esValue)) {
+                        return false;
+                    }
+                }
+                return true;
+            } else {
+                return false;
+            }
+        } else {
+            return Objects.equals(mysql, es);
+        }
+    }
+
+    public static boolean equalsObjectFieldRowDataValue(Object mysql, Object es, ESSyncConfig.ObjectField objectField, Map<String, Object> mysqlRowData, Map<String, Object> esRowData) {
         ESSyncConfig.ObjectField.Type type = objectField.getType();
         switch (type) {
             case OBJECT_FLAT_SQL:
@@ -548,6 +598,10 @@ public class ESSyncUtil {
             case ARRAY_FLAT_SQL:
             case ARRAY_SQL: {
                 return es != null;
+            }
+            case STATIC_METHOD: {
+                Object mysqlParse = objectField.parse(mysql, objectField.getEsMapping(), mysqlRowData);
+                return equalsValue(es, mysqlParse);
             }
             case LLM_VECTOR: {
                 boolean mysqlEmpty = mysql == null || "".equals(mysql);
@@ -563,7 +617,7 @@ public class ESSyncUtil {
                     }
                     Object refEs = esRowData.get(refTextFieldName);
                     Object refMysql = mysqlRowData.get(refTextFieldName);
-                    return Objects.equals(refEs, refMysql);
+                    return equalsValue(refEs, refMysql);
                 }
             }
             case ARRAY: {
@@ -590,7 +644,7 @@ public class ESSyncUtil {
                 }
             }
             default: {
-                return Objects.equals(mysql, es);
+                return equalsValue(mysql, es);
             }
         }
     }
@@ -620,36 +674,36 @@ public class ESSyncUtil {
         return true;
     }
 
-    private static List<Map<String, Object>> convertValueTypeCopyList(List<Map<String, Object>> rowList,
-                                                                      ESTemplate esTemplate,
-                                                                      ESMapping esMapping,
-                                                                      String parentFieldName) {
+    private static List<Map<String, Object>> parseObjectFieldIfNeedCopyList(List<Map<String, Object>> rowList,
+                                                                            ESTemplate esTemplate,
+                                                                            ESMapping esMapping,
+                                                                            String parentFieldName) {
         List<Map<String, Object>> rowListCopy = new ArrayList<>();
         if (rowList != null) {
             for (Map<String, Object> row : rowList) {
                 Map<String, Object> rowCopy = new LinkedHashMap<>(row);
-                esTemplate.convertValueType(esMapping, parentFieldName, rowCopy);
+                esTemplate.parseObjectFieldIfNeed(esMapping, parentFieldName, rowCopy);
                 rowListCopy.add(rowCopy);
             }
         }
         return rowListCopy;
     }
 
-    public static Object convertEsUpdateData(ESSyncConfig.ObjectField objectField, List<Map<String, Object>> mysqlData, ESTemplate esTemplate, ESSyncConfig.ESMapping esMapping) {
+    public static Object parseObjectFieldIfNeed(ESSyncConfig.ObjectField objectField, List<Map<String, Object>> mysqlData, ESTemplate esTemplate, ESSyncConfig.ESMapping esMapping) {
         ESSyncConfig.ObjectField.Type type = objectField.getType();
         Object esUpdateData;
         switch (type) {
             case OBJECT_SQL:
-                esUpdateData = ESSyncUtil.convertValueTypeCopyMap(mysqlData, esTemplate, esMapping, objectField.getFieldName());
+                esUpdateData = ESSyncUtil.parseObjectFieldIfNeedCopyMap(mysqlData, esTemplate, esMapping, objectField.getFieldName());
                 break;
             case ARRAY_SQL:
-                esUpdateData = ESSyncUtil.convertValueTypeCopyList(mysqlData, esTemplate, esMapping, objectField.getFieldName());
+                esUpdateData = ESSyncUtil.parseObjectFieldIfNeedCopyList(mysqlData, esTemplate, esMapping, objectField.getFieldName());
                 break;
             case OBJECT_FLAT_SQL:
-                esUpdateData = esTemplate.convertFlatValueTypeCopyMap(mysqlData, esMapping, objectField, null);
+                esUpdateData = esTemplate.parseObjectFieldFlatValueTypeCopyMap(mysqlData, esMapping, objectField, null);
                 break;
             case ARRAY_FLAT_SQL:
-                esUpdateData = esTemplate.convertFlatValueTypeCopyList(mysqlData, esMapping, objectField, null);
+                esUpdateData = esTemplate.parseObjectFieldFlatValueTypeCopyList(mysqlData, esMapping, objectField, null);
                 break;
             default:
                 esUpdateData = mysqlData;
@@ -657,31 +711,32 @@ public class ESSyncUtil {
         return esUpdateData;
     }
 
-    private static Map<String, Object> convertValueTypeCopyMap(List<Map<String, Object>> rowList,
-                                                               ESTemplate esTemplate,
-                                                               ESMapping esMapping,
-                                                               String parentFieldName) {
+    private static Map<String, Object> parseObjectFieldIfNeedCopyMap(List<Map<String, Object>> rowList,
+                                                                     ESTemplate esTemplate,
+                                                                     ESMapping esMapping,
+                                                                     String parentFieldName) {
         Map<String, Object> rowCopy;
         if (rowList != null && !rowList.isEmpty()) {
             rowCopy = new LinkedHashMap<>(rowList.get(0));
-            esTemplate.convertValueType(esMapping, parentFieldName, rowCopy);
+            esTemplate.parseObjectFieldIfNeed(esMapping, parentFieldName, rowCopy);
         } else {
             rowCopy = null;
         }
         return rowCopy;
     }
 
-    public static Map<String, Object> convertValueTypeCopyMap(Map<String, Object> row,
-                                                              ESTemplate esTemplate,
-                                                              ESMapping esMapping,
-                                                              String parentFieldName) {
-        Map<String, Object> rowCopy;
-        if (row != null && !row.isEmpty()) {
-            rowCopy = new LinkedHashMap<>(row);
-            esTemplate.convertValueType(esMapping, parentFieldName, rowCopy);
-        } else {
-            rowCopy = null;
-        }
+    public static Map<String, Object> parseObjectFieldIfNeedCopyMap(Map<String, Object> row,
+                                                                    ESTemplate esTemplate,
+                                                                    ESMapping esMapping,
+                                                                    String parentFieldName,
+                                                                    Collection<String> rowChangeList) {
+        Map<String, Object> rowCopy = new LinkedHashMap<>();
+        row.forEach((k, v) -> {
+            if (rowChangeList.contains(k)) {
+                rowCopy.put(k, v);
+            }
+        });
+        esTemplate.parseObjectFieldIfNeed(esMapping, parentFieldName, rowCopy);
         return rowCopy;
     }
 
@@ -714,7 +769,7 @@ public class ESSyncUtil {
                 for (String field : mysql.keySet()) {
                     Object mysqlValue = mysql.get(field);
                     Object esValue = es.get(field);
-                    if (!equalsRowData(mysqlValue, esValue)) {
+                    if (!equalsRowDataValue(mysqlValue, esValue)) {
                         return false;
                     }
                 }
@@ -740,10 +795,10 @@ public class ESSyncUtil {
                             Object esValue = es.get(field);
                             ESSyncConfig.ObjectField fieldObjectField = objectField.getEsMapping().getObjectField(objectField.getFieldName(), field);
                             if (fieldObjectField != null) {
-                                if (!equalsRowData(mysqlValue, esValue, fieldObjectField, mysql, es)) {
+                                if (!equalsObjectFieldRowDataValue(mysqlValue, esValue, fieldObjectField, mysql, es)) {
                                     return false;
                                 }
-                            } else if (!equalsRowData(mysqlValue, esValue)) {
+                            } else if (!equalsRowDataValue(mysqlValue, esValue)) {
                                 return false;
                             }
                         }
@@ -758,10 +813,11 @@ public class ESSyncUtil {
         }
     }
 
-    public static boolean equalsRowData(Map<String, Object> mysqlRowData, Map<String, Object> esRowData, Set<String> diffFields, ESMapping esMapping) {
+    public static Collection<String> getRowChangeList(Map<String, Object> mysqlRowData, Map<String, Object> esRowData, Set<String> diffFields, ESMapping esMapping) {
         if (diffFields == null || diffFields.isEmpty()) {
             diffFields = mysqlRowData.keySet();
         }
+        Set<String> changeList = new LinkedHashSet<>(Math.max(diffFields.size() / 3, 3));
         for (String diffField : diffFields) {
             ESSyncConfig.ObjectField objectField = esMapping.getObjectField(null, diffField);
             if (objectField != null && objectField.isSqlType()) {
@@ -770,19 +826,19 @@ public class ESSyncUtil {
             Object mysql = mysqlRowData.get(diffField);
             Object es = esRowData.get(diffField);
             if (objectField != null) {
-                if (!equalsRowData(mysql, es, objectField, mysqlRowData, esRowData)) {
-                    return false;
+                if (!equalsObjectFieldRowDataValue(mysql, es, objectField, mysqlRowData, esRowData)) {
+                    changeList.add(diffField);
                 }
             } else {
-                if (!equalsRowData(mysql, es)) {
-                    return false;
+                if (!equalsRowDataValue(mysql, es)) {
+                    changeList.add(diffField);
                 }
             }
         }
-        return true;
+        return changeList;
     }
 
-    private static boolean equalsRowData(Object mysql, Object es) {
+    private static boolean equalsRowDataValue(Object mysql, Object es) {
         boolean emptyMysql = ESSyncUtil.isEmpty(mysql);
         boolean emptyEs = ESSyncUtil.isEmpty(es);
         boolean equals;

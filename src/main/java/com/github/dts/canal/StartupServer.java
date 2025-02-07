@@ -71,8 +71,12 @@ public class StartupServer implements ApplicationRunner {
             return;
         }
         try {
-            log.info("## start '{}' canal client adapters.", env);
-            start(canalConfig);
+            log.info("## build '{}' canal client adapters.", env);
+            List<ThreadRef> threadRefList = buildThreadList(canalConfig);
+            for (ThreadRef threadRef : threadRefList) {
+                threadRef.startThread();
+                log.info("Start adapter for canal clientIdentity: {} succeed", threadRef.clientIdentity());
+            }
             running = true;
             log.info("## the canal client adapters are running now ......");
         } catch (Exception e) {
@@ -95,16 +99,16 @@ public class StartupServer implements ApplicationRunner {
         return list;
     }
 
-    public void start(CanalConfig canalConfig) {
+    public List<ThreadRef> buildThreadList(CanalConfig canalConfig) {
         // 初始化canal-client的适配器
         if (canalConfig.getCanalAdapters() == null) {
             log.info("adapter for canal is empty config");
-            return;
+            return new ArrayList<>();
         }
         Collection<CanalConfig.CanalAdapter> canalAdapterList = canalConfig.getCanalAdapters().stream().filter(CanalConfig.CanalAdapter::isEnable).collect(Collectors.toList());
         if (canalAdapterList.isEmpty()) {
             log.info("adapter for canal is not enable config");
-            return;
+            return new ArrayList<>();
         }
 
         Environment env = beanFactory.getBean(Environment.class);
@@ -113,6 +117,7 @@ public class StartupServer implements ApplicationRunner {
         } else {
             log.info("discoveryService is disabled");
         }
+        List<ThreadRef> threadRefList = new ArrayList<>();
         Map<String, AtomicInteger> adapterNameCounter = Util.newLinkedCaseInsensitiveMap();
         for (CanalConfig.CanalAdapter canalAdapter : canalAdapterList) {
             String metaPrefix = canalAdapter.getRedisMetaPrefix();
@@ -131,11 +136,11 @@ public class StartupServer implements ApplicationRunner {
             String clientIdentity = canalAdapter.clientIdentity();
             ThreadRef thread = new ThreadRef(canalConfig,
                     canalAdapter, adapterList, messageService, this);
-            thread.startThread();
             canalThreadMap.computeIfAbsent(clientIdentity, e -> new ArrayList<>())
                     .add(thread);
-            log.info("Start adapter for canal clientIdentity: {} succeed", clientIdentity);
+            threadRefList.add(thread);
         }
+        return threadRefList;
     }
 
     private Adapter loadAdapter(CanalConfig.CanalAdapter canalAdapter,
@@ -235,6 +240,10 @@ public class StartupServer implements ApplicationRunner {
             this.config = config;
             this.adapterList = adapterList;
             this.messageService = messageService;
+        }
+
+        public String clientIdentity() {
+            return config.clientIdentity();
         }
 
         public void startThread() {

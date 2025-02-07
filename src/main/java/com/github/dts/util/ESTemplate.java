@@ -115,8 +115,8 @@ public interface ESTemplate extends AutoCloseable {
      * @param parentFieldName 父字段
      * @param theConvertMap   需要转换的数据
      */
-    void convertValueType(ESMapping esMapping, String parentFieldName,
-                          Map<String, Object> theConvertMap);
+    void parseObjectFieldIfNeed(ESMapping esMapping, String parentFieldName,
+                                Map<String, Object> theConvertMap);
 
     Object getValFromData(ESMapping mapping, Map<String, Object> dmlData, String fieldName, String columnName);
 
@@ -128,15 +128,15 @@ public interface ESTemplate extends AutoCloseable {
 
     BulkRequestList newBulkRequestList(BulkPriorityEnum priorityEnum);
 
-    Object convertFlatValueTypeCopyMap(List<Map<String, Object>> rowList,
-                                       ESMapping esMapping,
-                                       ESSyncConfig.ObjectField objectField,
-                                       String parentFieldName);
+    Object parseObjectFieldFlatValueTypeCopyMap(List<Map<String, Object>> rowList,
+                                                ESMapping esMapping,
+                                                ESSyncConfig.ObjectField objectField,
+                                                String parentFieldName);
 
-    List<Object> convertFlatValueTypeCopyList(List<Map<String, Object>> rowList,
-                                        ESMapping esMapping,
-                                        ESSyncConfig.ObjectField objectField,
-                                        String parentFieldName);
+    List<Object> parseObjectFieldFlatValueTypeCopyList(List<Map<String, Object>> rowList,
+                                                       ESMapping esMapping,
+                                                       ESSyncConfig.ObjectField objectField,
+                                                       String parentFieldName);
 
     interface BulkRequestList {
         void add(ESBulkRequest.ESRequest request);

@@ -87,7 +87,7 @@ public class DefaultESTemplate implements ESTemplate {
         }
         setterIndexUpdatedTime(mapping, esFieldData);
 
-        esFieldData = copyAndConvertType(esFieldData, mapping);
+        esFieldData = copyAndConvertToEsType(esFieldData, mapping);
         ESBulkRequest.ESUpdateRequest updateRequest = new ESConnection.ESUpdateRequestImpl(mapping.get_index(),
                 pkVal.toString(), esFieldData, true, mapping.getRetryOnConflict());
         addRequest(updateRequest, bulkRequestList);
@@ -119,9 +119,9 @@ public class DefaultESTemplate implements ESTemplate {
         Map<String, Object> esFieldDataConvert;
         if (parentFieldName == null) {
             esFieldDataTmp.putAll(esFieldData);
-            esFieldDataConvert = copyAndConvertType(esFieldDataTmp, mapping);
+            esFieldDataConvert = copyAndConvertToEsType(esFieldDataTmp, mapping);
         } else {
-            esFieldDataConvert = copyAndConvertType(esFieldDataTmp, mapping);
+            esFieldDataConvert = copyAndConvertToEsType(esFieldDataTmp, mapping);
             if (esFieldDataConvert != null) {
                 esFieldDataConvert = new LinkedHashMap<>(esFieldDataConvert);
                 esFieldDataConvert.putAll(esFieldData);
@@ -162,7 +162,7 @@ public class DefaultESTemplate implements ESTemplate {
             ESMapping mapping = config.getEsMapping();
             setterIndexUpdatedTime(mapping, esFieldData);
 
-            Map<String, Object> esFieldDataTmp = copyAndConvertType(esFieldData, mapping);
+            Map<String, Object> esFieldDataTmp = copyAndConvertToEsType(esFieldData, mapping);
 
             // 查询sql批量更新
             DataSource ds = CanalConfig.DatasourceConfig.getDataSource(config.getDataSourceKey());
@@ -441,13 +441,13 @@ public class DefaultESTemplate implements ESTemplate {
             index = resultSet.findColumn(columnName);
         }
         Object value = resultSet.getObject(index);
-        return getValFromValue(mapping, value, fieldName, null, Collections.singletonMap(fieldName, value));
+        return parseObjectFieldIfNeed(mapping, value, fieldName, null, Collections.singletonMap(fieldName, value));
     }
 
     @Override
     public Object getValFromRS(ESMapping mapping, Map<String, Object> row, String fieldName,
                                String columnName, Map<String, Object> data) {
-        return getValFromValue(mapping, row.get(fieldName), fieldName, null, row);
+        return parseObjectFieldIfNeed(mapping, row.get(fieldName), fieldName, null, row);
     }
 
     @Override
@@ -458,7 +458,7 @@ public class DefaultESTemplate implements ESTemplate {
         for (FieldItem fieldItem : schemaItem.getSelectFields().values()) {
             String fieldName = fieldItem.getFieldName();
 
-            Object value = getValFromValue(mapping, row.get(fieldName), fieldName, null, row);
+            Object value = parseObjectFieldIfNeed(mapping, row.get(fieldName), fieldName, null, row);
 
             if (!mapping.isWriteNull() && value == null) {
                 continue;
@@ -507,21 +507,21 @@ public class DefaultESTemplate implements ESTemplate {
     @Override
     public Object getValFromData(ESMapping mapping, Map<String, Object> dmlData,
                                  String fieldName, String columnName) {
-        return getValFromValue(mapping, dmlData.get(columnName), fieldName, null, dmlData);
+        return parseObjectFieldIfNeed(mapping, dmlData.get(columnName), fieldName, null, dmlData);
     }
 
     @Override
-    public void convertValueType(ESMapping esMapping, String parentFieldName,
-                                 Map<String, Object> theConvertMap) {
+    public void parseObjectFieldIfNeed(ESMapping esMapping, String parentFieldName,
+                                       Map<String, Object> theConvertMap) {
         for (Map.Entry<String, Object> entry : theConvertMap.entrySet()) {
             String fieldName = entry.getKey();
             Object fieldValue = entry.getValue();
-            Object newValue = getValFromValue(esMapping, fieldValue, fieldName, parentFieldName, theConvertMap);
+            Object newValue = parseObjectFieldIfNeed(esMapping, fieldValue, fieldName, parentFieldName, theConvertMap);
             entry.setValue(newValue);
         }
     }
 
-    private Object getValFromValue(ESMapping mapping, Object value, String fieldName, String parentFieldName, Map<String, Object> row) {
+    private Object parseObjectFieldIfNeed(ESMapping mapping, Object value, String fieldName, String parentFieldName, Map<String, Object> row) {
         // 如果是对象类型
         ESSyncConfig.ObjectField objectField = mapping.getObjectField(parentFieldName, fieldName);
         if (objectField != null) {
@@ -612,10 +612,10 @@ public class DefaultESTemplate implements ESTemplate {
     }
 
     @Override
-    public Object convertFlatValueTypeCopyMap(List<Map<String, Object>> rowList,
-                                              ESMapping esMapping,
-                                              ESSyncConfig.ObjectField objectField,
-                                              String parentFieldName) {
+    public Object parseObjectFieldFlatValueTypeCopyMap(List<Map<String, Object>> rowList,
+                                                       ESMapping esMapping,
+                                                       ESSyncConfig.ObjectField objectField,
+                                                       String parentFieldName) {
         if (rowList != null && !rowList.isEmpty()) {
             Map<String, Object> map = rowList.get(0);
             Object value0 = ESSyncUtil.value0(map);
@@ -625,10 +625,10 @@ public class DefaultESTemplate implements ESTemplate {
     }
 
     @Override
-    public List<Object> convertFlatValueTypeCopyList(List<Map<String, Object>> rowList,
-                                                     ESMapping esMapping,
-                                                     ESSyncConfig.ObjectField objectField,
-                                                     String parentFieldName) {
+    public List<Object> parseObjectFieldFlatValueTypeCopyList(List<Map<String, Object>> rowList,
+                                                              ESMapping esMapping,
+                                                              ESSyncConfig.ObjectField objectField,
+                                                              String parentFieldName) {
         if (rowList != null && !rowList.isEmpty()) {
             List<Object> list = new ArrayList<>(rowList.size());
             for (Map<String, Object> row : rowList) {
@@ -641,7 +641,7 @@ public class DefaultESTemplate implements ESTemplate {
         return Collections.emptyList();
     }
 
-    private Map<String, Object> copyAndConvertType(Map<String, Object> mysqlData, ESMapping mapping) {
+    private Map<String, Object> copyAndConvertToEsType(Map<String, Object> mysqlData, ESMapping mapping) {
         return ESSyncUtil.copyAndConvertType(mysqlData, getEsType(mapping));
     }
 
