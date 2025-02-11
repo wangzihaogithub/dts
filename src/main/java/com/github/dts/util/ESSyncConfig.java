@@ -828,6 +828,10 @@ public class ESSyncConfig {
              * 使用队列名称
              */
             private String requestQueueName;
+            /**
+             * 使用弱引用缓存
+             */
+            private boolean enableWeakCache = true;
 
             private volatile transient TypeLlmVectorAPI typeLlmVectorAPI;
 
@@ -850,6 +854,14 @@ public class ESSyncConfig {
                     }
                 }
                 getTypeLlmVectorAPI();
+            }
+
+            public boolean isEnableWeakCache() {
+                return enableWeakCache;
+            }
+
+            public void setEnableWeakCache(boolean enableWeakCache) {
+                this.enableWeakCache = enableWeakCache;
             }
 
             public int getQpm() {

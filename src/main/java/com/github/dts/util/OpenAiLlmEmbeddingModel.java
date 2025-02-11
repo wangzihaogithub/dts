@@ -12,14 +12,21 @@ import java.util.List;
 public class OpenAiLlmEmbeddingModel implements LlmEmbeddingModel {
     private final Metadata metadata = new Metadata();
     private final OpenAiEmbeddingModel embeddingModel;
+    private final ESSyncConfig.ObjectField.ParamLlmVector llmVector;
 
     public OpenAiLlmEmbeddingModel(ESSyncConfig.ObjectField.ParamLlmVector llmVector) {
+        this.llmVector = llmVector;
         embeddingModel = OpenAiEmbeddingModel.builder()
                 .apiKey(llmVector.getApiKey())
                 .baseUrl(llmVector.getBaseUrl())
                 .modelName(llmVector.getModelName())
                 .dimensions(llmVector.getDimensions())
                 .build();
+    }
+
+    @Override
+    public ESSyncConfig.ObjectField.ParamLlmVector getConfig() {
+        return llmVector;
     }
 
     @Override

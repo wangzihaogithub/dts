@@ -13,10 +13,12 @@ public class TypeLlmVectorAPI {
     private final ESSyncConfig.ObjectField.ParamLlmVector llmVector;
     private final BlockingQueue<VectorCompletableFuture> futureList;
     private final LlmEmbeddingModel llmEmbeddingModel;
+    private final CacheLlmEmbeddingModel cacheLlmEmbeddingModel;
 
     public TypeLlmVectorAPI(ESSyncConfig.ObjectField.ParamLlmVector llmVector) throws NoSuchMethodException, InvocationTargetException, InstantiationException, IllegalAccessException {
         this.llmVector = llmVector;
         this.llmEmbeddingModel = llmVector.getModelClass().getConstructor(ESSyncConfig.ObjectField.ParamLlmVector.class).newInstance(llmVector);
+        this.cacheLlmEmbeddingModel = llmVector.isEnableWeakCache() ? new CacheLlmEmbeddingModel(llmEmbeddingModel) : null;
         this.futureList = VectorCompletableFuture.getQueue(llmVector.getRequestQueueName(), llmVector.getRequestMaxContentSize(), llmVector.getQpm());
     }
 
@@ -74,8 +76,9 @@ public class TypeLlmVectorAPI {
     }
 
     private List<float[]> embedAll(List<String> requestList) {
+        LlmEmbeddingModel model = cacheLlmEmbeddingModel != null ? cacheLlmEmbeddingModel : llmEmbeddingModel;
         List<String> textSet = new ArrayList<>(new LinkedHashSet<>(requestList));
-        List<float[]> embeddingSet = llmEmbeddingModel.embedAll(textSet);
+        List<float[]> embeddingSet = model.embedAll(textSet);
 
         Map<String, float[]> vectorMap = new HashMap<>(textSet.size());
         for (int i = 0, size = textSet.size(); i < size; i++) {
