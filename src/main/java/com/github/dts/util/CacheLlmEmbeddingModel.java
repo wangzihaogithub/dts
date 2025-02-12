@@ -27,7 +27,7 @@ public class CacheLlmEmbeddingModel implements LlmEmbeddingModel {
     @Override
     public List<float[]> embedAll(List<String> contentList) {
         Map<String, float[]> cacheMap = cache.getCache(contentList, source.getConfig());
-        List<String> cacheMissList = contentList.stream().filter(e -> cacheMap.get(e) != null).collect(Collectors.toList());
+        List<String> cacheMissList = contentList.stream().filter(e -> cacheMap.get(e) == null).collect(Collectors.toList());
         List<float[]> list = cacheMissList.isEmpty() ? Collections.emptyList() : source.embedAll(cacheMissList);
         Map<String, float[]> embeddingMap = new HashMap<>(cacheMap);
         Map<String, float[]> insertCacheMap = new HashMap<>();
