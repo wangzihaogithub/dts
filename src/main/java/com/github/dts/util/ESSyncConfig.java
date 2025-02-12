@@ -800,6 +800,10 @@ public class ESSyncConfig {
          * https://www.elastic.co/guide/en/elasticsearch/reference/current/dense-vector.html#dense-vector-params
          */
         public static class ParamLlmVector {
+            /**
+             * 自定义属性
+             */
+            private final Properties properties = new Properties();
             private Class<? extends LlmEmbeddingModel> modelClass = OpenAiLlmEmbeddingModel.class;
             private String apiKey;
             private String baseUrl;
@@ -808,7 +812,6 @@ public class ESSyncConfig {
              * （可选，整数）向量维度数
              */
             private Integer dimensions = null;
-
             /**
              * etl刷数据时，判断是否相等的字段
              */
@@ -832,7 +835,6 @@ public class ESSyncConfig {
              * 使用弱引用缓存
              */
             private boolean enableWeakCache = true;
-
             private volatile transient TypeLlmVectorAPI typeLlmVectorAPI;
 
             private void init(ObjectField objectField) {
@@ -854,6 +856,10 @@ public class ESSyncConfig {
                     }
                 }
                 getTypeLlmVectorAPI();
+            }
+
+            public Properties getProperties() {
+                return properties;
             }
 
             public boolean isEnableWeakCache() {

@@ -256,6 +256,19 @@ public class ESConnection {
             this.bulkResponse = bulkResponse;
         }
 
+        public ESBulkResponseImpl(com.github.dts.util.ESBulkRequest.ESBulkResponse... responses) {
+            this.bulkResponse = Arrays.stream(responses)
+                    .filter(Objects::nonNull)
+                    .filter(e -> e instanceof ESBulkResponseImpl)
+                    .map(e -> (ESBulkResponseImpl) e)
+                    .flatMap(e -> e.bulkResponse.stream())
+                    .collect(Collectors.toList());
+        }
+
+        public static ESBulkResponseImpl merge(com.github.dts.util.ESBulkRequest.ESBulkResponse... responses) {
+            return new ESBulkResponseImpl(responses);
+        }
+
         @Override
         public int size() {
             int size = 0;
@@ -300,6 +313,28 @@ public class ESConnection {
                 }
             }
             return false;
+        }
+
+        @Override
+        public List<com.github.dts.util.ESBulkRequest.Failure> getFailureNotFoundList() {
+            ArrayList<com.github.dts.util.ESBulkRequest.Failure> failures = new ArrayList<>();
+            for (BulkRequestResponse bulkItemResponses : bulkResponse) {
+                Collection<BulkItemResponse.Failure> failureNotFoundList = bulkItemResponses.getFailureNotFoundList();
+                for (BulkItemResponse.Failure failure : failureNotFoundList) {
+                    failures.add(new com.github.dts.util.ESBulkRequest.Failure(
+                            failure.getIndex(),
+                            failure.getType(),
+                            failure.getId(),
+                            failure.getCause(),
+                            failure.getStatus(),
+                            failure.getSeqNo(),
+                            failure.getTerm(),
+                            failure.isAborted()
+                    ));
+                }
+            }
+            failures.trimToSize();
+            return failures;
         }
 
         @Override
@@ -560,6 +595,20 @@ public class ESConnection {
 
         private static String toError(BulkItemResponse e) {
             return "[" + e.getOpType() + "]. " + e.getFailure().getCause().getClass() + ": " + e.getFailure();
+        }
+
+        public List<BulkItemResponse.Failure> getFailureNotFoundList() {
+            ArrayList<BulkItemResponse.Failure> errorRespList = new ArrayList<>();
+            for (BulkItemResponse itemResponse : response.getItems()) {
+                if (!itemResponse.isFailed()) {
+                    continue;
+                }
+                BulkItemResponse.Failure failure = itemResponse.getFailure();
+                if (failure.getStatus() == RestStatus.NOT_FOUND) {
+                    errorRespList.add(failure);
+                }
+            }
+            return errorRespList;
         }
 
         public List<String> processFailBulkResponse() throws RuntimeException {

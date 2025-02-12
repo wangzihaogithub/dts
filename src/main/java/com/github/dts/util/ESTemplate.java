@@ -28,7 +28,7 @@ public interface ESTemplate extends AutoCloseable {
      * @param esFieldData     数据Map
      * @param bulkRequestList bulkRequestList
      */
-    void insert(ESMapping mapping, Object pkVal, Map<String, Object> esFieldData, BulkRequestList bulkRequestList);
+    ESBulkRequest.ESBulkResponse insert(ESMapping mapping, Object pkVal, Map<String, Object> esFieldData, BulkRequestList bulkRequestList);
 
     /**
      * 根据主键更新数据
@@ -77,7 +77,7 @@ public interface ESTemplate extends AutoCloseable {
      * @param pkVal           主键值
      * @param bulkRequestList bulkRequestList
      */
-    void delete(ESMapping mapping, Object pkVal, BulkRequestList bulkRequestList);
+    ESBulkRequest.ESBulkResponse delete(ESMapping mapping, Object pkVal, BulkRequestList bulkRequestList);
 
     /**
      * 提交批次
@@ -139,17 +139,17 @@ public interface ESTemplate extends AutoCloseable {
                                                        String parentFieldName);
 
     interface BulkRequestList {
-        void add(ESBulkRequest.ESRequest request);
+        ESBulkRequest.ESBulkResponse add(ESBulkRequest.ESRequest request);
 
         boolean isEmpty();
 
         int size();
 
-        default void commit(ESTemplate esTemplate) {
-            commit(esTemplate, null);
+        default ESBulkRequest.ESBulkResponse commit(ESTemplate esTemplate) {
+            return commit(esTemplate, null);
         }
 
-        void commit(ESTemplate esTemplate, CommitListener listener);
+        ESBulkRequest.ESBulkResponse commit(ESTemplate esTemplate, CommitListener listener);
 
         BulkRequestList fork(BulkRequestList bulkRequestList);
 

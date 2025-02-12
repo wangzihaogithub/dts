@@ -16,7 +16,6 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.function.Consumer;
 import java.util.function.Function;
 
 /**
@@ -81,16 +80,16 @@ public class DefaultESTemplate implements ESTemplate {
      * @param esFieldData 数据Map
      */
     @Override
-    public void insert(ESMapping mapping, Object pkVal, Map<String, Object> esFieldData, BulkRequestList bulkRequestList) {
+    public ESBulkRequest.ESBulkResponse insert(ESMapping mapping, Object pkVal, Map<String, Object> esFieldData, BulkRequestList bulkRequestList) {
         if (pkVal == null || "".equals(pkVal)) {
-            return;
+            return ESConnection.EMPTY_RESPONSE;
         }
         setterIndexUpdatedTime(mapping, esFieldData);
 
         esFieldData = copyAndConvertToEsType(esFieldData, mapping);
         ESBulkRequest.ESUpdateRequest updateRequest = new ESConnection.ESUpdateRequestImpl(mapping.get_index(),
                 pkVal.toString(), esFieldData, true, mapping.getRetryOnConflict());
-        addRequest(updateRequest, bulkRequestList);
+        return addRequest(updateRequest, bulkRequestList);
     }
 
     /**
@@ -321,13 +320,13 @@ public class DefaultESTemplate implements ESTemplate {
      * @param pkVal   主键值
      */
     @Override
-    public void delete(ESMapping mapping, Object pkVal, BulkRequestList bulkRequestList) {
+    public ESBulkRequest.ESBulkResponse delete(ESMapping mapping, Object pkVal, BulkRequestList bulkRequestList) {
         if (pkVal == null || "".equals(pkVal)) {
-            return;
+            return ESConnection.EMPTY_RESPONSE;
         }
         ESConnection.ESDeleteRequestImpl esDeleteRequest = new ESConnection.ESDeleteRequestImpl(mapping.get_index(),
                 pkVal.toString());
-        addRequest(esDeleteRequest, bulkRequestList);
+        return addRequest(esDeleteRequest, bulkRequestList);
     }
 
     /**
@@ -683,65 +682,68 @@ public class DefaultESTemplate implements ESTemplate {
 
     @Override
     public void close() {
-        commit();
+        commit();//close
         esConnection.close();
     }
 
     /**
      * 如果大于批量数则提交批次
      */
-    private void addRequest(ESBulkRequest.ESUpdateRequest updateRequest, BulkRequestList bulkRequestList) {
+    private ESBulkRequest.ESBulkResponse addRequest(ESBulkRequest.ESUpdateRequest updateRequest, BulkRequestList bulkRequestList) {
         if (bulkRequestList != null) {
             bulkRequestList.add(updateRequest);
             if (isMaxBatchSize(bulkRequestList.size())) {
                 int bulk = bulk(bulkRequestList);
                 if (bulk > 0) {
-                    commit();
+                    return commit();
                 }
             }
         } else {
             esBulkRequest.add(updateRequest);
             if (isMaxBatchSize(esBulkRequest.numberOfActions())) {
-                commit();
+                return commit();
             }
         }
+        return ESConnection.EMPTY_RESPONSE;
     }
 
-    private void addRequest(ESBulkRequest.ESUpdateByQueryRequest indexRequest, BulkRequestList bulkRequestList) {
+    private ESBulkRequest.ESBulkResponse addRequest(ESBulkRequest.ESUpdateByQueryRequest indexRequest, BulkRequestList bulkRequestList) {
 //        synchronized (esBulkRequest) {
         if (bulkRequestList != null) {
             bulkRequestList.add(indexRequest);
             if (isMaxBatchSize(bulkRequestList.size())) {
                 int bulk = bulk(bulkRequestList);
                 if (bulk > 0) {
-                    commit();
+                    return commit();
                 }
             }
         } else {
             esBulkRequest.add(indexRequest);
             if (isMaxBatchSize(esBulkRequest.numberOfActions())) {
-                commit();
+                return commit();
             }
         }
+        return ESConnection.EMPTY_RESPONSE;
 //        }
     }
 
-    private void addRequest(ESBulkRequest.ESDeleteRequest deleteRequest, BulkRequestList bulkRequestList) {
+    private ESBulkRequest.ESBulkResponse addRequest(ESBulkRequest.ESDeleteRequest deleteRequest, BulkRequestList bulkRequestList) {
 //        synchronized (esBulkRequest) {
         if (bulkRequestList != null) {
             bulkRequestList.add(deleteRequest);
             if (isMaxBatchSize(bulkRequestList.size())) {
                 int bulk = bulk(bulkRequestList);
                 if (bulk > 0) {
-                    commit();
+                    return commit();
                 }
             }
         } else {
             esBulkRequest.add(deleteRequest);
             if (isMaxBatchSize(esBulkRequest.numberOfActions())) {
-                commit();
+                return commit();
             }
         }
+        return ESConnection.EMPTY_RESPONSE;
 //        }
     }
 
@@ -757,17 +759,17 @@ public class DefaultESTemplate implements ESTemplate {
         private final List<ESBulkRequest.ESRequest> requests = new ArrayList<>();
         private final BulkPriorityEnum priorityEnum;
         private final Map<String, Set<String>> indexPkUpdateMap;
-        private final Consumer<BulkRequestListImpl> addAfter;
+        private final Function<BulkRequestListImpl, ESBulkRequest.ESBulkResponse> addAfter;
         private int size = 0;
 
-        public BulkRequestListImpl(Consumer<BulkRequestListImpl> addAfter, BulkPriorityEnum priorityEnum, Map<String, Set<String>> indexPkUpdateMap) {
+        public BulkRequestListImpl(Function<BulkRequestListImpl, ESBulkRequest.ESBulkResponse> addAfter, BulkPriorityEnum priorityEnum, Map<String, Set<String>> indexPkUpdateMap) {
             this.addAfter = addAfter;
             this.priorityEnum = priorityEnum;
             this.indexPkUpdateMap = indexPkUpdateMap;
         }
 
         @Override
-        public void add(ESBulkRequest.ESRequest request) {
+        public ESBulkRequest.ESBulkResponse add(ESBulkRequest.ESRequest request) {
             synchronized (requests) {
                 requests.add(request);
                 if (request instanceof ESConnection.ESUpdateByQueryRequestImpl) {
@@ -782,7 +784,7 @@ public class DefaultESTemplate implements ESTemplate {
                                 e -> Collections.newSetFromMap(new ConcurrentHashMap<>()))
                         .add(u.getId());
             }
-            addAfter.accept(this);
+            return addAfter.apply(this);
         }
 
         public boolean containsUpdate(String index, String id) {
@@ -813,18 +815,20 @@ public class DefaultESTemplate implements ESTemplate {
         }
 
         @Override
-        public void commit(ESTemplate esTemplate, CommitListener listener) {
+        public ESBulkRequest.ESBulkResponse commit(ESTemplate esTemplate, CommitListener listener) {
             ESBulkRequest.ESBulkResponse commit = esTemplate.commit();
             if (listener != null && !commit.isEmpty()) {
                 listener.done(commit);
             }
+            ESBulkRequest.ESBulkResponse commit1 = null;
             if (!requests.isEmpty()) {
                 esTemplate.bulk(this);
-                ESBulkRequest.ESBulkResponse commit1 = esTemplate.commit();
+                commit1 = esTemplate.commit();
                 if (listener != null && !commit1.isEmpty()) {
                     listener.done(commit1);
                 }
             }
+            return ESConnection.ESBulkResponseImpl.merge(commit, commit1);
         }
 
         @Override
@@ -849,17 +853,19 @@ public class DefaultESTemplate implements ESTemplate {
         }
     }
 
-    public class BulkRequestListAddAfter implements Consumer<BulkRequestListImpl> {
+    public class BulkRequestListAddAfter implements Function<BulkRequestListImpl, ESBulkRequest.ESBulkResponse> {
 
         @Override
-        public void accept(BulkRequestListImpl bulkRequestList) {
+        public ESBulkRequest.ESBulkResponse apply(BulkRequestListImpl bulkRequestList) {
             if (isMaxBatchSize(bulkRequestList.size)) {
                 int bulk = bulk(bulkRequestList);
                 if (bulk > 0) {
-                    commit();
+                    return commit();
                 }
             }
+            return ESConnection.EMPTY_RESPONSE;
         }
+
     }
 
 }

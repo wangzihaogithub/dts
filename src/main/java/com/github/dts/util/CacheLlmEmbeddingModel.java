@@ -1,9 +1,11 @@
 package com.github.dts.util;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 public class CacheLlmEmbeddingModel implements LlmEmbeddingModel {
+    public static final WeakMapCache WEAK_MAP_CACHE = new WeakMapCache();
     private final LlmEmbeddingModel source;
     private final Cache cache;
 
@@ -14,7 +16,7 @@ public class CacheLlmEmbeddingModel implements LlmEmbeddingModel {
 
     public CacheLlmEmbeddingModel(LlmEmbeddingModel source) {
         this.source = source;
-        this.cache = new WeakMapCache();
+        this.cache = WEAK_MAP_CACHE;
     }
 
     @Override
@@ -44,27 +46,36 @@ public class CacheLlmEmbeddingModel implements LlmEmbeddingModel {
     }
 
     public static class WeakMapCache implements Cache {
-        private final Map<float[], String> cacheVectorMap = Collections.synchronizedMap(new WeakHashMap<>(256));
+        private final Map<String, Map<float[], String>> cacheVectorMap = new ConcurrentHashMap<>(3);
 
-        public Map<float[], String> getCacheVectorMap() {
+        public Map<String, Map<float[], String>> getCacheVectorMap() {
             return cacheVectorMap;
+        }
+
+        public Map<float[], String> getCacheVectorMap(String key) {
+            return cacheVectorMap.computeIfAbsent(Objects.toString(key, ""), k -> Collections.synchronizedMap(new WeakHashMap<>(256)));
         }
 
         @Override
         public Map<String, float[]> getCache(List<String> contentList, ESSyncConfig.ObjectField.ParamLlmVector config) {
-            Map<String, float[]> cacheMap = new HashMap<>();
-            cacheVectorMap.forEach((k, v) -> cacheMap.put(v, k));
+            Map<float[], String> vm = getCacheVectorMap(config.getRequestQueueName());
+            Map<String, float[]> cacheMap = new HashMap<>(vm.size());
+            vm.forEach((k, v) -> cacheMap.put(v, k));
 
-            Map<String, float[]> result = new HashMap<>();
+            Map<String, float[]> result = new HashMap<>(contentList.size());
             for (String s : contentList) {
-                result.put(s, cacheMap.get(s));
+                float[] v = cacheMap.get(s);
+                if (v != null) {
+                    result.put(s, v);
+                }
             }
             return result;
         }
 
         @Override
         public void putCache(Map<String, float[]> cache, ESSyncConfig.ObjectField.ParamLlmVector config) {
-            cache.forEach((k, v) -> cacheVectorMap.put(v, k));
+            Map<float[], String> vm = getCacheVectorMap(config.getRequestQueueName());
+            cache.forEach((k, v) -> vm.put(v, k));
         }
     }
 }
