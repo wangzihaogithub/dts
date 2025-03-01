@@ -27,6 +27,7 @@ public interface ESTemplate extends AutoCloseable {
      * @param pkVal           主键值
      * @param esFieldData     数据Map
      * @param bulkRequestList bulkRequestList
+     * @return ESBulkResponse
      */
     ESBulkRequest.ESBulkResponse insert(ESMapping mapping, Object pkVal, Map<String, Object> esFieldData, BulkRequestList bulkRequestList);
 
@@ -76,6 +77,7 @@ public interface ESTemplate extends AutoCloseable {
      * @param mapping         配置对象
      * @param pkVal           主键值
      * @param bulkRequestList bulkRequestList
+     * @return ESBulkResponse
      */
     ESBulkRequest.ESBulkResponse delete(ESMapping mapping, Object pkVal, BulkRequestList bulkRequestList);
 

@@ -24,6 +24,8 @@ public class EsTypeUtil {
      * @param fieldName       fileName
      * @param parentFieldName parentFieldName
      * @param esTypes         esTypes
+     * @param mapping         mapping
+     * @param mysqlRow        mysqlRow
      * @return Mapping中对应的类型
      */
     public static Object mysql2EsType(ESSyncConfig.ESMapping mapping, Map<String, Object> mysqlRow, Object mysqlValue, String fieldName, ESFieldTypesCache esTypes, String parentFieldName) {
