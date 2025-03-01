@@ -464,20 +464,21 @@ public class DefaultESTemplate implements ESTemplate {
     public ESFieldTypesCache getEsType(ESMapping mapping) {
         String index = mapping.get_index();
         long timeout = mapping.getMappingMetadataTimeout();
-
-        ESFieldTypesCache cache = esFieldTypes.get(index);
+        String esUri = String.join(",", esConnection.getElasticsearchUri());
+        String cacheKey = esUri + "_" + index;
+        ESFieldTypesCache cache = esFieldTypes.get(cacheKey);
         if (cache == null || cache.isTimeout(timeout)) {
             synchronized (this) {
-                cache = esFieldTypes.get(index);
+                cache = esFieldTypes.get(cacheKey);
                 if (cache == null || cache.isTimeout(timeout)) {
                     CompletableFuture<Map<String, Object>> future = esConnection.getMapping(index);
                     if (cache == null) {
                         try {
                             Map<String, Object> mappingMetaData = future.get();
                             if (mappingMetaData != null) {
-                                esFieldTypes.put(index, cache = new ESFieldTypesCache(mappingMetaData));
+                                esFieldTypes.put(cacheKey, cache = new ESFieldTypesCache(mappingMetaData));
                             } else {
-                                throw new IllegalArgumentException("Not found the mapping info of index: " + index);
+                                throw new IllegalArgumentException("Not found the mapping info of index: " + index + ", esUri: " + esUri);
                             }
                         } catch (Exception e) {
                             Util.sneakyThrows(e);
@@ -485,7 +486,7 @@ public class DefaultESTemplate implements ESTemplate {
                     } else {
                         future.whenComplete((mappingMetaData, throwable) -> {
                             if (mappingMetaData != null) {
-                                esFieldTypes.put(index, new ESFieldTypesCache(mappingMetaData));
+                                esFieldTypes.put(cacheKey, new ESFieldTypesCache(mappingMetaData));
                             } else if (throwable != null) {
                                 logger.warn("esConnection.getMapping error {}", throwable.toString(), throwable);
                             }
