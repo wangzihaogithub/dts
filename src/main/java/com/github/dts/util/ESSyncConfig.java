@@ -481,7 +481,7 @@ public class ESSyncConfig {
                     if (val instanceof Boolean) {
                         return val;
                     }
-                    return ESSyncUtil.castToBoolean(val);
+                    return TypeUtil.castToBoolean(val);
                 }
                 case LLM_VECTOR: {
                     String string;

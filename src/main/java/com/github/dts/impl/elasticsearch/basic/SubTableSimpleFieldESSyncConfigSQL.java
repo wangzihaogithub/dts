@@ -47,8 +47,8 @@ public class SubTableSimpleFieldESSyncConfigSQL extends ESSyncConfigSQL {
                             if (fieldItem1.equalsField(columnItem0.getColumnName())) {
                                 for (ColumnItem columnItem : fieldItem1.getColumnItems()) {
                                     if (old.containsKey(columnItem.getColumnName())) {
-                                        Object val = esTemplate.getValFromRS(mapping, row, fieldItem.getFieldName(), fieldItem.getColumnName(),
-                                                data);
+                                        Object val = EsGetterUtil.getValueAndMysql2EsType(mapping, row, fieldItem.getFieldName(), fieldItem.getColumnName(),
+                                                data,esTemplate);
                                         esFieldData.put(fieldItem.getFieldName(), val);
                                         break out;
                                     }
@@ -57,8 +57,8 @@ public class SubTableSimpleFieldESSyncConfigSQL extends ESSyncConfigSQL {
                         }
                     }
                 } else {
-                    Object val = esTemplate.getValFromRS(mapping, row, fieldItem.getFieldName(), fieldItem.getColumnName(),
-                            data);
+                    Object val = EsGetterUtil.getValueAndMysql2EsType(mapping, row, fieldItem.getFieldName(), fieldItem.getColumnName(),
+                            data,esTemplate);
                     esFieldData.put(fieldItem.getFieldName(), val);
                 }
             }
@@ -67,8 +67,8 @@ public class SubTableSimpleFieldESSyncConfigSQL extends ESSyncConfigSQL {
             for (Map.Entry<FieldItem, List<FieldItem>> entry : tableItem.getRelationTableFields().entrySet()) {
                 for (FieldItem fieldItem : entry.getValue()) {
                     if (fieldItem.getColumnItems().size() == 1) {
-                        Object value = esTemplate.getValFromRS(mapping, row, fieldItem.getFieldName(), entry.getKey().getColumnName(),
-                                data);
+                        Object value = EsGetterUtil.getValueAndMysql2EsType(mapping, row, fieldItem.getFieldName(), entry.getKey().getColumnName(),
+                                data,esTemplate);
                         String fieldName = fieldItem.getFieldName();
                         // 判断是否是主键
                         if (fieldName.equals(mapping.get_id())) {

@@ -68,6 +68,23 @@ public class DefaultESTemplate implements ESTemplate {
         }
     }
 
+    private static Map<String, Object> copyAndMysql2EsType(ESSyncConfig.ESMapping mapping, Map<String, Object> mysqlData, ESFieldTypesCache esFieldType) {
+        if (mysqlData == null) {
+            return null;
+        }
+        if (mysqlData.isEmpty()) {
+            return new LinkedHashMap<>();
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : mysqlData.entrySet()) {
+            String k = entry.getKey();
+            Object val = entry.getValue();
+            Object res = EsTypeUtil.mysql2EsType(mapping, mysqlData, val, k, esFieldType, null);
+            result.put(k, res);
+        }
+        return Util.trimToSize(result, LinkedHashMap::new);
+    }
+
     private boolean isMaxBatchSize(int size) {
         return esConnection.isMaxBatchSize(size);
     }
@@ -86,7 +103,7 @@ public class DefaultESTemplate implements ESTemplate {
         }
         setterIndexUpdatedTime(mapping, esFieldData);
 
-        esFieldData = copyAndConvertToEsType(esFieldData, mapping);
+        esFieldData = copyAndMysql2EsType(mapping, esFieldData, getEsType(mapping));
         ESBulkRequest.ESUpdateRequest updateRequest = new ESConnection.ESUpdateRequestImpl(mapping.get_index(),
                 pkVal.toString(), esFieldData, true, mapping.getRetryOnConflict());
         return addRequest(updateRequest, bulkRequestList);
@@ -118,9 +135,9 @@ public class DefaultESTemplate implements ESTemplate {
         Map<String, Object> esFieldDataConvert;
         if (parentFieldName == null) {
             esFieldDataTmp.putAll(esFieldData);
-            esFieldDataConvert = copyAndConvertToEsType(esFieldDataTmp, mapping);
+            esFieldDataConvert = copyAndMysql2EsType(mapping, esFieldDataTmp, getEsType(mapping));
         } else {
-            esFieldDataConvert = copyAndConvertToEsType(esFieldDataTmp, mapping);
+            esFieldDataConvert = copyAndMysql2EsType(mapping, esFieldDataTmp, getEsType(mapping));
             if (esFieldDataConvert != null) {
                 esFieldDataConvert = new LinkedHashMap<>(esFieldDataConvert);
                 esFieldDataConvert.putAll(esFieldData);
@@ -161,7 +178,7 @@ public class DefaultESTemplate implements ESTemplate {
             ESMapping mapping = config.getEsMapping();
             setterIndexUpdatedTime(mapping, esFieldData);
 
-            Map<String, Object> esFieldDataTmp = copyAndConvertToEsType(esFieldData, mapping);
+            Map<String, Object> esFieldDataTmp = copyAndMysql2EsType(mapping, esFieldData, getEsType(mapping));
 
             // 查询sql批量更新
             DataSource ds = CanalConfig.DatasourceConfig.getDataSource(config.getDataSourceKey());
@@ -440,211 +457,11 @@ public class DefaultESTemplate implements ESTemplate {
             index = resultSet.findColumn(columnName);
         }
         Object value = resultSet.getObject(index);
-        return parseObjectFieldIfNeed(mapping, value, fieldName, null, Collections.singletonMap(fieldName, value));
+        return EsTypeUtil.mysql2EsType(mapping, Collections.singletonMap(fieldName, value), value, fieldName, getEsType(mapping), null);
     }
 
     @Override
-    public Object getValFromRS(ESMapping mapping, Map<String, Object> row, String fieldName,
-                               String columnName, Map<String, Object> data) {
-        return parseObjectFieldIfNeed(mapping, row.get(fieldName), fieldName, null, row);
-    }
-
-    @Override
-    public Object getESDataFromRS(ESMapping mapping, Map<String, Object> row,
-                                  Map<String, Object> esFieldData, Map<String, Object> data) {
-        SchemaItem schemaItem = mapping.getSchemaItem();
-        Object resultIdVal = getIdValFromRS(mapping, row);
-        for (FieldItem fieldItem : schemaItem.getSelectFields().values()) {
-            String fieldName = fieldItem.getFieldName();
-
-            Object value = parseObjectFieldIfNeed(mapping, row.get(fieldName), fieldName, null, row);
-
-            if (!mapping.isWriteNull() && value == null) {
-                continue;
-            }
-            esFieldData.put(fieldName, value);
-        }
-        return resultIdVal;
-    }
-
-    @Override
-    public Object getIdValFromRS(ESMapping mapping, Map<String, Object> row) {
-        FieldItem idField = mapping.getSchemaItem().getIdField();
-        Object id = row.get(idField.getColumnName());
-        if (id == null) {
-            id = row.get(idField.getFieldName());
-        }
-        return id;
-    }
-
-    @Override
-    public Object getESDataFromRS(ESMapping mapping,
-                                  Map<String, Object> row, Map<String, Object> dmlOld,
-                                  Map<String, Object> esFieldData,
-                                  Map<String, Object> data) {
-        SchemaItem schemaItem = mapping.getSchemaItem();
-        Object resultIdVal = getIdValFromRS(mapping, row);
-        for (FieldItem fieldItem : schemaItem.getSelectFields().values()) {
-            String fieldName = fieldItem.getFieldName();
-            String columnName = fieldItem.getColumnName();
-
-            if (fieldItem.containsColumnName(dmlOld.keySet())) {
-                Object newValue = fieldItem.getValue(data);
-                Object oldValue = fieldItem.getValue(dmlOld);
-                if (!mapping.isWriteNull() && newValue == null && oldValue == null) {
-                    continue;
-                }
-                esFieldData.put(fieldName,
-                        getValFromRS(mapping, row, fieldName,
-                                columnName, data));
-            }
-        }
-
-        return resultIdVal;
-    }
-
-    @Override
-    public Object getValFromData(ESMapping mapping, Map<String, Object> dmlData,
-                                 String fieldName, String columnName) {
-        return parseObjectFieldIfNeed(mapping, dmlData.get(columnName), fieldName, null, dmlData);
-    }
-
-    @Override
-    public void parseObjectFieldIfNeed(ESMapping esMapping, String parentFieldName,
-                                       Map<String, Object> theConvertMap) {
-        for (Map.Entry<String, Object> entry : theConvertMap.entrySet()) {
-            String fieldName = entry.getKey();
-            Object fieldValue = entry.getValue();
-            Object newValue = parseObjectFieldIfNeed(esMapping, fieldValue, fieldName, parentFieldName, theConvertMap);
-            entry.setValue(newValue);
-        }
-    }
-
-    private Object parseObjectFieldIfNeed(ESMapping mapping, Object value, String fieldName, String parentFieldName, Map<String, Object> row) {
-        // 如果是对象类型
-        ESSyncConfig.ObjectField objectField = mapping.getObjectField(parentFieldName, fieldName);
-        if (objectField != null) {
-            return objectField.parse(value, mapping, row);
-        } else {
-            return ESSyncUtil.typeConvert(value, fieldName, getEsType(mapping), parentFieldName);
-        }
-    }
-
-    /**
-     * 将dml的data转换为es的data
-     *
-     * @param mapping     配置mapping
-     * @param dmlData     dml data
-     * @param esFieldData es data
-     * @return 返回 id 值
-     */
-    @Override
-    public Object getESDataFromDmlData(ESMapping mapping, Map<String, Object> dmlData,
-                                       Map<String, Object> esFieldData) {
-        SchemaItem schemaItem = mapping.getSchemaItem();
-        Object resultIdVal = getIdValFromRS(mapping, dmlData);
-        for (FieldItem fieldItem : schemaItem.getSelectFields().values()) {
-            if (fieldItem.getColumnItems().isEmpty()) {
-                continue;
-            }
-            String columnName = fieldItem.getColumnName();
-            String fieldName = fieldItem.getFieldName();
-
-            Object value = getValFromData(mapping, dmlData, fieldName, columnName);
-
-            if (!mapping.isWriteNull() && value == null) {
-                continue;
-            }
-            esFieldData.put(fieldName, value);
-        }
-
-        return resultIdVal;
-    }
-
-    /**
-     * 将dml的data, old转换为es的data
-     *
-     * @param mapping     配置mapping
-     * @param dmlData     dml data
-     * @param esFieldData es data
-     * @param tableName   tableName
-     * @return 返回 id 值
-     */
-    @Override
-    public Object getESDataFromDmlData(ESMapping mapping, Map<String, Object> dmlData, Map<String, Object> dmlOld,
-                                       Map<String, Object> esFieldData, String tableName) {
-        SchemaItem schemaItem = mapping.getSchemaItem();
-        List<String> aliases = schemaItem.getTableItemAliases(tableName);
-
-        Object resultIdVal = getIdValFromRS(mapping, dmlData);
-        for (FieldItem fieldItem : schemaItem.getSelectFields().values()) {
-            if (fieldItem.getColumnItems().isEmpty()) {
-                continue;
-            }
-            String columnName = fieldItem.getColumnName();
-            String fieldName = fieldItem.getFieldName();
-
-
-            /*
-             * 修复canal的bug.
-             * 针对于 select a.name AS aName, b.name AS bName, c.name AS cName from a left join b left join c 的情况.
-             * canal会把修改a表,canal会把 b,c表查询的name字段都改了.
-             *
-             * 修复方式, 只修改本表的字段. aliases.contains(fieldItem.getOwner())
-             *
-             *  case : 修改职位名称, 项目名称与公司名称与项目BU名称都变成职位名称了.
-             * 王子豪 2019年6月4日 17:39:31
-             */
-            if (fieldItem.containsOwner(aliases)
-                    && fieldItem.containsColumnName(dmlOld.keySet())) {
-                Object newValue = fieldItem.getValue(dmlData);
-                Object oldValue = fieldItem.getValue(dmlOld);
-                if (!mapping.isWriteNull() && newValue == null && oldValue == null) {
-                    continue;
-                }
-                esFieldData.put(fieldName,
-                        getValFromData(mapping, dmlData, fieldName, columnName));
-            }
-        }
-
-        return resultIdVal;
-    }
-
-    @Override
-    public Object parseObjectFieldFlatValueTypeCopyMap(List<Map<String, Object>> rowList,
-                                                       ESMapping esMapping,
-                                                       ESSyncConfig.ObjectField objectField,
-                                                       String parentFieldName) {
-        if (rowList != null && !rowList.isEmpty()) {
-            Map<String, Object> map = rowList.get(0);
-            Object value0 = ESSyncUtil.value0(map);
-            return ESSyncUtil.typeConvert(value0, objectField.getFieldName(), getEsType(esMapping), parentFieldName);
-        }
-        return null;
-    }
-
-    @Override
-    public List<Object> parseObjectFieldFlatValueTypeCopyList(List<Map<String, Object>> rowList,
-                                                              ESMapping esMapping,
-                                                              ESSyncConfig.ObjectField objectField,
-                                                              String parentFieldName) {
-        if (rowList != null && !rowList.isEmpty()) {
-            List<Object> list = new ArrayList<>(rowList.size());
-            for (Map<String, Object> row : rowList) {
-                Object value0 = ESSyncUtil.value0(row);
-                Object cast = ESSyncUtil.typeConvert(value0, objectField.getFieldName(), getEsType(esMapping), parentFieldName);
-                list.add(cast);
-            }
-            return list;
-        }
-        return Collections.emptyList();
-    }
-
-    private Map<String, Object> copyAndConvertToEsType(Map<String, Object> mysqlData, ESMapping mapping) {
-        return ESSyncUtil.copyAndConvertType(mysqlData, getEsType(mapping));
-    }
-
-    private ESFieldTypesCache getEsType(ESMapping mapping) {
+    public ESFieldTypesCache getEsType(ESMapping mapping) {
         String index = mapping.get_index();
         long timeout = mapping.getMappingMetadataTimeout();
 

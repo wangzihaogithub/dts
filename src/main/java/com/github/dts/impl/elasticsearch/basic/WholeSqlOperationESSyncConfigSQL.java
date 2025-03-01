@@ -1,11 +1,8 @@
 package com.github.dts.impl.elasticsearch.basic;
 
 import com.github.dts.impl.elasticsearch.nested.SQL;
-import com.github.dts.util.Dml;
-import com.github.dts.util.ESSyncConfig;
+import com.github.dts.util.*;
 import com.github.dts.util.ESSyncConfig.ESMapping;
-import com.github.dts.util.ESTemplate;
-import com.github.dts.util.ColumnItem;
 import com.github.dts.util.SchemaItem.FieldItem;
 import com.github.dts.util.SchemaItem.TableItem;
 
@@ -45,8 +42,8 @@ public class WholeSqlOperationESSyncConfigSQL extends ESSyncConfigSQL {
                             if (fieldItem1.getFieldName().equals(columnItem0.getColumnName())) {
                                 for (ColumnItem columnItem : fieldItem1.getColumnItems()) {
                                     if (old.containsKey(columnItem.getColumnName())) {
-                                        Object val = esTemplate.getValFromRS(mapping, row, fieldItem.getFieldName(), fieldItem.getColumnName(),
-                                                data);
+                                        Object val = EsGetterUtil.getValueAndMysql2EsType(mapping, row, fieldItem.getFieldName(), fieldItem.getColumnName(),
+                                                data,esTemplate);
                                         esFieldData.put(fieldItem.getFieldName(), val);
                                         break out;
                                     }
@@ -59,8 +56,8 @@ public class WholeSqlOperationESSyncConfigSQL extends ESSyncConfigSQL {
                         if (fieldItem1.equals(fieldItem)) {
                             for (ColumnItem columnItem : fieldItem1.getColumnItems()) {
                                 if (old.containsKey(columnItem.getColumnName())) {
-                                    Object val = esTemplate.getValFromRS(mapping, row, fieldItem.getFieldName(), fieldItem.getColumnName(),
-                                            data);
+                                    Object val = EsGetterUtil.getValueAndMysql2EsType(mapping, row, fieldItem.getFieldName(), fieldItem.getColumnName(),
+                                            data,esTemplate);
                                     esFieldData.put(fieldItem.getFieldName(), val);
                                     break;
                                 }
@@ -68,9 +65,9 @@ public class WholeSqlOperationESSyncConfigSQL extends ESSyncConfigSQL {
                         }
                     }
                 } else {
-                    Object val = esTemplate
-                            .getValFromRS(mapping, row, fieldItem.getFieldName(), fieldItem.getColumnName(),
-                                    data);
+                    Object val = EsGetterUtil
+                            .getValueAndMysql2EsType(mapping, row, fieldItem.getFieldName(), fieldItem.getColumnName(),
+                                    data,esTemplate);
                     esFieldData.put(fieldItem.getFieldName(), val);
                 }
             }
@@ -78,9 +75,9 @@ public class WholeSqlOperationESSyncConfigSQL extends ESSyncConfigSQL {
             Map<String, Object> paramsTmp = new LinkedHashMap<>();
             for (Map.Entry<FieldItem, List<FieldItem>> entry : tableItem.getRelationTableFields().entrySet()) {
                 for (FieldItem fieldItem : entry.getValue()) {
-                    Object value = esTemplate
-                            .getValFromRS(mapping, row, fieldItem.getFieldName(), fieldItem.getColumnName(),
-                                    data);
+                    Object value = EsGetterUtil
+                            .getValueAndMysql2EsType(mapping, row, fieldItem.getFieldName(), fieldItem.getColumnName(),
+                                    data,esTemplate);
                     String fieldName = fieldItem.getFieldName();
                     // 判断是否是主键
                     if (fieldName.equals(mapping.get_id())) {

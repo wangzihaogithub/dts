@@ -96,47 +96,9 @@ public interface ESTemplate extends AutoCloseable {
 
     int bulk(BulkRequestList bulkRequestList);
 
-    Object getValFromRS(ESMapping mapping, Map<String, Object> row, String fieldName,
-                        String columnName, Map<String, Object> data);
-
-    Object getESDataFromRS(ESMapping mapping, Map<String, Object> row, Map<String, Object> dmlOld,
-                           Map<String, Object> esFieldData,
-                           Map<String, Object> data);
-
-    Object getESDataFromRS(ESMapping mapping, Map<String, Object> row,
-                           Map<String, Object> esFieldData, Map<String, Object> data);
-
-    Object getIdValFromRS(ESMapping mapping, Map<String, Object> row);
-
-    /**
-     * 转换类型
-     *
-     * @param esMapping       es映射关系
-     * @param parentFieldName 父字段
-     * @param theConvertMap   需要转换的数据
-     */
-    void parseObjectFieldIfNeed(ESMapping esMapping, String parentFieldName,
-                                Map<String, Object> theConvertMap);
-
-    Object getValFromData(ESMapping mapping, Map<String, Object> dmlData, String fieldName, String columnName);
-
-    Object getESDataFromDmlData(ESMapping mapping, Map<String, Object> dmlData,
-                                Map<String, Object> esFieldData);
-
-    Object getESDataFromDmlData(ESMapping mapping, Map<String, Object> dmlData, Map<String, Object> dmlOld,
-                                Map<String, Object> esFieldData, String tableName);
-
     BulkRequestList newBulkRequestList(BulkPriorityEnum priorityEnum);
 
-    Object parseObjectFieldFlatValueTypeCopyMap(List<Map<String, Object>> rowList,
-                                                ESMapping esMapping,
-                                                ESSyncConfig.ObjectField objectField,
-                                                String parentFieldName);
-
-    List<Object> parseObjectFieldFlatValueTypeCopyList(List<Map<String, Object>> rowList,
-                                                       ESMapping esMapping,
-                                                       ESSyncConfig.ObjectField objectField,
-                                                       String parentFieldName);
+    ESFieldTypesCache getEsType(ESMapping mapping);
 
     interface BulkRequestList {
         ESBulkRequest.ESBulkResponse add(ESBulkRequest.ESRequest request);

@@ -233,7 +233,7 @@ public class IntESETLService {
                                         if (updateIdList.size() < maxSendMessageSize) {
                                             updateIdList.add(id);
                                         }
-                                        Map<String, Object> esUpdateData = ESSyncUtil.parseObjectFieldIfNeedCopyMap(db, esTemplate, esMapping, null, rowChangeList);
+                                        Map<String, Object> esUpdateData = EsGetterUtil.mysql2EsTypeAndObjectFieldIfNeedCopyMap(db, esTemplate, esMapping, null, rowChangeList);
                                         esTemplate.update(esMapping, id, esUpdateData, null);
                                     }
                                 } else {
@@ -411,7 +411,7 @@ public class IntESETLService {
                                     if (updateIdList.size() < maxSendMessageSize) {
                                         updateIdList.add(id);
                                     }
-                                    Object esUpdateData = ESSyncUtil.parseObjectFieldIfNeed(objectField, mysqlData, esTemplate, esMapping);
+                                    Object esUpdateData = EsGetterUtil.mysql2EsTypeAndObjectFieldIfNeed(objectField, mysqlData, esTemplate, esMapping);
                                     esTemplate.update(esMapping, field, id, Collections.singletonMap(objectField.getFieldName(), esUpdateData), null);
                                     if (++uncommit >= 35) {
                                         uncommit = 0;
