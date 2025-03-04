@@ -56,7 +56,7 @@ public class ESFieldTypesCache {
         return new ESFieldTypesCache(properties);
     }
 
-    public <T> T getProperties(String... keys) {
+    private <T> T getProperties(String... keys) {
         return getProperties(sourceMap, keys);
     }
 

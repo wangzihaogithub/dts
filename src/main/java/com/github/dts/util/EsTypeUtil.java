@@ -29,7 +29,7 @@ public class EsTypeUtil {
         for (Map.Entry<String, Object> entry : mysqlData.entrySet()) {
             String k = entry.getKey();
             Object val = entry.getValue();
-            ESFieldTypesCache esType = esFieldType.getField(k);
+            ESFieldTypesCache esType = esFieldType == null ? null : esFieldType.getField(k);
             Object res = mysql2EsType(mapping, mysqlData, val, k, esType, null);
             result.put(k, res);
         }
@@ -47,7 +47,7 @@ public class EsTypeUtil {
             String key = entry.getKey();
             Object valueCast;
             if (cast) {
-                valueCast = mysql2EsType(mapping, mysqlValueGetter, value, key, esTypes.getField(key), fieldName);
+                valueCast = mysql2EsType(mapping, mysqlValueGetter, value, key, esTypes == null ? null : esTypes.getField(key), fieldName);
             } else {
                 valueCast = value;
             }
