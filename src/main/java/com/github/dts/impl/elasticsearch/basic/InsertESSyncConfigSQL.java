@@ -15,19 +15,17 @@ public class InsertESSyncConfigSQL extends ESSyncConfigSQL {
         super(sql, config, dml, data, null, bulkRequestList, index, esTemplate);
     }
 
-    private static Object putAllAndMysql2EsType(ESMapping mapping, Map<String, Object> row,
-                                                Map<String, Object> esFieldData, Map<String, Object> data, ESTemplate esTemplate) {
+    private static Object putAll(ESMapping mapping, Map<String, Object> row,
+                                 Map<String, Object> mysqlData) {
         SchemaItem schemaItem = mapping.getSchemaItem();
-        Object resultIdVal = EsGetterUtil.invokeGetterValue(mapping, row);
-        ESFieldTypesCache esType = esTemplate.getEsType(mapping);
+        Object resultIdVal = EsGetterUtil.invokeGetterId(mapping, row);
         for (SchemaItem.FieldItem fieldItem : schemaItem.getSelectFields().values()) {
             String fieldName = fieldItem.getFieldName();
-
-            Object value = EsTypeUtil.mysql2EsType(mapping, row, row.get(fieldName), fieldName, esType, null);
+            Object value = row.get(fieldName);
             if (!mapping.isWriteNull() && value == null) {
                 continue;
             }
-            esFieldData.put(fieldName, value);
+            mysqlData.put(fieldName, value);
         }
         return resultIdVal;
     }
@@ -37,15 +35,14 @@ public class InsertESSyncConfigSQL extends ESSyncConfigSQL {
         ESSyncConfig config = getConfig();
         ESMapping mapping = config.getEsMapping();
         ESTemplate esTemplate = getEsTemplate();
-        Map<String, Object> data = getData();
         ESTemplate.BulkRequestList bulkRequestList = getBulkRequestList();
 
         getDependent().setEffect(rowList.isEmpty() ? Boolean.FALSE : Boolean.TRUE);
         for (Map<String, Object> row : rowList) {
-            Map<String, Object> esFieldData = new LinkedHashMap<>();
-            Object idVal = putAllAndMysql2EsType(mapping, row, esFieldData, data, esTemplate);
+            Map<String, Object> mysqlData = new LinkedHashMap<>();
+            Object idVal = putAll(mapping, row, mysqlData);
 
-            esTemplate.insert(mapping, idVal, esFieldData, bulkRequestList);
+            esTemplate.insert(mapping, idVal, mysqlData, bulkRequestList);
         }
     }
 

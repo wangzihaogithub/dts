@@ -340,12 +340,12 @@ public class ESSyncUtil {
     public static boolean equalsObjectFieldRowDataValue(Object mysql, Object es, ESSyncConfig.ObjectField objectField, Map<String, Object> mysqlRowData, Map<String, Object> esRowData) {
         ESSyncConfig.ObjectField.Type type = objectField.getType();
         switch (type) {
-            case OBJECT_FLAT_SQL:
-            case OBJECT_SQL: {
+            case OBJECT_FLAT_SQL://equalsObjectFieldRowDataValue
+            case OBJECT_SQL: {//equalsObjectFieldRowDataValue
                 return es != null;
             }
-            case ARRAY_FLAT_SQL:
-            case ARRAY_SQL: {
+            case ARRAY_FLAT_SQL://equalsObjectFieldRowDataValue
+            case ARRAY_SQL: {//equalsObjectFieldRowDataValue
                 return es != null;
             }
             case STATIC_METHOD: {

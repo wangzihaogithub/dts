@@ -3,7 +3,6 @@ package com.github.dts.impl.elasticsearch.basic;
 import com.github.dts.impl.elasticsearch.nested.SQL;
 import com.github.dts.util.*;
 import com.github.dts.util.ESSyncConfig.ESMapping;
-import com.github.dts.util.ColumnItem;
 import com.github.dts.util.SchemaItem.FieldItem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,7 +36,7 @@ public class SubTableSimpleFieldESSyncConfigSQL extends ESSyncConfigSQL {
         boolean onceFlag = false;
         for (Map<String, Object> row : rowList) {
             onceFlag = true;
-            Map<String, Object> esFieldData = new LinkedHashMap<>();
+            Map<String, Object> mysqlValueMap = new LinkedHashMap<>();
 
             for (FieldItem fieldItem : tableItem.getRelationSelectFieldItems()) {
                 if (old != null) {
@@ -47,9 +46,8 @@ public class SubTableSimpleFieldESSyncConfigSQL extends ESSyncConfigSQL {
                             if (fieldItem1.equalsField(columnItem0.getColumnName())) {
                                 for (ColumnItem columnItem : fieldItem1.getColumnItems()) {
                                     if (old.containsKey(columnItem.getColumnName())) {
-                                        Object val = EsGetterUtil.getValueAndMysql2EsType(mapping, row, fieldItem.getFieldName(), fieldItem.getColumnName(),
-                                                data,esTemplate);
-                                        esFieldData.put(fieldItem.getFieldName(), val);
+                                        Object val = row.get(fieldItem.getFieldName());
+                                        mysqlValueMap.put(fieldItem.getFieldName(), val);
                                         break out;
                                     }
                                 }
@@ -57,9 +55,8 @@ public class SubTableSimpleFieldESSyncConfigSQL extends ESSyncConfigSQL {
                         }
                     }
                 } else {
-                    Object val = EsGetterUtil.getValueAndMysql2EsType(mapping, row, fieldItem.getFieldName(), fieldItem.getColumnName(),
-                            data,esTemplate);
-                    esFieldData.put(fieldItem.getFieldName(), val);
+                    Object val = row.get(fieldItem.getFieldName());
+                    mysqlValueMap.put(fieldItem.getFieldName(), val);
                 }
             }
 
@@ -67,8 +64,7 @@ public class SubTableSimpleFieldESSyncConfigSQL extends ESSyncConfigSQL {
             for (Map.Entry<FieldItem, List<FieldItem>> entry : tableItem.getRelationTableFields().entrySet()) {
                 for (FieldItem fieldItem : entry.getValue()) {
                     if (fieldItem.getColumnItems().size() == 1) {
-                        Object value = EsGetterUtil.getValueAndMysql2EsType(mapping, row, fieldItem.getFieldName(), entry.getKey().getColumnName(),
-                                data,esTemplate);
+                        Object value = row.get(fieldItem.getFieldName());
                         String fieldName = fieldItem.getFieldName();
                         // 判断是否是主键
                         if (fieldName.equals(mapping.get_id())) {
@@ -79,9 +75,9 @@ public class SubTableSimpleFieldESSyncConfigSQL extends ESSyncConfigSQL {
                 }
             }
 
-            if (!paramsTmp.isEmpty() && !esFieldData.isEmpty()) {
+            if (!paramsTmp.isEmpty() && !mysqlValueMap.isEmpty()) {
                 eff = Boolean.TRUE;
-                esTemplate.updateByQuery(config, paramsTmp, esFieldData, bulkRequestList);
+                esTemplate.updateByQuery(config, paramsTmp, mysqlValueMap, bulkRequestList);//putAll getFieldName
             }
         }
         getDependent().setEffect(eff);
@@ -91,7 +87,7 @@ public class SubTableSimpleFieldESSyncConfigSQL extends ESSyncConfigSQL {
                     config.getDestination(),
                     dml.getTable(),
                     mapping.get_index(),
-                    toString(), JsonUtil.toJson(data), JsonUtil.toJson(old));
+                    toString(), data, old);
         }
     }
 }

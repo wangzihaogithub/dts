@@ -26,10 +26,10 @@ public class UpdateESSyncConfigSQL extends ESSyncConfigSQL {
 
         Boolean eff = Boolean.FALSE;
         for (Map<String, Object> row : rowList) {
-            Map<String, Object> esFieldData = new LinkedHashMap<>();
-            Object idVal = getESDataFromRS(mapping, row, old, esFieldData, data, esTemplate);
-            if (idVal != null && !"".equals(idVal) && !esFieldData.isEmpty()) {
-                esTemplate.update(mapping, idVal, esFieldData, bulkRequestList);
+            Map<String, Object> mysqlData = new LinkedHashMap<>();
+            Object idVal = putAll(mapping, row, old, mysqlData, data);
+            if (!ESTemplate.isEmptyUpdate( idVal ,mysqlData)) {
+                esTemplate.update(mapping, idVal, mysqlData, bulkRequestList);//putAll getFieldName
                 eff = Boolean.TRUE;
             }
         }
@@ -37,26 +37,18 @@ public class UpdateESSyncConfigSQL extends ESSyncConfigSQL {
     }
 
 
-    public Object getESDataFromRS(ESMapping mapping,
-                                  Map<String, Object> row, Map<String, Object> dmlOld,
-                                  Map<String, Object> esFieldData,
-                                  Map<String, Object> data,
-                                  ESTemplate esTemplate) {
+    public Object putAll(ESMapping mapping,
+                         Map<String, Object> row, Map<String, Object> dmlOld,
+                         Map<String, Object> mysqlData,
+                         Map<String, Object> data) {
         SchemaItem schemaItem = mapping.getSchemaItem();
-        Object resultIdVal = EsGetterUtil.invokeGetterValue(mapping, row);
+        Object resultIdVal = EsGetterUtil.invokeGetterId(mapping, row);
         for (SchemaItem.FieldItem fieldItem : schemaItem.getSelectFields().values()) {
             String fieldName = fieldItem.getFieldName();
-            String columnName = fieldItem.getColumnName();
 
             if (fieldItem.containsColumnName(dmlOld.keySet())) {
-                Object newValue = fieldItem.getValue(data);
-                Object oldValue = fieldItem.getValue(dmlOld);
-                if (!mapping.isWriteNull() && newValue == null && oldValue == null) {
-                    continue;
-                }
-                esFieldData.put(fieldName,
-                        EsGetterUtil.getValueAndMysql2EsType(mapping, row, fieldName,
-                                columnName, data,esTemplate));
+                Object newValue = row.get(fieldName);
+                mysqlData.put(fieldName, newValue);
             }
         }
 

@@ -449,7 +449,7 @@ public class KafkaCanalConnector implements CanalConnector {
 
         @Override
         public Dml deserialize(String topic1, byte[] payload) {
-            Dml dml = JsonUtil.toBean(new String(payload, UTF_8), Dml.class);
+            Dml dml = JsonUtil.toBeanThrows(new String(payload, UTF_8), Dml.class);
 
             List<Map<String, Object>> dataList = dml.getData();
             List<Map<String, Object>> oldList = dml.getOld();

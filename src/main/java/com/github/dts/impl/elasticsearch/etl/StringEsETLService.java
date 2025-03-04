@@ -313,8 +313,8 @@ public class StringEsETLService {
                                         if (updateIdList.size() < maxSendMessageSize) {
                                             updateIdList.add(id);
                                         }
-                                        Map<String, Object> esUpdateData = EsGetterUtil.mysql2EsTypeAndObjectFieldIfNeedCopyMap(db, esTemplate, esMapping, null, rowChangeList);
-                                        esTemplate.update(esMapping, id, esUpdateData, null);
+                                        Map<String, Object> esUpdateData = EsGetterUtil.copyRowChangeMap(db, rowChangeList);
+                                        esTemplate.update(esMapping, id, esUpdateData, null);//updateEsDiff
                                     }
                                 } else {
                                     esTemplate.delete(esMapping, id, null);
@@ -556,8 +556,9 @@ public class StringEsETLService {
                                     if (updateIdList.size() < maxSendMessageSize) {
                                         updateIdList.add(id);
                                     }
-                                    Object esUpdateData = EsGetterUtil.mysql2EsTypeAndObjectFieldIfNeed(objectField, mysqlData, esTemplate, esMapping);
-                                    esTemplate.update(esMapping, field, id, Collections.singletonMap(objectField.getFieldName(), esUpdateData), null);
+                                    Object mysqlValue = EsGetterUtil.getSqlObjectMysqlValue(objectField, mysqlData, esTemplate, esMapping);
+                                    Map<String, Object> objectMysql = Collections.singletonMap(objectField.getFieldName(), mysqlValue);
+                                    esTemplate.update(esMapping, id, objectMysql, null);//updateEsNestedDiff
                                     if (++uncommit >= 35) {
                                         uncommit = 0;
                                         commit.set(false);
@@ -806,7 +807,7 @@ public class StringEsETLService {
         List<String> result = new ArrayList<>();
         for (Map<String, Object> data : dml.getData()) {
             Object id = data.get(pkName);
-            result.add(id == null || "".equals(id) ? null : id.toString());
+            result.add(ESTemplate.isEmptyPk(id) ? null : id.toString());
         }
         return result;
     }

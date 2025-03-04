@@ -22,7 +22,7 @@ import java.util.function.Function;
  * ES 操作模板
  */
 public class DefaultESTemplate implements ESTemplate {
-    private static final Logger logger = LoggerFactory.getLogger(DefaultESTemplate.class);
+    private static final Logger log = LoggerFactory.getLogger(DefaultESTemplate.class);
     private static final ConcurrentMap<String, ESFieldTypesCache> esFieldTypes = new ConcurrentHashMap<>(2);
     private final ESConnection esConnection;
     private final ESConnection.ESBulkRequest esBulkRequest;
@@ -54,7 +54,7 @@ public class DefaultESTemplate implements ESTemplate {
                 return fun.apply(rs);
             }
         } catch (Exception e) {
-            logger.error("sqlRs has error, sql: {} ,异常信息：{}", sql, e.toString());
+            log.error("sqlRs has error, sql: {} ,异常信息：{}", sql, e.toString());
             Util.sneakyThrows(e);
             return null;
         }
@@ -68,22 +68,6 @@ public class DefaultESTemplate implements ESTemplate {
         }
     }
 
-    private static Map<String, Object> copyAndMysql2EsType(ESSyncConfig.ESMapping mapping, Map<String, Object> mysqlData, ESFieldTypesCache esFieldType) {
-        if (mysqlData == null) {
-            return null;
-        }
-        if (mysqlData.isEmpty()) {
-            return new LinkedHashMap<>();
-        }
-        Map<String, Object> result = new LinkedHashMap<>();
-        for (Map.Entry<String, Object> entry : mysqlData.entrySet()) {
-            String k = entry.getKey();
-            Object val = entry.getValue();
-            Object res = EsTypeUtil.mysql2EsType(mapping, mysqlData, val, k, esFieldType, null);
-            result.put(k, res);
-        }
-        return Util.trimToSize(result, LinkedHashMap::new);
-    }
 
     private boolean isMaxBatchSize(int size) {
         return esConnection.isMaxBatchSize(size);
@@ -92,58 +76,43 @@ public class DefaultESTemplate implements ESTemplate {
     /**
      * 插入数据
      *
-     * @param mapping     配置对象
-     * @param pkVal       主键值
-     * @param esFieldData 数据Map
+     * @param mapping   配置对象
+     * @param pkVal     主键值
+     * @param mysqlData 数据Map
      */
     @Override
-    public ESBulkRequest.ESBulkResponse insert(ESMapping mapping, Object pkVal, Map<String, Object> esFieldData, BulkRequestList bulkRequestList) {
-        if (pkVal == null || "".equals(pkVal)) {
+    public ESBulkRequest.ESBulkResponse insert(ESMapping mapping, Object pkVal, Map<String, Object> mysqlData, BulkRequestList bulkRequestList) {
+        if (ESTemplate.isEmptyPk(pkVal)) {
             return ESConnection.EMPTY_RESPONSE;
         }
-        setterIndexUpdatedTime(mapping, esFieldData);
+        Map<String, Object> temp = new LinkedHashMap<>(mysqlData);
+        setterIndexUpdatedTime(mapping, temp);
 
-        esFieldData = copyAndMysql2EsType(mapping, esFieldData, getEsType(mapping));
+        Map<String, Object> esMap = EsTypeUtil.mysql2EsType(mapping, temp, getEsType(mapping));//insert
         ESBulkRequest.ESUpdateRequest updateRequest = new ESConnection.ESUpdateRequestImpl(mapping.get_index(),
-                pkVal.toString(), esFieldData, true, mapping.getRetryOnConflict());
+                pkVal.toString(), esMap, true, mapping.getRetryOnConflict());
         return addRequest(updateRequest, bulkRequestList);
     }
 
     /**
      * 根据主键更新数据
      *
-     * @param mapping     配置对象
-     * @param pkVal       主键值
-     * @param esFieldData 数据Map
+     * @param mapping         配置对象
+     * @param pkVal           主键值
+     * @param mysqlValue      数据Map
+     * @param bulkRequestList bulkRequestList
      */
-
     @Override
-    public void update(ESMapping mapping, Object pkVal, Map<String, Object> esFieldData, BulkRequestList bulkRequestList) {
-        update(mapping, null, pkVal, esFieldData, bulkRequestList);
-    }
-
-    @Override
-    public void update(ESMapping mapping, String parentFieldName, Object pkVal, Map<String, Object> esFieldData, BulkRequestList bulkRequestList) {
-        if (pkVal == null || "".equals(pkVal)) {
+    public void update(ESMapping mapping, Object pkVal, Map<String, Object> mysqlValue, BulkRequestList bulkRequestList) {
+        if (ESTemplate.isEmptyUpdate(pkVal, mysqlValue)) {
             return;
         }
-        if (esFieldData.isEmpty()) {
-            return;
-        }
-        Map<String, Object> esFieldDataTmp = new LinkedHashMap<>();
-        setterIndexUpdatedTime(mapping, esFieldDataTmp);
-        Map<String, Object> esFieldDataConvert;
-        if (parentFieldName == null) {
-            esFieldDataTmp.putAll(esFieldData);
-            esFieldDataConvert = copyAndMysql2EsType(mapping, esFieldDataTmp, getEsType(mapping));
-        } else {
-            esFieldDataConvert = copyAndMysql2EsType(mapping, esFieldDataTmp, getEsType(mapping));
-            if (esFieldDataConvert != null) {
-                esFieldDataConvert = new LinkedHashMap<>(esFieldDataConvert);
-                esFieldDataConvert.putAll(esFieldData);
-            }
-        }
-        append4Update(mapping, pkVal, esFieldDataConvert, bulkRequestList);
+        Map<String, Object> temp = new LinkedHashMap<>();
+        setterIndexUpdatedTime(mapping, temp);
+        temp.putAll(mysqlValue);
+
+        Map<String, Object> esMap = EsTypeUtil.mysql2EsType(mapping, temp, getEsType(mapping));//update
+        append4Update(mapping, pkVal, esMap, bulkRequestList);
     }
 
     private void setterIndexUpdatedTime(ESMapping mapping, Map<String, Object> esFieldData) {
@@ -157,55 +126,47 @@ public class DefaultESTemplate implements ESTemplate {
         return new BulkRequestListImpl(bulkRequestListAddAfter, priorityEnum, new ConcurrentHashMap<>());
     }
 
-    /**
-     * update by query
-     *
-     * @param config      配置对象
-     * @param paramsTmp   sql查询条件
-     * @param esFieldData 数据Map
-     */
     @Override
-    public void updateByQuery(ESSyncConfig config, Map<String, Object> paramsTmp, Map<String, Object> esFieldData, BulkRequestList bulkRequestList) {
+    public void updateByQuery(ESSyncConfig config, Map<String, Object> paramsTmp,
+                              Map<String, Object> mysqlValueMap, BulkRequestList bulkRequestList) {
         if (paramsTmp.isEmpty()) {
             return;
         }
-        if (esFieldData.isEmpty()) {
+        if (mysqlValueMap.isEmpty()) {
             return;
         }
         if (paramsTmp.containsKey(ESSyncConfig.ES_ID_FIELD_NAME)) {
-            update(config.getEsMapping(), paramsTmp.get(ESSyncConfig.ES_ID_FIELD_NAME), esFieldData, bulkRequestList);
-        } else {
-            ESMapping mapping = config.getEsMapping();
-            setterIndexUpdatedTime(mapping, esFieldData);
+            update(config.getEsMapping(), paramsTmp.get(ESSyncConfig.ES_ID_FIELD_NAME), mysqlValueMap, bulkRequestList);//内部调用
+            return;
+        }
 
-            Map<String, Object> esFieldDataTmp = copyAndMysql2EsType(mapping, esFieldData, getEsType(mapping));
+        ESMapping mapping = config.getEsMapping();
+        Map<String, Object> temp = new LinkedHashMap<>(mysqlValueMap);
+        setterIndexUpdatedTime(mapping, temp);
 
-            // 查询sql批量更新
-            DataSource ds = CanalConfig.DatasourceConfig.getDataSource(config.getDataSourceKey());
-            StringBuilder sql = new StringBuilder("SELECT * FROM (" + mapping.getSql() + ") _v WHERE ");
-            paramsTmp.forEach(
-                    (fieldName, value) -> sql.append("_v.").append(fieldName).append("=")
-                            .append(value instanceof Number ? value : "'" + value + "'")
-                            .append(" AND "));
-            int len = sql.length();
-            sql.delete(len - 4, len);
-            Integer syncCount = (Integer) sqlRS(ds, sql.toString(), rs -> {
-                int count = 0;
-                try {
-                    while (rs.next()) {
-                        Object idVal = getIdValFromRS(mapping, rs);
-                        append4Update(mapping, idVal, new LinkedHashMap<>(esFieldDataTmp), bulkRequestList);
-                        count++;
-                    }
-                } catch (Exception e) {
-                    Util.sneakyThrows(e);
-                    return null;
+        Map<String, Object> esMap = EsTypeUtil.mysql2EsType(mapping, temp, getEsType(mapping));//updateByQuery
+
+        // 查询sql批量更新
+        DataSource ds = CanalConfig.DatasourceConfig.getDataSource(config.getDataSourceKey());
+        StringBuilder sql = new StringBuilder("SELECT * FROM (" + mapping.getSql() + ") _v WHERE ");
+        paramsTmp.forEach((fieldName, value) -> sql.append("_v.").append(fieldName).append("=")
+                .append(value instanceof Number ? value : "'" + value + "'")
+                .append(" AND "));
+        int len = sql.length();
+        sql.delete(len - 4, len);
+        String sqlString = sql.toString();
+        try (Connection conn = ds.getConnection();
+             Statement stmt = conn.createStatement(ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);) {
+            stmt.setFetchSize(Integer.MIN_VALUE);
+            try (ResultSet rs = stmt.executeQuery(sqlString)) {
+                while (rs.next()) {
+                    Object idVal = getIdValFromRS(mapping, rs);
+                    append4Update(mapping, idVal, new LinkedHashMap<>(esMap), bulkRequestList);
                 }
-                return count;
-            });
-            if (logger.isTraceEnabled()) {
-                logger.trace("Update ES by query affected {} records", syncCount);
             }
+        } catch (Exception e) {
+            log.error("sqlRs has error, sql: {} ,异常信息：{}", sqlString, e.toString());
+            Util.sneakyThrows(e);
         }
     }
 
@@ -338,7 +299,7 @@ public class DefaultESTemplate implements ESTemplate {
      */
     @Override
     public ESBulkRequest.ESBulkResponse delete(ESMapping mapping, Object pkVal, BulkRequestList bulkRequestList) {
-        if (pkVal == null || "".equals(pkVal)) {
+        if (ESTemplate.isEmptyPk(pkVal)) {
             return ESConnection.EMPTY_RESPONSE;
         }
         ESConnection.ESDeleteRequestImpl esDeleteRequest = new ESConnection.ESDeleteRequestImpl(mapping.get_index(),
@@ -359,8 +320,8 @@ public class DefaultESTemplate implements ESTemplate {
         long timestamp = System.currentTimeMillis();
         ESBulkRequest.ESBulkResponse response = esBulkRequest.bulk();
         if (!response.isEmpty()) {
-            if (logger.isInfoEnabled()) {
-                logger.info("commit size={}, {}/ms, bytes={}kb, history={}mb, {}", response.size(), System.currentTimeMillis() - timestamp,
+            if (log.isInfoEnabled()) {
+                log.info("commit size={}, {}/ms, bytes={}kb, history={}mb, {}", response.size(), System.currentTimeMillis() - timestamp,
                         Math.round((double) response.requestEstimatedSizeInBytes() / 1024),
                         Math.round((double) response.requestTotalEstimatedSizeInBytes() / 1024 / 1024),
                         Arrays.toString(response.requestBytesToString())
@@ -456,12 +417,10 @@ public class DefaultESTemplate implements ESTemplate {
         } catch (SQLException e) {
             index = resultSet.findColumn(columnName);
         }
-        Object value = resultSet.getObject(index);
-        return EsTypeUtil.mysql2EsType(mapping, Collections.singletonMap(fieldName, value), value, fieldName, getEsType(mapping), null);
+        return resultSet.getObject(index);
     }
 
-    @Override
-    public ESFieldTypesCache getEsType(ESMapping mapping) {
+    private ESFieldTypesCache getEsType(ESMapping mapping) {
         String index = mapping.get_index();
         long timeout = mapping.getMappingMetadataTimeout();
         String esUri = String.join(",", esConnection.getElasticsearchUri());
@@ -488,7 +447,7 @@ public class DefaultESTemplate implements ESTemplate {
                             if (mappingMetaData != null) {
                                 esFieldTypes.put(cacheKey, new ESFieldTypesCache(mappingMetaData));
                             } else if (throwable != null) {
-                                logger.warn("esConnection.getMapping error {}", throwable.toString(), throwable);
+                                log.warn("esConnection.getMapping error {}", throwable.toString(), throwable);
                             }
                         });
                     }

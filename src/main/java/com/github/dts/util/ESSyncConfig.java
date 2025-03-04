@@ -8,6 +8,7 @@ import org.springframework.util.AntPathMatcher;
 
 import java.io.File;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
@@ -450,6 +451,9 @@ public class ESSyncConfig {
          * @see ESSyncServiceListener#onSyncAfter(List, ESAdapter, ESTemplate.BulkRequestList)
          */
         public Object parse(Object val, ESMapping mapping, Map<String, Object> row) {
+            if (val instanceof CompletableFuture) {
+                return val;
+            }
             switch (type) {
                 case ARRAY: {
                     if (val == null) {
@@ -463,7 +467,12 @@ public class ESSyncConfig {
                         return null;
                     }
                     String[] values = varStr.split(paramArray.split);
-                    return Arrays.asList(values);
+                    Class<?> classType = paramArray.classType;
+                    if (classType == String.class) {
+                        return Arrays.asList(values);
+                    } else {
+                        return Arrays.stream(values).map(e -> TypeUtil.cast(e, classType)).collect(Collectors.toList());
+                    }
                 }
                 case OBJECT: {
                     if (val == null) {
@@ -472,7 +481,7 @@ public class ESSyncConfig {
                     if (val instanceof Map) {
                         return val;
                     }
-                    return JsonUtil.toMap(val.toString(), true);
+                    return JsonUtil.toMap(val.toString());
                 }
                 case BOOLEAN: {
                     if (val == null) {
@@ -512,10 +521,10 @@ public class ESSyncConfig {
                     }
                     return paramStaticMethod.staticMethodAccessor.apply(new ESStaticMethodParam(val, mapping, fieldName, parentFieldName));
                 }
-                case ARRAY_SQL:
-                case OBJECT_SQL:
-                case ARRAY_FLAT_SQL:
-                case OBJECT_FLAT_SQL:
+                case ARRAY_SQL://内部调用
+                case OBJECT_SQL://内部调用
+                case ARRAY_FLAT_SQL://内部调用
+                case OBJECT_FLAT_SQL://内部调用
                 default: {
                     return val;
                 }
@@ -621,11 +630,11 @@ public class ESSyncConfig {
             }
 
             public boolean isArraySqlType() {
-                return this == Type.ARRAY_SQL || this == Type.ARRAY_FLAT_SQL;
+                return this == Type.ARRAY_SQL || this == Type.ARRAY_FLAT_SQL;//内部调用
             }
 
             public boolean isFlatSqlType() {
-                return this == Type.OBJECT_FLAT_SQL || this == Type.ARRAY_FLAT_SQL;
+                return this == Type.OBJECT_FLAT_SQL || this == Type.ARRAY_FLAT_SQL;//内部调用
             }
 
             public boolean isLlmVector() {
@@ -639,6 +648,15 @@ public class ESSyncConfig {
 
         public static class ParamArray {
             private String split;
+            private Class<?> classType = String.class;
+
+            public Class<?> getClassType() {
+                return classType;
+            }
+
+            public void setClassType(Class<?> classType) {
+                this.classType = classType;
+            }
 
             public String getSplit() {
                 return split;

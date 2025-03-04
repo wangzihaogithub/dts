@@ -233,8 +233,8 @@ public class IntESETLService {
                                         if (updateIdList.size() < maxSendMessageSize) {
                                             updateIdList.add(id);
                                         }
-                                        Map<String, Object> esUpdateData = EsGetterUtil.mysql2EsTypeAndObjectFieldIfNeedCopyMap(db, esTemplate, esMapping, null, rowChangeList);
-                                        esTemplate.update(esMapping, id, esUpdateData, null);
+                                        Map<String, Object> mysqlValue = EsGetterUtil.copyRowChangeMap(db, rowChangeList);
+                                        esTemplate.update(esMapping, id, mysqlValue, null);//updateEsDiff
                                     }
                                 } else {
                                     esTemplate.delete(esMapping, id, null);
@@ -411,8 +411,9 @@ public class IntESETLService {
                                     if (updateIdList.size() < maxSendMessageSize) {
                                         updateIdList.add(id);
                                     }
-                                    Object esUpdateData = EsGetterUtil.mysql2EsTypeAndObjectFieldIfNeed(objectField, mysqlData, esTemplate, esMapping);
-                                    esTemplate.update(esMapping, field, id, Collections.singletonMap(objectField.getFieldName(), esUpdateData), null);
+                                    Object mysqlValue = EsGetterUtil.getSqlObjectMysqlValue(objectField, mysqlData, esTemplate, esMapping);
+                                    Map<String, Object> objectMysql = Collections.singletonMap(objectField.getFieldName(), mysqlValue);
+                                    esTemplate.update(esMapping, id, objectMysql, null);//updateEsNestedDiff
                                     if (++uncommit >= 35) {
                                         uncommit = 0;
                                         commit.set(false);
@@ -873,7 +874,7 @@ public class IntESETLService {
         List<Long> ids = new ArrayList<>(data.size());
         for (Map<String, Object> row : data) {
             Object o = row.get(pkName);
-            if (o == null) {
+            if (ESTemplate.isEmptyPk(o)) {
                 continue;
             }
             long id;

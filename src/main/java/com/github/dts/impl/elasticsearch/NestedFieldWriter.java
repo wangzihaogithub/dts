@@ -54,9 +54,9 @@ public class NestedFieldWriter {
         if (!objectField.isSqlType()) {
             return;
         }
-        Object esUpdateData = EsGetterUtil.mysql2EsTypeAndObjectFieldIfNeed(objectField, rowList, esTemplate, esMapping);
-        esTemplate.update(esMapping, objectField.getFieldName(), pkValue,
-                Collections.singletonMap(objectField.getFieldName(), esUpdateData), bulkRequestList);
+        Object mysqlValue = EsGetterUtil.getSqlObjectMysqlValue(objectField, rowList, esTemplate, esMapping);
+        Map<String, Object> mysqlData = Collections.singletonMap(objectField.getFieldName(), mysqlValue);
+        esTemplate.update(esMapping, pkValue, mysqlData, bulkRequestList);//Nested DML
     }
 
     /**

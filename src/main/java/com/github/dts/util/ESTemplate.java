@@ -7,6 +7,20 @@ import java.util.concurrent.CompletableFuture;
 
 public interface ESTemplate extends AutoCloseable {
 
+    public static boolean isEmptyPk(Object pkVal) {
+        return pkVal == null || "".equals(pkVal);
+    }
+
+    public static boolean isEmptyUpdate(Object pkVal, Map<String, Object> mysqlValue) {
+        if (isEmptyPk(pkVal)) {
+            return true;
+        }
+        if (mysqlValue == null || mysqlValue.isEmpty()) {
+            return true;
+        }
+        return false;
+    }
+
     static CommitListener merge(CommitListener listener1, CommitListener listener2) {
         if (listener1 == listener2) {
             return listener1;
@@ -25,11 +39,11 @@ public interface ESTemplate extends AutoCloseable {
      *
      * @param mapping         配置对象
      * @param pkVal           主键值
-     * @param esFieldData     数据Map
+     * @param mysqlData       数据Map
      * @param bulkRequestList bulkRequestList
      * @return ESBulkResponse
      */
-    ESBulkRequest.ESBulkResponse insert(ESMapping mapping, Object pkVal, Map<String, Object> esFieldData, BulkRequestList bulkRequestList);
+    ESBulkRequest.ESBulkResponse insert(ESMapping mapping, Object pkVal, Map<String, Object> mysqlData, BulkRequestList bulkRequestList);
 
     /**
      * 根据主键更新数据
@@ -40,8 +54,6 @@ public interface ESTemplate extends AutoCloseable {
      * @param bulkRequestList bulkRequestList
      */
     void update(ESMapping mapping, Object pkVal, Map<String, Object> esFieldData, BulkRequestList bulkRequestList);
-
-    void update(ESMapping mapping, String parentFieldName, Object pkVal, Map<String, Object> esFieldData, BulkRequestList bulkRequestList);
 
     /**
      * update by query
@@ -99,8 +111,6 @@ public interface ESTemplate extends AutoCloseable {
     int bulk(BulkRequestList bulkRequestList);
 
     BulkRequestList newBulkRequestList(BulkPriorityEnum priorityEnum);
-
-    ESFieldTypesCache getEsType(ESMapping mapping);
 
     interface BulkRequestList {
         ESBulkRequest.ESBulkResponse add(ESBulkRequest.ESRequest request);

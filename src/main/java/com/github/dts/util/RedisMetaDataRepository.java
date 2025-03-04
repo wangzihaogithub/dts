@@ -45,9 +45,9 @@ public class RedisMetaDataRepository implements MetaDataRepository {
             if (bytes == null || bytes.length == 0) {
                 return null;
             }
-            Data data = JsonUtil.toBean(new String(bytes, UTF_8), Data.class);
+            Data data = JsonUtil.toBeanThrows(new String(bytes, UTF_8), Data.class);
             Class<T> type = (Class<T>) Class.forName(data.getClassName());
-            return JsonUtil.toBean(data.getValue(), type);
+            return JsonUtil.toBeanThrows(data.getValue(), type);
         } catch (Exception e) {
             log.warn("getCursor fail {}", e.toString(), e);
             return null;

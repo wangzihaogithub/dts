@@ -36,10 +36,10 @@ public class BasicFieldWriter {
         return schemaItem.getMainTable().getTableName().equalsIgnoreCase(table);
     }
 
-    private static Object putAllValueAndMysql2EsType(ESMapping mapping, Map<String, Object> dmlData,
-                                                     Map<String, Object> esFieldData, ESTemplate esTemplate) {
+    private static Object putAll(ESMapping mapping, Map<String, Object> dmlData,
+                                 Map<String, Object> esFieldData) {
         SchemaItem schemaItem = mapping.getSchemaItem();
-        Object resultIdVal = EsGetterUtil.invokeGetterValue(mapping, dmlData);
+        Object resultIdVal = EsGetterUtil.invokeGetterId(mapping, dmlData);
         for (FieldItem fieldItem : schemaItem.getSelectFields().values()) {
             if (fieldItem.getColumnItems().isEmpty()) {
                 continue;
@@ -47,7 +47,7 @@ public class BasicFieldWriter {
             String columnName = fieldItem.getColumnName();
             String fieldName = fieldItem.getFieldName();
 
-            Object value = getColumnValueAndMysql2EsType(mapping, dmlData, fieldName, columnName, esTemplate);
+            Object value = dmlData.get(columnName);
 
             if (!mapping.isWriteNull() && value == null) {
                 continue;
@@ -58,18 +58,17 @@ public class BasicFieldWriter {
         return resultIdVal;
     }
 
-    private static Object putAllValueAndMysql2EsType(ESMapping mapping, Map<String, Object> dmlData, Map<String, Object> dmlOld,
-                                                     Map<String, Object> esFieldData, String tableName, ESTemplate esTemplate) {
+    private static Object putAllColumn(ESMapping mapping, Map<String, Object> dmlData, Map<String, Object> dmlOld,
+                                       Map<String, Object> mysqlData, String tableName) {
         SchemaItem schemaItem = mapping.getSchemaItem();
         List<String> aliases = schemaItem.getTableItemAliases(tableName);
 
-        Object resultIdVal = EsGetterUtil.invokeGetterValue(mapping, dmlData);
+        Object resultIdVal = EsGetterUtil.invokeGetterId(mapping, dmlData);
         for (FieldItem fieldItem : schemaItem.getSelectFields().values()) {
             if (fieldItem.getColumnItems().isEmpty()) {
                 continue;
             }
             String columnName = fieldItem.getColumnName();
-            String fieldName = fieldItem.getFieldName();
 
 
             /*
@@ -84,22 +83,17 @@ public class BasicFieldWriter {
              */
             if (fieldItem.containsOwner(aliases)
                     && fieldItem.containsColumnName(dmlOld.keySet())) {
-                Object newValue = fieldItem.getValue(dmlData);
-                Object oldValue = fieldItem.getValue(dmlOld);
+                Object newValue = dmlData.get(columnName);
+                Object oldValue = dmlOld.get(columnName);
                 if (!mapping.isWriteNull() && newValue == null && oldValue == null) {
                     continue;
                 }
-                esFieldData.put(fieldName,
-                        getColumnValueAndMysql2EsType(mapping, dmlData, fieldName, columnName, esTemplate));
+                String fieldName = fieldItem.getFieldName();
+                mysqlData.put(fieldName, newValue);
             }
         }
 
         return resultIdVal;
-    }
-
-    private static Object getColumnValueAndMysql2EsType(ESMapping mapping, Map<String, Object> dmlData,
-                                                        String fieldName, String columnName, ESTemplate esTemplate) {
-        return EsTypeUtil.mysql2EsType(mapping, dmlData, dmlData.get(columnName), fieldName, esTemplate.getEsType(mapping), null);
     }
 
     public WriteResult writeEsReturnSql(Collection<ESSyncConfig> configList, List<Dml> dmlList, ESTemplate.BulkRequestList bulkRequestList) {
@@ -198,12 +192,12 @@ public class BasicFieldWriter {
                         // 不是子查询
                         if (!tableItem.isSubQuery()) {
                             // ------关联表简单字段插入------
-                            Map<String, Object> esFieldData = new LinkedHashMap<>();
+                            Map<String, Object> mysqlValueMap = new LinkedHashMap<>();
                             for (FieldItem fieldItem : tableItem.getRelationSelectFieldItems()) {
-                                Object value = getColumnValueAndMysql2EsType(config.getEsMapping(), data, fieldItem.getFieldName(), fieldItem.getColumnName(), esTemplate);
-                                esFieldData.put(fieldItem.getFieldName(), value);
+                                Object value = data.get(fieldItem.getColumnName());
+                                mysqlValueMap.put(fieldItem.getFieldName(), value);
                             }
-                            result.updateList.add(joinTableSimpleFieldOperation(config, dml, data, tableItem, esFieldData, index, bulkRequestList));
+                            result.updateList.add(joinTableSimpleFieldOperation(config, dml, data, tableItem, mysqlValueMap, index, bulkRequestList));
                             add = true;
                         } else {
                             // ------关联子表简单字段插入------
@@ -340,14 +334,14 @@ public class BasicFieldWriter {
                         add = true;
                     } else {
                         // ------关联表简单字段更新------
-                        Map<String, Object> esFieldData = new LinkedHashMap<>();
+                        Map<String, Object> mysqlValueMap = new LinkedHashMap<>();
                         for (FieldItem fieldItem : tableItem.getRelationSelectFieldItems()) {
                             if (old.containsKey(fieldItem.getColumnName())) {
-                                Object value = getColumnValueAndMysql2EsType(config.getEsMapping(), data, fieldItem.getFieldName(), fieldItem.getColumnName(), esTemplate);
-                                esFieldData.put(fieldItem.getFieldName(), value);
+                                Object value = data.get(fieldItem.getColumnName());
+                                mysqlValueMap.put(fieldItem.getFieldName(), value);
                             }
                         }
-                        result.updateList.add(joinTableSimpleFieldOperation(config, dml, data, tableItem, esFieldData, index, bulkRequestList));
+                        result.updateList.add(joinTableSimpleFieldOperation(config, dml, data, tableItem, mysqlValueMap, index, bulkRequestList));
                         add = true;
                     }
                 } else {
@@ -388,8 +382,8 @@ public class BasicFieldWriter {
 
             // ------是主表------
             if (isMainTable(schemaItem, dml.getTable())) {
-                Object pkVal = EsGetterUtil.invokeGetterValue(mapping, data);
-                if (pkVal != null && !"".equals(pkVal)) {
+                Object pkVal = EsGetterUtil.invokeGetterId(mapping, data);
+                if (!ESTemplate.isEmptyPk(pkVal)) {
                     esTemplate.delete(mapping, pkVal, bulkRequestList);
                     result.deleteList.add(new SqlDependent(schemaItem, index, dml, Boolean.TRUE));
                     add = true;
@@ -419,11 +413,11 @@ public class BasicFieldWriter {
                     // 不是子查询
                     if (!tableItem.isSubQuery()) {
                         // ------关联表简单字段更新为null------
-                        Map<String, Object> esFieldData = new LinkedHashMap<>();
+                        Map<String, Object> mysqlValueMap = new LinkedHashMap<>();
                         for (FieldItem fieldItem : tableItem.getRelationSelectFieldItems()) {
-                            esFieldData.put(fieldItem.getFieldName(), null);
+                            mysqlValueMap.put(fieldItem.getFieldName(), null);
                         }
-                        result.updateList.add(joinTableSimpleFieldOperation(config, dml, data, tableItem, esFieldData, index, bulkRequestList));
+                        result.updateList.add(joinTableSimpleFieldOperation(config, dml, data, tableItem, mysqlValueMap, index, bulkRequestList));
                         add = true;
                     } else {
                         // ------关联子表简单字段更新------
@@ -453,9 +447,9 @@ public class BasicFieldWriter {
      */
     private SqlDependent singleTableSimpleFiledInsert(ESSyncConfig config, Map<String, Object> data, Dml dml, int index, ESTemplate.BulkRequestList bulkRequestList) {
         ESMapping mapping = config.getEsMapping();
-        Map<String, Object> esFieldData = new LinkedHashMap<>();
-        Object idVal = putAllValueAndMysql2EsType(mapping, data, esFieldData, esTemplate);
-        esTemplate.insert(mapping, idVal, esFieldData, bulkRequestList);
+        Map<String, Object> mysqlData = new LinkedHashMap<>();
+        Object idVal = putAll(mapping, data, mysqlData);
+        esTemplate.insert(mapping, idVal, mysqlData, bulkRequestList);
         return new SqlDependent(config.getEsMapping().getSchemaItem(), index, dml, Boolean.TRUE);
     }
 
@@ -470,10 +464,10 @@ public class BasicFieldWriter {
     private SqlDependent singleTableSimpleFiledUpdate(ESSyncConfig config, Dml dml, Map<String, Object> data,
                                                       Map<String, Object> old, int index, ESTemplate.BulkRequestList bulkRequestList) {
         ESMapping mapping = config.getEsMapping();
-        Map<String, Object> esFieldData = new LinkedHashMap<>();
-        Object idVal = putAllValueAndMysql2EsType(mapping, data, old, esFieldData, dml.getTable(), esTemplate);
-        esTemplate.update(mapping, idVal, esFieldData, bulkRequestList);
-        return new SqlDependent(config.getEsMapping().getSchemaItem(), index, dml, esFieldData.isEmpty() ? Boolean.FALSE : Boolean.TRUE);
+        Map<String, Object> mysqlData = new LinkedHashMap<>();
+        Object idVal = putAllColumn(mapping, data, old, mysqlData, dml.getTable());
+        esTemplate.update(mapping, idVal, mysqlData, bulkRequestList);//putAll getColumnName
+        return new SqlDependent(config.getEsMapping().getSchemaItem(), index, dml, mysqlData.isEmpty() ? Boolean.FALSE : Boolean.TRUE);
     }
 
     /**
@@ -485,14 +479,15 @@ public class BasicFieldWriter {
      * @param tableItem 当前表配置
      */
     private SqlDependent joinTableSimpleFieldOperation(ESSyncConfig config, Dml dml, Map<String, Object> data,
-                                                       TableItem tableItem, Map<String, Object> esFieldData, int index, ESTemplate.BulkRequestList bulkRequestList) {
+                                                       TableItem tableItem, Map<String, Object> mysqlValueMap, int index, ESTemplate.BulkRequestList bulkRequestList) {
         ESMapping mapping = config.getEsMapping();
 
         Map<String, Object> paramsTmp = new LinkedHashMap<>();
         for (Map.Entry<FieldItem, List<FieldItem>> entry : tableItem.getRelationTableFields().entrySet()) {
+            String columnName = entry.getKey().getColumnName();
             for (FieldItem fieldItem : entry.getValue()) {
                 if (fieldItem.getColumnItems().size() == 1) {
-                    Object value = getColumnValueAndMysql2EsType(mapping, data, fieldItem.getFieldName(), entry.getKey().getColumnName(), esTemplate);
+                    Object value = data.get(columnName);
 
                     String fieldName = fieldItem.getFieldName();
                     // 判断是否是主键
@@ -503,9 +498,9 @@ public class BasicFieldWriter {
                 }
             }
         }
-        boolean effect = !paramsTmp.isEmpty() && !esFieldData.isEmpty();
+        boolean effect = !paramsTmp.isEmpty() && !mysqlValueMap.isEmpty();
         if (effect) {
-            esTemplate.updateByQuery(config, paramsTmp, esFieldData, bulkRequestList);
+            esTemplate.updateByQuery(config, paramsTmp, mysqlValueMap, bulkRequestList);//joinTableSimpleField
         }
         return new SqlDependent(config.getEsMapping().getSchemaItem(), index, dml, effect);
     }

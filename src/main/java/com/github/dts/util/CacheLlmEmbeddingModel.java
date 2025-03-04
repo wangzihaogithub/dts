@@ -28,14 +28,16 @@ public class CacheLlmEmbeddingModel implements LlmEmbeddingModel {
     public List<float[]> embedAll(List<String> contentList) {
         Map<String, float[]> cacheMap = cache.getCache(contentList, source.getConfig());
         List<String> cacheMissList = contentList.stream().filter(e -> cacheMap.get(e) == null).collect(Collectors.toList());
-        List<float[]> list = cacheMissList.isEmpty() ? Collections.emptyList() : source.embedAll(cacheMissList);
         Map<String, float[]> embeddingMap = new HashMap<>(cacheMap);
-        Map<String, float[]> insertCacheMap = new HashMap<>();
-        for (int i = 0, size = cacheMissList.size(); i < size; i++) {
-            embeddingMap.put(cacheMissList.get(i), list.get(i));
-            insertCacheMap.put(cacheMissList.get(i), list.get(i));
+        if (!cacheMissList.isEmpty()) {
+            List<float[]> list = source.embedAll(cacheMissList);
+            Map<String, float[]> insertCacheMap = new HashMap<>();
+            for (int i = 0, size = cacheMissList.size(); i < size; i++) {
+                embeddingMap.put(cacheMissList.get(i), list.get(i));
+                insertCacheMap.put(cacheMissList.get(i), list.get(i));
+            }
+            cache.putCache(insertCacheMap, source.getConfig());
         }
-        cache.putCache(insertCacheMap, source.getConfig());
         return contentList.stream().map(embeddingMap::get).collect(Collectors.toList());
     }
 

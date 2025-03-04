@@ -1,20 +1,18 @@
 package com.github.dts.util;
 
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 // es 字段类型本地缓存
-public class ESFieldTypesCache extends LinkedHashMap<String, Object> {
+public class ESFieldTypesCache {
     private static final Map<String, Set<String>> PARSE_FORMAT_TO_SET_CACHE = new ConcurrentHashMap<>();
     private final long timestamp = System.currentTimeMillis();
     private final Map<String, Object> sourceMap;
 
     public ESFieldTypesCache(Map<String, Object> sourceMap) {
         this.sourceMap = sourceMap;
-        init(sourceMap);
     }
 
     public static Set<String> parseFormatToSet(Object format) {
@@ -36,8 +34,8 @@ public class ESFieldTypesCache extends LinkedHashMap<String, Object> {
         }
     }
 
-    public <T> T getProperties(String... keys) {
-        Map<String, Object> properties = (Map<String, Object>) sourceMap.get("properties");
+    public static <T> T getProperties(Map<String, Object> sourceMap, String... keys) {
+        Map<String, Object> properties = sourceMap;
         Object value = properties;
         for (String key : keys) {
             value = properties == null ? null : properties.get(key);
@@ -50,23 +48,35 @@ public class ESFieldTypesCache extends LinkedHashMap<String, Object> {
         return (T) value;
     }
 
+    public ESFieldTypesCache getField(String fieldName) {
+        Map<String, Object> properties = getProperties("properties", fieldName);
+        if (properties == null) {
+            return null;
+        }
+        return new ESFieldTypesCache(properties);
+    }
+
+    public <T> T getProperties(String... keys) {
+        return getProperties(sourceMap, keys);
+    }
+
     public Map<String, Object> getSourceMap() {
         return sourceMap;
     }
 
-    private void init(Map<String, Object> sourceMap) {
-        Map<String, Object> esMapping = (Map<String, Object>) sourceMap.get("properties");
-        for (Map.Entry<String, Object> entry : esMapping.entrySet()) {
-            Map<String, Object> value = (Map<String, Object>) entry.getValue();
-            if (value.containsKey("properties")) {
-                put(entry.getKey(), "object");
-            } else {
-                put(entry.getKey(), (String) value.get("type"));
-            }
-        }
-    }
-
     public boolean isTimeout(long timeout) {
         return System.currentTimeMillis() - timestamp > timeout;
+    }
+
+    public Set<String> getFormatSet() {
+        return ESFieldTypesCache.parseFormatToSet(sourceMap.get("format"));
+    }
+
+    public Object getType() {
+        return sourceMap.get("type");
+    }
+
+    public boolean isNested() {
+        return sourceMap.containsKey("properties");
     }
 }

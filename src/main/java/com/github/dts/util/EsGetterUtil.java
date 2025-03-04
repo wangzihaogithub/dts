@@ -4,8 +4,8 @@ import java.util.*;
 
 public class EsGetterUtil {
 
-    public static Object invokeGetterValue(ESSyncConfig.ESMapping mapping,
-                                           Map<String, Object> row) {
+    public static Object invokeGetterId(ESSyncConfig.ESMapping mapping,
+                                        Map<String, Object> row) {
         SchemaItem.FieldItem idField = mapping.getSchemaItem().getIdField();
         Object id = row.get(idField.getColumnName());
         if (id == null) {
@@ -14,96 +14,62 @@ public class EsGetterUtil {
         return id;
     }
 
-    public static Object getValueAndMysql2EsType(ESSyncConfig.ESMapping mapping,
-                                                 Map<String, Object> mysqlRow,
-                                                 String fieldName,
-                                                 String columnName,
-                                                 Map<String, Object> data,
-                                                 ESTemplate esTemplate) {
-        return EsTypeUtil.mysql2EsType(mapping, mysqlRow, mysqlRow.get(fieldName), fieldName, esTemplate.getEsType(mapping), null);
-    }
-
-    public static Object mysql2EsTypeAndObjectFieldIfNeed(ESSyncConfig.ObjectField objectField, List<Map<String, Object>> mysqlData, ESTemplate esTemplate, ESSyncConfig.ESMapping esMapping) {
+    public static Object getSqlObjectMysqlValue(ESSyncConfig.ObjectField objectField, List<Map<String, Object>> mysqlData, ESTemplate esTemplate, ESSyncConfig.ESMapping esMapping) {
         ESSyncConfig.ObjectField.Type type = objectField.getType();
-        Object esUpdateData;
+        Object mysqlValue;
         switch (type) {
-            case OBJECT_SQL:
+            case OBJECT_SQL://getSqlObjectMysqlValue
                 if (mysqlData != null && !mysqlData.isEmpty()) {
-                    esUpdateData = copyAndMysql2EsTypeAndObjectFieldIfNeed(esMapping, objectField.getFieldName(), mysqlData.get(0), esTemplate);
+                    mysqlValue = mysqlData.get(0);
                 } else {
-                    esUpdateData = null;
+                    mysqlValue = null;
                 }
                 break;
-            case ARRAY_SQL:
+            case ARRAY_SQL://getSqlObjectMysqlValue
                 if (mysqlData != null && !mysqlData.isEmpty()) {
-                    List<Map<String, Object>> rowListCopy = new ArrayList<>();
-                    for (Map<String, Object> row : mysqlData) {
-                        Map<String, Object> rowCopy = copyAndMysql2EsTypeAndObjectFieldIfNeed(esMapping, objectField.getFieldName(), row, esTemplate);
-                        rowListCopy.add(rowCopy);
-                    }
-                    esUpdateData = rowListCopy;
+                    mysqlValue = mysqlData;
                 } else {
-                    esUpdateData = Collections.emptyList();
+                    mysqlValue = Collections.emptyList();
                 }
                 break;
-            case OBJECT_FLAT_SQL:
+            case OBJECT_FLAT_SQL://getSqlObjectMysqlValue
                 if (mysqlData != null && !mysqlData.isEmpty()) {
-                    Map<String, Object> row = mysqlData.get(0);
-                    Object value0 = value0(row);
-                    esUpdateData = EsTypeUtil.mysql2EsType(esMapping, row, value0, objectField.getFieldName(), esTemplate.getEsType(esMapping), null);
+                    mysqlValue = value0(mysqlData.get(0));
                 } else {
-                    esUpdateData = null;
+                    mysqlValue = null;
                 }
                 break;
-            case ARRAY_FLAT_SQL:
+            case ARRAY_FLAT_SQL://getSqlObjectMysqlValue
                 if (mysqlData != null && !mysqlData.isEmpty()) {
                     List<Object> list = new ArrayList<>(mysqlData.size());
                     for (Map<String, Object> row : mysqlData) {
                         Object value0 = value0(row);
-                        Object cast = EsTypeUtil.mysql2EsType(esMapping, row, value0, objectField.getFieldName(), esTemplate.getEsType(esMapping), null);
-                        list.add(cast);
+                        list.add(value0);
                     }
-                    esUpdateData = list;
+                    mysqlValue = list;
                 } else {
-                    esUpdateData = Collections.emptyList();
+                    mysqlValue = Collections.emptyList();
                 }
                 break;
             default:
-                esUpdateData = mysqlData;
+                mysqlValue = mysqlData;
         }
-        return esUpdateData;
+        return mysqlValue;
     }
 
-    public static Map<String, Object> mysql2EsTypeAndObjectFieldIfNeedCopyMap(Map<String, Object> row,
-                                                                              ESTemplate esTemplate,
-                                                                              ESSyncConfig.ESMapping esMapping,
-                                                                              String parentFieldName,
-                                                                              Collection<String> rowChangeList) {
+    public static Map<String, Object> copyRowChangeMap(Map<String, Object> row,
+                                                       Collection<String> rowChangeList) {
         Map<String, Object> rowCopy = new LinkedHashMap<>();
         row.forEach((k, v) -> {
             if (rowChangeList.contains(k)) {
                 rowCopy.put(k, v);
             }
         });
-        return copyAndMysql2EsTypeAndObjectFieldIfNeed(esMapping, parentFieldName, rowCopy, esTemplate);
+        return rowCopy;
     }
 
     public static Object value0(Map<String, Object> row) {
         return row.isEmpty() ? null : row.values().iterator().next();
-    }
-
-    private static Map<String, Object> copyAndMysql2EsTypeAndObjectFieldIfNeed(ESSyncConfig.ESMapping esMapping,
-                                                                               String parentFieldName,
-                                                                               Map<String, Object> mysqlRow,
-                                                                               ESTemplate esTemplate) {
-        Map<String, Object> result = new LinkedHashMap<>();
-        for (Map.Entry<String, Object> entry : mysqlRow.entrySet()) {
-            String fieldName = entry.getKey();
-            Object fieldValue = entry.getValue();
-            Object newValue = EsTypeUtil.mysql2EsType(esMapping, mysqlRow, fieldValue, fieldName, esTemplate.getEsType(esMapping), parentFieldName);
-            result.put(fieldName, newValue);
-        }
-        return result;
     }
 
 }
