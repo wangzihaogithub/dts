@@ -96,7 +96,7 @@ public class BasicFieldWriter {
         return resultIdVal;
     }
 
-    public WriteResult writeEsReturnSql(Collection<ESSyncConfig> configList, List<Dml> dmlList, ESTemplate.BulkRequestList bulkRequestList) {
+    public WriteResult writeEsReturnSql(Collection<ESSyncConfig> configList, List<Dml> dmlList, Collection<String> onlyFieldName, ESTemplate.BulkRequestList bulkRequestList) {
         WriteResult result = new WriteResult();
         for (ESSyncConfig config : configList) {
             for (Dml dml : dmlList) {
@@ -113,7 +113,7 @@ public class BasicFieldWriter {
                             break;
                         case "INSERT":
                         case "INIT":
-                            insert(config, dml, bulkRequestList, result);
+                            insert(config, dml, onlyFieldName, bulkRequestList, result);
                             break;
                         case "DELETE":
                             delete(config, dml, bulkRequestList, result);
@@ -137,7 +137,7 @@ public class BasicFieldWriter {
      * @param config es配置
      * @param dml    dml数据
      */
-    private void insert(ESSyncConfig config, Dml dml, ESTemplate.BulkRequestList bulkRequestList, WriteResult result) {
+    private void insert(ESSyncConfig config, Dml dml, Collection<String> onlyFieldName, ESTemplate.BulkRequestList bulkRequestList, WriteResult result) {
         List<Map<String, Object>> dataList = dml.getData();
         if (dataList == null || dataList.isEmpty()) {
             return;
@@ -149,6 +149,10 @@ public class BasicFieldWriter {
         for (Map<String, Object> data : dataList) {
             index = i++;
             if (data == null || data.isEmpty()) {
+                continue;
+            }
+            if (onlyFieldName != null
+                    && !onlyFieldName.isEmpty() && data.keySet().stream().noneMatch(onlyFieldName::contains)) {
                 continue;
             }
             boolean add = false;

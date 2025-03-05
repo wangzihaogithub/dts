@@ -444,13 +444,13 @@ public class ESSyncConfig {
          * 该方法只实现 ARRAY与OBJECT
          * ARRAY_SQL与OBJECT_SQL的实现 - {@link NestedFieldWriter}
          *
-         * @param val     val
-         * @param mapping mapping
-         * @param row     row
+         * @param val      val
+         * @param mapping  mapping
+         * @param mysqlRow mysqlRow
          * @return ES对象
          * @see ESSyncServiceListener#onSyncAfter(List, ESAdapter, ESTemplate.BulkRequestList)
          */
-        public Object parse(Object val, ESMapping mapping, Map<String, Object> row) {
+        public Object parse(Object val, ESMapping mapping, Map<String, Object> mysqlRow) {
             if (val instanceof CompletableFuture) {
                 return val;
             }
@@ -519,7 +519,7 @@ public class ESSyncConfig {
                         parentFieldName = split1[0];
                         fieldName = split1[1];
                     }
-                    return paramStaticMethod.staticMethodAccessor.apply(new ESStaticMethodParam(val, mapping, fieldName, parentFieldName));
+                    return paramStaticMethod.staticMethodAccessor.apply(new ESStaticMethodParam(val, mapping, mysqlRow, fieldName, parentFieldName));
                 }
                 case ARRAY_SQL://内部调用
                 case OBJECT_SQL://内部调用

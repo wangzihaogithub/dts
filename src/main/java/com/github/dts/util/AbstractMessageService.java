@@ -17,6 +17,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 public abstract class AbstractMessageService {
+    public static final int DINGTALK_MAX_CONTENT_LENGTH = 15000;
     private static final Logger log = LoggerFactory.getLogger(AbstractMessageService.class);
     private final SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
     private final RestTemplate restTemplate = new RestTemplate(requestFactory);
@@ -47,6 +48,7 @@ public abstract class AbstractMessageService {
     public Map sendDingtalk(String title, String content, String token, String secret) {
         title = title + "(" + Util.getIPAddressPort() + " " + env + ")";
 
+        content = content != null && content.length() > DINGTALK_MAX_CONTENT_LENGTH ? content.substring(0, DINGTALK_MAX_CONTENT_LENGTH) : content;
         HttpHeaders headers = new HttpHeaders();
         headers.set("Content-Type", "application/json; charset=utf-8");
 

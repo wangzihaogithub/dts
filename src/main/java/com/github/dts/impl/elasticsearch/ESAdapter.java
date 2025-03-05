@@ -175,7 +175,7 @@ public class ESAdapter implements Adapter {
                     }
                 }
                 for (Map.Entry<Map<String, ESSyncConfig>, List<Dml>> entry : groupByMap.entrySet()) {
-                    BasicFieldWriter.WriteResult item = basicFieldWriter.writeEsReturnSql(entry.getKey().values(), entry.getValue(), bulkRequestList);
+                    BasicFieldWriter.WriteResult item = basicFieldWriter.writeEsReturnSql(entry.getKey().values(), entry.getValue(), onlyFieldName,bulkRequestList);
                     writeResult.add(item);
                 }
                 BasicFieldWriter.executeUpdate(writeResult.getSqlList(), maxIdIn);
