@@ -282,6 +282,7 @@ public class DefaultESTemplate implements ESTemplate {
         }
         ESConnection.ESSearchRequest esSearchRequest = new ESConnection.ESSearchRequest(mapping.get_index());
         esSearchRequest.setQuery(QueryBuilders.idsQuery().addIds(ids.stream().map(String::valueOf).toArray(String[]::new)));
+        esSearchRequest.size(ids.size());
         esSearchRequest.fetchSource("");
         SearchResponse response = esSearchRequest.getResponse(this.esConnection);
         Set<String> result = new LinkedHashSet<>();
