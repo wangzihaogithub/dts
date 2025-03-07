@@ -868,7 +868,9 @@ public class ESSyncConfig {
                 if (Util.isBlank(etlEqualsFieldName)) {
                     SchemaItem.FieldItem fieldItem = etlEqualsFieldName(objectField);
                     if (fieldItem == null) {
-                        throw new IllegalArgumentException("etlEqualsFieldName must not empty!");
+                        throw new IllegalArgumentException(String.format("ParamLlmVector field '%s', etlEqualsFieldName must not empty!",
+                                objectField
+                        ));
                     } else {
                         this.etlEqualsFieldName = fieldItem.getFieldName();
                     }
