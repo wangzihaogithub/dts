@@ -866,7 +866,14 @@ public class ESSyncConfig {
                     requestQueueName = apiKey + "_" + modelName;
                 }
                 if (Util.isBlank(etlEqualsFieldName)) {
-                    SchemaItem.FieldItem fieldItem = etlEqualsFieldName(objectField);
+                    ESMapping esMapping = objectField.esMapping;
+                    SchemaItem.FieldItem currFieldItem = esMapping.getSchemaItem().getSelectFields().get(objectField.fieldName);
+                    if (currFieldItem == null) {
+                        throw new IllegalArgumentException(String.format("ParamLlmVector field '%s', fieldName must in select fields !",
+                                objectField
+                        ));
+                    }
+                    SchemaItem.FieldItem fieldItem = etlEqualsFieldName(objectField, currFieldItem);
                     if (fieldItem == null) {
                         throw new IllegalArgumentException(String.format("ParamLlmVector field '%s', etlEqualsFieldName must not empty!",
                                 objectField
@@ -926,9 +933,8 @@ public class ESSyncConfig {
                 return contentSize >= requestMaxContentSize;
             }
 
-            private SchemaItem.FieldItem etlEqualsFieldName(ObjectField objectField) {
+            private SchemaItem.FieldItem etlEqualsFieldName(ObjectField objectField, SchemaItem.FieldItem currFieldItem) {
                 ESMapping esMapping = objectField.esMapping;
-                SchemaItem.FieldItem currFieldItem = esMapping.getSchemaItem().getSelectFields().get(objectField.fieldName);
                 List<SchemaItem.FieldItem> fieldItemList = esMapping.getSchemaItem().selectField(currFieldItem);
                 for (int i = 0; i < fieldItemList.size(); i++) {
                     SchemaItem.FieldItem fieldItem = fieldItemList.get(i);
