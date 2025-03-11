@@ -13,6 +13,7 @@ import java.util.stream.Collectors;
  * @version 1.0.0
  */
 public class SchemaItem {
+    private final boolean check;
     private Map<String, TableItem> aliasTableItems = Util.newLinkedCaseInsensitiveMap(); // 别名对应表名
     private Map<String, FieldItem> selectFields = Util.newLinkedCaseInsensitiveMap();  // 查询字段
     private String sql;
@@ -40,7 +41,8 @@ public class SchemaItem {
      */
     private Map<String, List<String>> onMainTableChangeOrderBySqlColumnList;
 
-    public SchemaItem() {
+    public SchemaItem(boolean check) {
+        this.check = check;
     }
 
     public static Object getColumnValue(Map<String, Object> data, String columnName) {
@@ -694,35 +696,38 @@ public class SchemaItem {
                 synchronized (SchemaItem.class) {
                     if (relationTableFields == null) {
                         relationTableFields = new LinkedHashMap<>();
-
-                        getRelationFields().forEach(relationFieldsPair -> {
+                        for (RelationFieldsPair relationFieldsPair : getRelationFields()) {
                             FieldItem leftFieldItem = relationFieldsPair.getLeftFieldItem();
                             FieldItem rightFieldItem = relationFieldsPair.getRightFieldItem();
                             FieldItem currentTableRelField = null;
-                            if (getAlias().equals(leftFieldItem.getOwner())) {
+                            if (leftFieldItem != null && getAlias().equals(leftFieldItem.getOwner())) {
                                 currentTableRelField = leftFieldItem;
-                            } else if (getAlias().equals(rightFieldItem.getOwner())) {
+                            } else if (rightFieldItem != null && getAlias().equals(rightFieldItem.getOwner())) {
                                 currentTableRelField = rightFieldItem;
                             }
 
                             if (currentTableRelField != null) {
-                                List<FieldItem> selectFieldItem = getSchemaItem().getColumnFields()
-                                        .get(leftFieldItem.getOwner() + "." + leftFieldItem.getColumn().getColumnName());
-                                if (selectFieldItem != null && !selectFieldItem.isEmpty()) {
-                                    relationTableFields.put(currentTableRelField, selectFieldItem);
-                                } else {
-                                    selectFieldItem = getSchemaItem().getColumnFields()
+                                if (leftFieldItem != null) {
+                                    List<FieldItem> selectFieldItem = getSchemaItem().getColumnFields()
+                                            .get(leftFieldItem.getOwner() + "." + leftFieldItem.getColumn().getColumnName());
+                                    if (selectFieldItem != null && !selectFieldItem.isEmpty()) {
+                                        relationTableFields.put(currentTableRelField, selectFieldItem);
+                                        continue;
+                                    }
+                                }
+                                if (rightFieldItem != null) {
+                                    List<FieldItem> selectFieldItem = getSchemaItem().getColumnFields()
                                             .get(rightFieldItem.getOwner() + "."
                                                     + rightFieldItem.getColumn().getColumnName());
                                     if (selectFieldItem != null && !selectFieldItem.isEmpty()) {
                                         relationTableFields.put(currentTableRelField, selectFieldItem);
-                                    } else {
+                                    } else if (schemaItem.check) {
                                         throw new UnsupportedOperationException(
                                                 tableName + "Relation condition column must in select columns.");
                                     }
                                 }
                             }
-                        });
+                        }
                     }
                 }
             }
@@ -751,10 +756,14 @@ public class SchemaItem {
 
         private FieldItem leftFieldItem;
         private FieldItem rightFieldItem;
+        private Object leftValue;
+        private Object rightValue;
 
-        public RelationFieldsPair(FieldItem leftFieldItem, FieldItem rightFieldItem) {
+        public RelationFieldsPair(FieldItem leftFieldItem, Object leftValue, FieldItem rightFieldItem, Object rightValue) {
             this.leftFieldItem = leftFieldItem;
             this.rightFieldItem = rightFieldItem;
+            this.leftValue = leftValue;
+            this.rightValue = rightValue;
         }
 
         @Override

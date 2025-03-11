@@ -138,7 +138,7 @@ public class ESSyncConfig {
         this.md5 = md5;
         esMapping.setConfig(this);
 
-        SchemaItem schemaItem = SqlParser.parse(esMapping.getSql());
+        SchemaItem schemaItem = SqlParser.parse(esMapping.getSql(), true);
         esMapping.setSchemaItem(schemaItem);
         schemaItem.init(null, esMapping);
         if (schemaItem.getAliasTableItems().isEmpty() || schemaItem.getSelectFields().isEmpty()) {
@@ -680,7 +680,7 @@ public class ESSyncConfig {
 
             private void init(ObjectField objectField) {
                 if (!Util.isBlank(sql)) {
-                    SchemaItem schemaItem1 = SqlParser.parse(sql);
+                    SchemaItem schemaItem1 = SqlParser.parse(sql, false);
                     schemaItem1.init(objectField, objectField.esMapping);
                     if (schemaItem1.getAliasTableItems().isEmpty()) {
                         throw new IllegalArgumentException("field " + objectField + ", miss AliasTable! " + sql);

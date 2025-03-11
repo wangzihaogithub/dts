@@ -43,7 +43,7 @@ public class SqlParser {
         SchemaItem schemaItem =
                 SqlParser.parse("select t1.id,t1.name,t1.pwd from user t1 " +
                         "left join order t2 on t2.user_id = t1.id " +
-                        "where t1.name =#{name} and t1.id = 1 and t1.de_flag = 0");
+                        "where t1.name =#{name} and t1.id = 1 and t1.de_flag = 0", true);
 
 //        Collection<ChangeSQL> changeSQLS = changeMergeSelect("        SELECT corpRelationTag.tag_id as tagId, corpTag.`name` as tagName, corpTag.category_id as categoryId, corpCategory.`name` as categoryName, corpCategory.sort as categorySort, corpCategory.`status` as categoryStatus, corpTag.source_enum as tagSource, corpTag.`status` as tagStatus, corpTag.change_flag as tagChangeFlag FROM corp_relation_tag corpRelationTag INNER JOIN corp_tag corpTag on corpTag.id = corpRelationTag.tag_id LEFT JOIN corp_category corpCategory on corpCategory.id = corpTag.category_id  WHERE corpRelationTag.corp_id in (?,?)\n",
 //
@@ -65,20 +65,21 @@ public class SqlParser {
     /**
      * 解析sql
      *
-     * @param sql sql
+     * @param sql   sql
+     * @param check check是否校验
      * @return 视图对象
      */
-    public static SchemaItem parse(String sql) {
+    public static SchemaItem parse(String sql, boolean check) {
         try {
             SQLStatementParser parser = new MySqlStatementParser(sql);
             SQLSelectStatement statement = (SQLSelectStatement) parser.parseStatement();
             MySqlSelectQueryBlock sqlSelectQueryBlock = (MySqlSelectQueryBlock) statement.getSelect().getQuery();
 
-            SchemaItem schemaItem = new SchemaItem();
+            SchemaItem schemaItem = new SchemaItem(check);
             schemaItem.setSql(toMysqlString(sqlSelectQueryBlock));
             SQLTableSource sqlTableSource = sqlSelectQueryBlock.getFrom();
             List<TableItem> tableItems = new ArrayList<>();
-            SqlParser.visitSelectTable(schemaItem, sqlTableSource, tableItems, null);
+            SqlParser.visitSelectTable(schemaItem, sqlTableSource, tableItems, null, check);
             tableItems.forEach(tableItem -> schemaItem.getAliasTableItems().put(tableItem.getAlias(), tableItem));
 
             List<FieldItem> selectFieldItems = collectSelectQueryFields(sqlSelectQueryBlock);
@@ -466,9 +467,10 @@ public class SqlParser {
      * @param sqlTableSource sqlTableSource
      * @param tableItems     表对象列表
      * @param tableItemTmp   表对象(临时)
+     * @param check          是否校验
      */
     private static void visitSelectTable(SchemaItem schemaItem, SQLTableSource sqlTableSource,
-                                         List<TableItem> tableItems, TableItem tableItemTmp) {
+                                         List<TableItem> tableItems, TableItem tableItemTmp, boolean check) {
         if (sqlTableSource instanceof SQLExprTableSource) {
             SQLExprTableSource sqlExprTableSource = (SQLExprTableSource) sqlTableSource;
             TableItem tableItem;
@@ -490,12 +492,12 @@ public class SqlParser {
         } else if (sqlTableSource instanceof SQLJoinTableSource) {
             SQLJoinTableSource sqlJoinTableSource = (SQLJoinTableSource) sqlTableSource;
             SQLTableSource leftTableSource = sqlJoinTableSource.getLeft();
-            visitSelectTable(schemaItem, leftTableSource, tableItems, null);
+            visitSelectTable(schemaItem, leftTableSource, tableItems, null, check);
             SQLTableSource rightTableSource = sqlJoinTableSource.getRight();
             TableItem rightTableItem = new TableItem(schemaItem);
             // 解析on条件字段
-            visitOnCondition(sqlJoinTableSource.getCondition(), rightTableItem);
-            visitSelectTable(schemaItem, rightTableSource, tableItems, rightTableItem);
+            visitOnCondition(sqlJoinTableSource.getCondition(), rightTableItem, check);
+            visitSelectTable(schemaItem, rightTableSource, tableItems, rightTableItem, check);
 
         } else if (sqlTableSource instanceof SQLSubqueryTableSource) {
             SQLSubqueryTableSource subQueryTableSource = (SQLSubqueryTableSource) sqlTableSource;
@@ -510,7 +512,7 @@ public class SqlParser {
             tableItem.setSubQuerySql(SQLUtils.toMySqlString(sqlSelectQuery));
             tableItem.setSubQuery(true);
             tableItem.setSubQueryFields(collectSelectQueryFields(sqlSelectQuery));
-            visitSelectTable(schemaItem, sqlSelectQuery.getFrom(), tableItems, tableItem);
+            visitSelectTable(schemaItem, sqlSelectQuery.getFrom(), tableItems, tableItem, check);
         }
     }
 
@@ -520,34 +522,49 @@ public class SqlParser {
      * @param expr      sql expr
      * @param tableItem 表对象
      */
-    private static void visitOnCondition(SQLExpr expr, TableItem tableItem) {
+    private static void visitOnCondition(SQLExpr expr, TableItem tableItem, boolean check) {
         if (!(expr instanceof SQLBinaryOpExpr)) {
             throw new UnsupportedOperationException();
         }
         SQLBinaryOpExpr sqlBinaryOpExpr = (SQLBinaryOpExpr) expr;
         if (sqlBinaryOpExpr.getOperator() == SQLBinaryOperator.BooleanAnd) {
-            visitOnCondition(sqlBinaryOpExpr.getLeft(), tableItem);
-            visitOnCondition(sqlBinaryOpExpr.getRight(), tableItem);
+            visitOnCondition(sqlBinaryOpExpr.getLeft(), tableItem, check);
+            visitOnCondition(sqlBinaryOpExpr.getRight(), tableItem, check);
         } else if (sqlBinaryOpExpr.getOperator() == SQLBinaryOperator.Equality) {
             FieldItem leftFieldItem = new FieldItem();
-            visitColumn(sqlBinaryOpExpr.getLeft(), leftFieldItem);
+            SQLExpr left = sqlBinaryOpExpr.getLeft();
+            visitColumn(left, leftFieldItem);
+            Object leftValue = null;
             if (leftFieldItem.getColumnItems().size() != 1 || leftFieldItem.isMethod() || leftFieldItem.isBinaryOp()) {
-                throw new UnsupportedOperationException(expr + "Unsupported for complex of on-condition");
+                if (!check && left instanceof SQLValuableExpr) {
+                    leftValue = ((SQLValuableExpr) left).getValue();
+                } else {
+                    throw new UnsupportedOperationException(expr + "Unsupported for complex of on-condition");
+                }
             }
             FieldItem rightFieldItem = new FieldItem();
-            visitColumn(sqlBinaryOpExpr.getRight(), rightFieldItem);
+            SQLExpr right = sqlBinaryOpExpr.getRight();
+            visitColumn(right, rightFieldItem);
+            Object rightValue = null;
             if (rightFieldItem.getColumnItems().size() != 1 || rightFieldItem.isMethod()
                     || rightFieldItem.isBinaryOp()) {
-                throw new UnsupportedOperationException(expr + "Unsupported for complex of on-condition");
+                if (!check && right instanceof SQLValuableExpr) {
+                    rightValue = ((SQLValuableExpr) right).getValue();
+                } else {
+                    throw new UnsupportedOperationException(expr + "Unsupported for complex of on-condition");
+                }
             }
             /*
              * 增加属性 -> 表用到的所有字段 (为了实现map复杂es对象的嵌套查询功能)
              * 2019年6月6日 13:37:41 王子豪
              */
-            tableItem.getSchemaItem().getFields().put(leftFieldItem.getOwnerAndColumnName(), leftFieldItem);
-            tableItem.getSchemaItem().getFields().put(rightFieldItem.getOwnerAndColumnName(), rightFieldItem);
-
-            tableItem.getRelationFields().add(new RelationFieldsPair(leftFieldItem, rightFieldItem));
+            if (!leftFieldItem.getColumnItems().isEmpty()) {
+                tableItem.getSchemaItem().getFields().put(leftFieldItem.getOwnerAndColumnName(), leftFieldItem);
+            }
+            if (!rightFieldItem.getColumnItems().isEmpty()) {
+                tableItem.getSchemaItem().getFields().put(rightFieldItem.getOwnerAndColumnName(), rightFieldItem);
+            }
+            tableItem.getRelationFields().add(new RelationFieldsPair(leftFieldItem, leftValue, rightFieldItem, rightValue));
         } else {
             throw new UnsupportedOperationException(expr + "Unsupported for complex of on-condition");
         }
