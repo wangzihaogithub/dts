@@ -161,14 +161,16 @@ public class ESSyncUtil {
 
         List<Object> args = new ArrayList<>();
         for (SchemaItem.FieldItem fkFieldItem : tableItem.getRelationTableFields().keySet()) {
-            String columnName = fkFieldItem.getColumn().getColumnName();
-            Object value = data.get(columnName);
-            if (alias != null) {
-                sql.append(alias).append(".");
+            for (ColumnItem columnItem : fkFieldItem.getColumnItems()) {
+                String columnName = columnItem.getColumnName();
+                Object value = data.get(columnName);
+                if (alias != null) {
+                    sql.append(alias).append(".");
+                }
+                sql.append(columnName).append("=").append('?').append(' ');
+                sql.append(" AND ");
+                args.add(value);
             }
-            sql.append(columnName).append("=").append('?').append(' ');
-            sql.append(" AND ");
-            args.add(value);
         }
         int len = sql.length();
         sql.delete(len - " AND ".length(), len);

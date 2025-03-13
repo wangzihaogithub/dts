@@ -120,11 +120,21 @@ public class EsTypeUtil {
     }
 
     private static Object parseEsType(Object mysqlValue, ESFieldTypesCache esTypeVO) {
-        if (esTypeVO == null) {
-            return mysqlValue;
-        }
         if (mysqlValue == null) {
             return null;
+        }
+        // 如果es mapping里没有这个属性
+        if (esTypeVO == null) {
+            if (mysqlValue instanceof Date) {
+                DateTime dateTime = new DateTime(((Date) mysqlValue).getTime());
+                return dateTime.toString(ES_FORMAT_SUPPORT[0]);
+            } else if (mysqlValue instanceof Number) {
+                return mysqlValue;
+            } else if (mysqlValue instanceof Boolean) {
+                return mysqlValue;
+            } else {
+                return mysqlValue.toString();
+            }
         }
         Object res = mysqlValue;
         Object esType = esTypeVO.getType();

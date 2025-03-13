@@ -41,7 +41,7 @@ public class BasicFieldWriter {
         SchemaItem schemaItem = mapping.getSchemaItem();
         Object resultIdVal = EsGetterUtil.invokeGetterId(mapping, dmlData);
         for (FieldItem fieldItem : schemaItem.getSelectFields().values()) {
-            if (fieldItem.getColumnItems().isEmpty()) {
+            if (fieldItem.getColumnItems().size() != 1) {
                 continue;
             }
             String columnName = fieldItem.getColumnName();
@@ -58,8 +58,8 @@ public class BasicFieldWriter {
         return resultIdVal;
     }
 
-    private static Object putAllColumn(ESMapping mapping, Map<String, Object> dmlData, Map<String, Object> dmlOld,
-                                       Map<String, Object> mysqlData, String tableName) {
+    private static Object putAllColumnBySingleTableSimpleField(ESMapping mapping, Map<String, Object> dmlData, Map<String, Object> dmlOld,
+                                                               Map<String, Object> mysqlData, String tableName) {
         SchemaItem schemaItem = mapping.getSchemaItem();
         List<String> aliases = schemaItem.getTableItemAliases(tableName);
 
@@ -469,7 +469,7 @@ public class BasicFieldWriter {
                                                       Map<String, Object> old, int index, ESTemplate.BulkRequestList bulkRequestList) {
         ESMapping mapping = config.getEsMapping();
         Map<String, Object> mysqlData = new LinkedHashMap<>();
-        Object idVal = putAllColumn(mapping, data, old, mysqlData, dml.getTable());
+        Object idVal = putAllColumnBySingleTableSimpleField(mapping, data, old, mysqlData, dml.getTable());
         esTemplate.update(mapping, idVal, mysqlData, bulkRequestList);//putAll getColumnName
         return new SqlDependent(config.getEsMapping().getSchemaItem(), index, dml, mysqlData.isEmpty() ? Boolean.FALSE : Boolean.TRUE);
     }

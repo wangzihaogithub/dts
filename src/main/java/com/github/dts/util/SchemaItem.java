@@ -484,14 +484,14 @@ public class SchemaItem {
         if (allFieldsSimple == null) {
             synchronized (SchemaItem.class) {
                 if (allFieldsSimple == null) {
-                    allFieldsSimple = true;
-
+                    boolean allFieldsSimple = true;
                     for (FieldItem fieldItem : getSelectFields().values()) {
-                        if (fieldItem.isMethod() || fieldItem.isBinaryOp()) {
+                        if (fieldItem.isMethod() || fieldItem.isBinaryOp() || fieldItem.getColumnItems().size() != 1) {
                             allFieldsSimple = false;
                             break;
                         }
                     }
+                    this.allFieldsSimple = allFieldsSimple;
                 }
             }
         }
@@ -707,24 +707,30 @@ public class SchemaItem {
                             }
 
                             if (currentTableRelField != null) {
+                                int putCount = 0;
                                 if (leftFieldItem != null) {
-                                    List<FieldItem> selectFieldItem = getSchemaItem().getColumnFields()
-                                            .get(leftFieldItem.getOwner() + "." + leftFieldItem.getColumn().getColumnName());
-                                    if (selectFieldItem != null && !selectFieldItem.isEmpty()) {
-                                        relationTableFields.put(currentTableRelField, selectFieldItem);
-                                        continue;
+                                    for (ColumnItem columnItem : leftFieldItem.getColumnItems()) {
+                                        List<FieldItem> selectFieldItem = getSchemaItem().getColumnFields()
+                                                .get(columnItem.getOwner() + "." + columnItem.getColumnName());
+                                        if (selectFieldItem != null && !selectFieldItem.isEmpty()) {
+                                            relationTableFields.put(currentTableRelField, selectFieldItem);
+                                            putCount++;
+                                        }
                                     }
                                 }
                                 if (rightFieldItem != null) {
-                                    List<FieldItem> selectFieldItem = getSchemaItem().getColumnFields()
-                                            .get(rightFieldItem.getOwner() + "."
-                                                    + rightFieldItem.getColumn().getColumnName());
-                                    if (selectFieldItem != null && !selectFieldItem.isEmpty()) {
-                                        relationTableFields.put(currentTableRelField, selectFieldItem);
-                                    } else if (schemaItem.check) {
-                                        throw new UnsupportedOperationException(
-                                                tableName + "Relation condition column must in select columns.");
+                                    for (ColumnItem columnItem : rightFieldItem.getColumnItems()) {
+                                        List<FieldItem> selectFieldItem = getSchemaItem().getColumnFields()
+                                                .get(columnItem.getOwner() + "." + columnItem.getColumnName());
+                                        if (selectFieldItem != null && !selectFieldItem.isEmpty()) {
+                                            relationTableFields.put(currentTableRelField, selectFieldItem);
+                                            putCount++;
+                                        }
                                     }
+                                }
+                                if (putCount == 0 && schemaItem.check) {
+                                    throw new UnsupportedOperationException(
+                                            tableName + "Relation condition column must in select columns." + relationFieldsPair);
                                 }
                             }
                         }
