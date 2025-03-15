@@ -99,7 +99,6 @@ public abstract class DocWriteResponse extends ReplicationResponse implements Wr
         return this.shardId;
     }
 
-    /** @deprecated */
     @Deprecated
     public String getType() {
         return this.type;
