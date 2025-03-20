@@ -1,9 +1,6 @@
 package com.github.dts.canal;
 
-import com.github.dts.util.CanalConfig;
-import com.github.dts.util.DateUtil;
-import com.github.dts.util.Dml;
-import com.github.dts.util.JsonUtil;
+import com.github.dts.util.*;
 import org.apache.kafka.clients.consumer.*;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.header.Headers;
@@ -12,6 +9,7 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.nio.charset.Charset;
 import java.time.Duration;
 import java.util.*;
@@ -365,6 +363,7 @@ public class KafkaCanalConnector implements CanalConnector {
 
     public static class DmlDeserializer implements Deserializer<Dml> {
         private static final Charset UTF_8 = Charset.forName("UTF-8");
+        private static final JsonUtil.ObjectReader OBJECT_READER = JsonUtil.objectReader();
 
         private static void castType(Dml dml, List<Map<String, Object>> list) {
             Map<String, String> mysqlType = dml.getMysqlType();
@@ -449,7 +448,12 @@ public class KafkaCanalConnector implements CanalConnector {
 
         @Override
         public Dml deserialize(String topic1, byte[] payload) {
-            Dml dml = JsonUtil.toBeanThrows(new String(payload, UTF_8), Dml.class);
+            Dml dml = null;
+            try {
+                dml = OBJECT_READER.readValue(payload, Dml.class);
+            } catch (IOException e) {
+                Util.sneakyThrows(e);
+            }
 
             List<Map<String, Object>> dataList = dml.getData();
             List<Map<String, Object>> oldList = dml.getOld();

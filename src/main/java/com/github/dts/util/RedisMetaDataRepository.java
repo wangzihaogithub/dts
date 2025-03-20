@@ -12,6 +12,9 @@ import java.nio.charset.Charset;
 public class RedisMetaDataRepository implements MetaDataRepository {
     private static final Logger log = LoggerFactory.getLogger(RedisMetaDataRepository.class);
     private static final Charset UTF_8 = Charset.forName("UTF-8");
+    private static final JsonUtil.ObjectWriter OBJECT_WRITER = JsonUtil.objectWriter();
+    private static final JsonUtil.ObjectReader OBJECT_READER = JsonUtil.objectReader();
+
     private final byte[] key;
     private final RedisTemplate<byte[], byte[]> redisTemplate = new RedisTemplate<>();
 
@@ -45,9 +48,9 @@ public class RedisMetaDataRepository implements MetaDataRepository {
             if (bytes == null || bytes.length == 0) {
                 return null;
             }
-            Data data = JsonUtil.toBeanThrows(new String(bytes, UTF_8), Data.class);
+            Data data = OBJECT_READER.readValue(bytes, Data.class);
             Class<T> type = (Class<T>) Class.forName(data.getClassName());
-            return JsonUtil.toBeanThrows(data.getValue(), type);
+            return OBJECT_READER.readValue(data.getValue(), type);
         } catch (Exception e) {
             log.warn("getCursor fail {}", e.toString(), e);
             return null;
@@ -60,8 +63,9 @@ public class RedisMetaDataRepository implements MetaDataRepository {
             if (cursor == null) {
                 redisTemplate.delete(key);
             } else {
-                Data data = new Data(cursor.getClass().getName(), JsonUtil.toJson(cursor));
-                redisTemplate.opsForValue().set(key, JsonUtil.toJsonUTF8Bytes(data));
+                String valueAsString = OBJECT_WRITER.writeValueAsString(cursor);
+                Data data = new Data(cursor.getClass().getName(), valueAsString);
+                redisTemplate.opsForValue().set(key, OBJECT_WRITER.writeValueAsBytes(data));
             }
         } catch (Exception e) {
             log.warn("setCursor fail {}", e.toString(), e);

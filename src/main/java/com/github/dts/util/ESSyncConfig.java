@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.util.AntPathMatcher;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -410,6 +411,7 @@ public class ESSyncConfig {
     }
 
     public static class ObjectField {
+        private static final JsonUtil.ObjectReader OBJECT_READER = JsonUtil.objectReader();
         /**
          * array
          * object
@@ -424,7 +426,6 @@ public class ESSyncConfig {
         private Type type;
         private String fieldName;
         private ESMapping esMapping;
-
         private ParamStaticMethod paramStaticMethod;
         private ParamArray paramArray;
         private ParamSql paramSql;
@@ -481,7 +482,11 @@ public class ESSyncConfig {
                     if (val instanceof Map) {
                         return val;
                     }
-                    return JsonUtil.toMap(val.toString());
+                    try {
+                        return OBJECT_READER.readValue(val.toString(), Map.class);
+                    } catch (IOException e) {
+                        Util.sneakyThrows(e);
+                    }
                 }
                 case BOOLEAN: {
                     if (val == null) {

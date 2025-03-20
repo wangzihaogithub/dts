@@ -6,11 +6,8 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 
 import java.io.IOException;
 import java.io.Writer;
-import java.util.HashMap;
-import java.util.Map;
 
 public class JsonUtil {
-    public static final byte[] EMPTY = {};
     private static final ObjectMapper objectMapper;
 
     static {
@@ -22,75 +19,53 @@ public class JsonUtil {
         objectMapper = o;
     }
 
-    private JsonUtil() {
-    }
-
-    public static <T> T toBeanThrows(String json, Class<T> clazz) {
-        if (json == null || json.isEmpty()) {
-            return null;
-        }
-        if (CharSequence.class.isAssignableFrom(clazz)) {
-            return (T) json;
-        }
-        try {
-            return objectMapper.readValue(json, clazz);
-        } catch (Exception e) {
-            Util.sneakyThrows(e);
-            return null;
-        }
-    }
-
-    public static String toJson(Object object) {
-        if (object == null) {
-            return "";
-        }
-        if (object instanceof CharSequence) {
-            return object.toString();
-        }
-        try {
-            return objectMapper.writeValueAsString(object);
-        } catch (Exception e) {
-            Util.sneakyThrows(e);
-            return null;
-        }
-    }
-
-    /**
-     * 对象转字节 json(UTF8编码)
-     *
-     * @param object 对象
-     * @return byte[]
-     */
-    public static byte[] toJsonUTF8Bytes(Object object) {
-        if (object == null) {
-            return EMPTY;
-        }
-        try {
-            return objectMapper.writeValueAsBytes(object);
-        } catch (Exception e) {
-            Util.sneakyThrows(e);
-            return null;
-        }
-    }
-
     public static ObjectWriter objectWriter() {
-        return objectMapper::writeValue;
+        return new ObjectWriter() {
+            @Override
+            public void writeValue(Writer w, Object value) throws IOException {
+                objectMapper.writeValue(w, value);
+            }
+
+            @Override
+            public byte[] writeValueAsBytes(Object value) throws IOException {
+                return objectMapper.writeValueAsBytes(value);
+            }
+
+            @Override
+            public String writeValueAsString(Object value) throws IOException {
+                return objectMapper.writeValueAsString(value);
+            }
+        };
     }
 
-    public static Map toMap(String json) {
-        if (json == null || json.isEmpty()) {
-            return new HashMap();
-        }
-        try {
-            return objectMapper.readValue(json, Map.class);
-        } catch (Exception e) {
-            Util.sneakyThrows(e);
-            return null;
-        }
+    public static ObjectReader objectReader() {
+        return new ObjectReader() {
+
+            @Override
+            public <T> T readValue(String src, Class<T> valueType) throws IOException {
+                return objectMapper.readValue(src, valueType);
+            }
+
+            @Override
+            public <T> T readValue(byte[] src, Class<T> valueType) throws IOException {
+                return objectMapper.readValue(src, valueType);
+            }
+        };
     }
 
     public interface ObjectWriter {
         void writeValue(Writer w, Object value) throws IOException;
+
+        byte[] writeValueAsBytes(Object value) throws IOException;
+
+        String writeValueAsString(Object value) throws IOException;
     }
 
+    public interface ObjectReader {
+
+        <T> T readValue(String src, Class<T> valueType) throws IOException;
+
+        <T> T readValue(byte[] src, Class<T> valueType) throws IOException;
+
+    }
 }

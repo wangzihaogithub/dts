@@ -15,6 +15,7 @@ import java.util.*;
 public class EsTypeUtil {
     private static final Logger log = LoggerFactory.getLogger(EsTypeUtil.class);
     private static final String[] ES_FORMAT_SUPPORT = {"yyyy-MM-dd HH:mm:ss.SSS", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd"};
+    private static final JsonUtil.ObjectReader OBJECT_READER = JsonUtil.objectReader();
 
     public static Map<String, Object> mysql2EsType(ESSyncConfig.ESMapping mapping,
                                                    Map<String, Object> mysqlData,
@@ -277,7 +278,11 @@ public class EsTypeUtil {
             if ("".equals(mysqlValue.toString().trim())) {
                 res = new HashMap<>();
             } else {
-                res = JsonUtil.toMap(mysqlValue.toString());
+                try {
+                    res = OBJECT_READER.readValue(mysqlValue.toString(), Map.class);
+                } catch (IOException e) {
+                    Util.sneakyThrows(e);
+                }
             }
         } else {
             if (mysqlValue instanceof Date) {
