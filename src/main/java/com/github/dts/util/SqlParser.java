@@ -78,6 +78,10 @@ public class SqlParser {
             SchemaItem schemaItem = new SchemaItem(check);
             schemaItem.setSql(toMysqlString(sqlSelectQueryBlock));
             SQLTableSource sqlTableSource = sqlSelectQueryBlock.getFrom();
+            if (sqlTableSource instanceof SQLExprTableSource && (sqlTableSource.getAlias() == null || sqlTableSource.getAlias().isEmpty())) {
+                String tableName = ((SQLExprTableSource) sqlTableSource).getTableName();
+                sqlTableSource.setAlias(tableName);
+            }
             List<TableItem> tableItems = new ArrayList<>();
             SqlParser.visitSelectTable(schemaItem, sqlTableSource, tableItems, null, check);
             tableItems.forEach(tableItem -> schemaItem.getAliasTableItems().put(tableItem.getAlias(), tableItem));
@@ -481,7 +485,7 @@ public class SqlParser {
             }
             tableItem.setSchema(sqlExprTableSource.getSchema());
             tableItem.setTableName(cleanColumn(sqlExprTableSource.getName().getSimpleName()));
-            if (tableItem.getAlias() == null) {
+            if (tableItem.getAlias() == null || tableItem.getAlias().isEmpty()) {
                 tableItem.setAlias(sqlExprTableSource.getAlias());
             }
 //            if (tableItems.isEmpty()) {
