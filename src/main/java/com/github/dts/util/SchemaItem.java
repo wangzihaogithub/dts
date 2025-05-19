@@ -249,6 +249,9 @@ public class SchemaItem {
 
     @Override
     public String toString() {
+        if (esMapping == null) {
+            return sql;
+        }
         if (objectField == null) {
             return String.valueOf(esMapping);
         } else {

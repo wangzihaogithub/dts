@@ -34,6 +34,15 @@ public class SqlParser {
     private static final Map<String, String> REMOVE_GROUP_BY_CACHE = new ConcurrentHashMap<>();
 
     public static void main(String[] args) {
+        SchemaItem parse = parse("SELECT\n" +
+                "        id as id,\n" +
+                "        question,\n" +
+                "        answer,\n" +
+                "        question as questionVector,\n" +
+                "       parent_id as parentId\n" +
+                "      FROM kn_cnwy ", false);
+        System.out.println("parse = " + parse);
+
         SQLStatement sqlStatement = SQLUtils.parseSingleMysqlStatement(
                 "select DISTINCT(job_id) from j"
         );
@@ -86,14 +95,14 @@ public class SqlParser {
             SqlParser.visitSelectTable(schemaItem, sqlTableSource, tableItems, null, check);
             tableItems.forEach(tableItem -> schemaItem.getAliasTableItems().put(tableItem.getAlias(), tableItem));
 
-            List<FieldItem> selectFieldItems = collectSelectQueryFields(sqlSelectQueryBlock);
+            List<FieldItem> selectFieldItems = collectSelectQueryFields(sqlSelectQueryBlock, sqlTableSource);
             selectFieldItems.forEach(fieldItem -> {
                 schemaItem.getSelectFields().put(fieldItem.getFieldName(), fieldItem);
                 schemaItem.getFields().put(fieldItem.getOwnerAndColumnName(), fieldItem);
             });
 
             List<FieldItem> whereFieldItems = new ArrayList<>();
-            collectWhereFields(sqlSelectQueryBlock.getWhere(), null, whereFieldItems);
+            collectWhereFields(sqlSelectQueryBlock.getWhere(), null, whereFieldItems, sqlTableSource);
             whereFieldItems.forEach(fieldItem -> {
                 schemaItem.getFields().put(fieldItem.getOwnerAndColumnName(), fieldItem);
             });
@@ -374,18 +383,19 @@ public class SqlParser {
      * @param left
      * @param right
      * @param fieldItems
+     * @param sqlTableSource
      */
-    private static void collectWhereFields(SQLExpr left, SQLExpr right, List<FieldItem> fieldItems) {
+    private static void collectWhereFields(SQLExpr left, SQLExpr right, List<FieldItem> fieldItems, SQLTableSource sqlTableSource) {
         if (left instanceof SQLBinaryOpExpr) {
-            collectWhereFields(((SQLBinaryOpExpr) left).getLeft(), ((SQLBinaryOpExpr) left).getRight(), fieldItems);
+            collectWhereFields(((SQLBinaryOpExpr) left).getLeft(), ((SQLBinaryOpExpr) left).getRight(), fieldItems, sqlTableSource);
         }
         if (right instanceof SQLBinaryOpExpr) {
-            collectWhereFields(((SQLBinaryOpExpr) right).getLeft(), ((SQLBinaryOpExpr) right).getRight(), fieldItems);
+            collectWhereFields(((SQLBinaryOpExpr) right).getLeft(), ((SQLBinaryOpExpr) right).getRight(), fieldItems, sqlTableSource);
         }
         FieldItem leftFieldItem = new FieldItem();
         FieldItem rightFieldItem = new FieldItem();
-        visitColumn(left, leftFieldItem);
-        visitColumn(right, rightFieldItem);
+        visitColumn(left, leftFieldItem, sqlTableSource);
+        visitColumn(right, rightFieldItem, sqlTableSource);
         if (leftFieldItem.getFieldName() != null) {
             fieldItems.add(leftFieldItem);
         }
@@ -398,14 +408,15 @@ public class SqlParser {
      * 归集字段
      *
      * @param sqlSelectQueryBlock sqlSelectQueryBlock
+     * @param sqlTableSource      SQLTableSource
      * @return 字段属性列表
      */
-    private static List<FieldItem> collectSelectQueryFields(MySqlSelectQueryBlock sqlSelectQueryBlock) {
+    private static List<FieldItem> collectSelectQueryFields(MySqlSelectQueryBlock sqlSelectQueryBlock, SQLTableSource sqlTableSource) {
         return sqlSelectQueryBlock.getSelectList().stream().map(selectItem -> {
             FieldItem fieldItem = new FieldItem();
             fieldItem.setFieldName(cleanColumn(selectItem.getAlias()));
             fieldItem.setExpr(selectItem.toString());
-            visitColumn(selectItem.getExpr(), fieldItem);
+            visitColumn(selectItem.getExpr(), fieldItem, sqlTableSource);
             if (fieldItem.getFieldName() == null) {
                 throw new IllegalArgumentException("sql parse error! columnName is null. Please check your SQL statement. error sql = " + sqlSelectQueryBlock);
             }
@@ -416,10 +427,11 @@ public class SqlParser {
     /**
      * 解析字段
      *
-     * @param expr      sql expr
-     * @param fieldItem 字段属性
+     * @param expr           sql expr
+     * @param fieldItem      字段属性
+     * @param sqlTableSource sqlTableSource
      */
-    private static void visitColumn(SQLExpr expr, FieldItem fieldItem) {
+    private static void visitColumn(SQLExpr expr, FieldItem fieldItem, SQLTableSource sqlTableSource) {
         if (expr instanceof SQLIdentifierExpr) {
             // 无owner
             SQLIdentifierExpr identifierExpr = (SQLIdentifierExpr) expr;
@@ -429,8 +441,10 @@ public class SqlParser {
                 fieldItem.setExpr(identifierExpr.toString());
             }
             ColumnItem columnItem = new ColumnItem();
+            String alias = fieldItem.isBinaryOp() ? null : sqlTableSource.getAlias();
+            columnItem.setOwner(alias);
             columnItem.setColumnName(name);
-            fieldItem.addColumn(null, columnItem);
+            fieldItem.addColumn(alias, columnItem);
         } else if (expr instanceof SQLPropertyExpr) {
             // 有owner
             SQLPropertyExpr sqlPropertyExpr = (SQLPropertyExpr) expr;
@@ -439,7 +453,11 @@ public class SqlParser {
                 fieldItem.setFieldName(name);
                 fieldItem.setExpr(sqlPropertyExpr.toString());
             }
-            String ownernName = cleanColumn(sqlPropertyExpr.getOwnernName());
+            String ownernName = cleanColumn(sqlPropertyExpr.getOwnerName());
+            String alias = fieldItem.isBinaryOp() ? null : sqlTableSource.getAlias();
+            if (ownernName == null || ownernName.isEmpty()) {
+                ownernName = alias;
+            }
             ColumnItem columnItem = new ColumnItem();
             columnItem.setColumnName(name);
             columnItem.setOwner(ownernName);
@@ -448,17 +466,17 @@ public class SqlParser {
             SQLMethodInvokeExpr methodInvokeExpr = (SQLMethodInvokeExpr) expr;
             fieldItem.setMethod(true);
             for (SQLExpr sqlExpr : methodInvokeExpr.getArguments()) {
-                visitColumn(sqlExpr, fieldItem);
+                visitColumn(sqlExpr, fieldItem, sqlTableSource);
             }
         } else if (expr instanceof SQLBinaryOpExpr) {
             SQLBinaryOpExpr sqlBinaryOpExpr = (SQLBinaryOpExpr) expr;
             fieldItem.setBinaryOp(true);
-            visitColumn(sqlBinaryOpExpr.getLeft(), fieldItem);
-            visitColumn(sqlBinaryOpExpr.getRight(), fieldItem);
+            visitColumn(sqlBinaryOpExpr.getLeft(), fieldItem, sqlTableSource);
+            visitColumn(sqlBinaryOpExpr.getRight(), fieldItem, sqlTableSource);
         } else if (expr instanceof SQLCaseExpr) {
             SQLCaseExpr sqlCaseExpr = (SQLCaseExpr) expr;
             fieldItem.setMethod(true);
-            sqlCaseExpr.getItems().forEach(item -> visitColumn(item.getConditionExpr(), fieldItem));
+            sqlCaseExpr.getItems().forEach(item -> visitColumn(item.getConditionExpr(), fieldItem, sqlTableSource));
         } else {
 //            LOGGER.warn("skip filed. expr={}",expr);
         }
@@ -500,7 +518,7 @@ public class SqlParser {
             SQLTableSource rightTableSource = sqlJoinTableSource.getRight();
             TableItem rightTableItem = new TableItem(schemaItem);
             // 解析on条件字段
-            visitOnCondition(sqlJoinTableSource.getCondition(), rightTableItem, check);
+            visitOnCondition(sqlJoinTableSource.getCondition(), rightTableItem, check, sqlTableSource);
             visitSelectTable(schemaItem, rightTableSource, tableItems, rightTableItem, check);
 
         } else if (sqlTableSource instanceof SQLSubqueryTableSource) {
@@ -515,7 +533,7 @@ public class SqlParser {
             tableItem.setAlias(subQueryTableSource.getAlias());
             tableItem.setSubQuerySql(SQLUtils.toMySqlString(sqlSelectQuery));
             tableItem.setSubQuery(true);
-            tableItem.setSubQueryFields(collectSelectQueryFields(sqlSelectQuery));
+            tableItem.setSubQueryFields(collectSelectQueryFields(sqlSelectQuery, subQueryTableSource));
             visitSelectTable(schemaItem, sqlSelectQuery.getFrom(), tableItems, tableItem, check);
         }
     }
@@ -523,21 +541,23 @@ public class SqlParser {
     /**
      * 解析on条件
      *
-     * @param expr      sql expr
-     * @param tableItem 表对象
+     * @param expr           sql expr
+     * @param tableItem      表对象
+     * @param sqlTableSource sqlTableSource
+     * @param check          check
      */
-    private static void visitOnCondition(SQLExpr expr, TableItem tableItem, boolean check) {
+    private static void visitOnCondition(SQLExpr expr, TableItem tableItem, boolean check, SQLTableSource sqlTableSource) {
         if (!(expr instanceof SQLBinaryOpExpr)) {
             throw new UnsupportedOperationException();
         }
         SQLBinaryOpExpr sqlBinaryOpExpr = (SQLBinaryOpExpr) expr;
         if (sqlBinaryOpExpr.getOperator() == SQLBinaryOperator.BooleanAnd) {
-            visitOnCondition(sqlBinaryOpExpr.getLeft(), tableItem, check);
-            visitOnCondition(sqlBinaryOpExpr.getRight(), tableItem, check);
+            visitOnCondition(sqlBinaryOpExpr.getLeft(), tableItem, check, sqlTableSource);
+            visitOnCondition(sqlBinaryOpExpr.getRight(), tableItem, check, sqlTableSource);
         } else if (sqlBinaryOpExpr.getOperator() == SQLBinaryOperator.Equality) {
             FieldItem leftFieldItem = new FieldItem();
             SQLExpr left = sqlBinaryOpExpr.getLeft();
-            visitColumn(left, leftFieldItem);
+            visitColumn(left, leftFieldItem, sqlTableSource);
             Object leftValue = null;
             if (leftFieldItem.getColumnItems().size() != 1 || leftFieldItem.isMethod() || leftFieldItem.isBinaryOp()) {
                 if (!check && left instanceof SQLValuableExpr) {
@@ -548,7 +568,7 @@ public class SqlParser {
             }
             FieldItem rightFieldItem = new FieldItem();
             SQLExpr right = sqlBinaryOpExpr.getRight();
-            visitColumn(right, rightFieldItem);
+            visitColumn(right, rightFieldItem, sqlTableSource);
             Object rightValue = null;
             if (rightFieldItem.getColumnItems().size() != 1 || rightFieldItem.isMethod()
                     || rightFieldItem.isBinaryOp()) {
