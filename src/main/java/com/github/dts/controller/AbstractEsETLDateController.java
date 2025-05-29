@@ -85,7 +85,7 @@ public abstract class AbstractEsETLDateController {
 
         AbstractMessageService messageService = startupServer.getMessageService();
         List<SyncRunnable> runnableList = new ArrayList<>();
-        setSuspendEs(true, clientIdentity);
+//        setSuspendEs(true, clientIdentity);
         this.stop = false;
         for (ESAdapter adapter : adapterList) {
             Map<String, ESSyncConfig> configMap = adapter.getEsSyncConfigByIndex(esIndexName);
@@ -121,7 +121,7 @@ public abstract class AbstractEsETLDateController {
                                 if (log.isInfoEnabled()) {
                                     log.info("syncAll done {}", this);
                                 }
-                                setSuspendEs(false, clientIdentity);
+//                                setSuspendEs(false, clientIdentity);
                                 sendDone(runnableList, timestamp, dmlSize.intValue());
                             }
                         }

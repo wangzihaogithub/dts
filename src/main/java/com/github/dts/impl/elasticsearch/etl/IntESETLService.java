@@ -485,10 +485,10 @@ public class IntESETLService {
                     }
                 }).start();
             }
-            setSuspendEs(true, clientIdentity);
+//            setSuspendEs(true, clientIdentity);
 
             AbstractMessageService messageService = startupServer.getMessageService();
-            AtomicInteger configDone = new AtomicInteger(configMap.values().size());
+//            AtomicInteger configDone = new AtomicInteger(configMap.size());
             for (ESSyncConfig config : configMap.values()) {
                 JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(config.getDataSourceKey());
                 String catalog = CanalConfig.DatasourceConfig.getCatalog(config.getDataSourceKey());
@@ -536,9 +536,9 @@ public class IntESETLService {
                                 if (log.isInfoEnabled()) {
                                     log.info("syncAll done {}", this);
                                 }
-                                if (configDone.decrementAndGet() == 0) {
-                                    setSuspendEs(false, clientIdentity);
-                                }
+//                                if (configDone.decrementAndGet() == 0) {
+//                                    setSuspendEs(false, clientIdentity);
+//                                }
                                 sendDone(messageService, runnableList, timestamp, dmlSize.longValue(), onlyFieldNameSet, adapter, config, onlyCurrentIndex, sqlWhere, insertIgnore);
                             }
                         }
