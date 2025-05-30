@@ -4,15 +4,23 @@ import com.github.dts.impl.elasticsearch.nested.SQL;
 import com.github.dts.util.ESSyncConfig.ESMapping;
 import com.github.dts.util.SchemaItem.TableItem;
 import org.joda.time.DateTime;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import javax.sql.DataSource;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.lang.reflect.Array;
+import java.net.JarURLConnection;
+import java.net.URL;
 import java.nio.file.Files;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
 
 /**
  * ES 同步工具同类
@@ -29,6 +37,8 @@ public class ESSyncUtil {
             return size() > 5000;
         }
     });
+    private static final Logger log = LoggerFactory.getLogger(ESSyncUtil.class);
+    private static final Map<String, Map<String, byte[]>> LOAD_YAML_TO_BYTES_CACHE = new ConcurrentHashMap<>();
 
     public static String trimWhere(String where) {
         if (where == null) {
@@ -50,24 +60,114 @@ public class ESSyncUtil {
         return where;
     }
 
-    public static Map<String, byte[]> loadYamlToBytes(File configDir) {
+    public static Map<String, byte[]> loadYamlToBytes(JarFile jarFile, String rootEntryName) {
+        Map<String, byte[]> map = new LinkedHashMap<>();
+        if (jarFile == null) {
+            return map;
+        }
+        try {
+            Enumeration<JarEntry> entries = jarFile.entries();
+            while (entries.hasMoreElements()) {
+                JarEntry entry = entries.nextElement();
+                String entryName = entry.getName();
+                // 判断是否为 YAML 文件
+                if (!entryName.startsWith(rootEntryName) || !isYaml(entryName)) {
+                    continue;
+                }
+                // 忽略目录条目（无需递归处理，因为每个文件都是扁平化条目）
+                if (entry.isDirectory()) {
+                    continue;
+                }
+                log.info("loadYamlToBytes jar file = {}", entryName);
+                try (InputStream is = jarFile.getInputStream(entry)) {
+                    byte[] bytes = readStream(is);
+                    if (bytes.length > 0) {
+                        String fileName = extractFileName(entryName);
+                        map.put(fileName, bytes);
+                    }
+                } catch (IOException e) {
+                    throw new RuntimeException("Read " + entryName + " error." + e, e);
+                }
+            }
+        } finally {
+            try {
+                jarFile.close();
+            } catch (IOException ignored) {
+
+            }
+        }
+        return map;
+    }
+
+    private static boolean isYaml(String fileName) {
+        return fileName.endsWith(".yml") || fileName.endsWith(".yaml");
+    }
+
+    // 从路径中提取文件名（去掉路径部分）
+    private static String extractFileName(String entryName) {
+        int lastSlashIndex = entryName.lastIndexOf('/');
+        return lastSlashIndex >= 0 ? entryName.substring(lastSlashIndex + 1) : entryName;
+    }
+
+    // 读取 InputStream 到 byte[]
+    private static byte[] readStream(InputStream is) throws IOException {
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        int nRead;
+        byte[] data = new byte[Math.max(is.available(), 16384)];
+        while ((nRead = is.read(data, 0, data.length)) != -1) {
+            buffer.write(data, 0, nRead);
+        }
+        return buffer.toByteArray();
+    }
+
+    public static void main(String[] args) throws IOException {
+        String userHome = System.getProperty("user.home");
+        String jarPath = userHome + "/Desktop/cnwy-dts.jar";
+//        Map<String, byte[]> stringMap = loadYamlToBytes(new URL("jar:file://" + jarPath));
+        URL url = new URL("jar:file:/" + jarPath + "/cnwy-dts.jar!/BOOT-INF/classes!/es");
+        Map<String, byte[]> stringMap = loadYamlToBytes(url);
+        System.out.println("stringMap = " + stringMap);
+    }
+
+    public static Map<String, byte[]> loadYamlToBytes(URL configDir) {
+        Map<String, byte[]> stringMap = LOAD_YAML_TO_BYTES_CACHE.computeIfAbsent(configDir.toString(), unused -> {
+            if ("jar".equals(configDir.getProtocol())) {
+                try {
+                    JarURLConnection connection = (JarURLConnection) configDir.openConnection();
+                    return loadYamlToBytes(connection.getJarFile(), connection.getEntryName());
+                } catch (IOException e) {
+                    throw new RuntimeException("Read config: " + configDir + " error. " + e.toString(), e);
+                }
+            } else {
+                String path = configDir.getPath();
+                File dir = new File(path);
+                return loadYamlToBytes(dir);
+            }
+        });
+        return new LinkedHashMap<>(stringMap);
+    }
+
+    public static Map<String, byte[]> loadYamlToBytes(File dir) {
         Map<String, byte[]> map = new LinkedHashMap<>();
         // 先取本地文件，再取类路径
-        File[] files = configDir.listFiles();
+        File[] files = dir.listFiles();
         if (files != null) {
             for (File file : files) {
                 if (file.isDirectory()) {
                     map.putAll(loadYamlToBytes(file));
                 } else {
                     String fileName = file.getName();
-                    if (!fileName.endsWith(".yml") && !fileName.endsWith(".yaml")) {
+                    if (!isYaml(fileName)) {
                         continue;
                     }
+                    log.info("loadYamlToBytes dir file = {}, dir = {}", fileName, dir);
                     try {
                         byte[] bytes = Files.readAllBytes(file.toPath());
-                        map.put(fileName, bytes);
+                        if (bytes.length > 0) {
+                            map.put(fileName, bytes);
+                        }
                     } catch (IOException e) {
-                        throw new RuntimeException("Read " + configDir + "mapping config: " + fileName + " error. ", e);
+                        throw new RuntimeException("Read " + dir + "mapping config: " + fileName + " error. ", e);
                     }
                 }
             }

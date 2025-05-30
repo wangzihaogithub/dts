@@ -8,7 +8,6 @@ import org.springframework.core.env.Environment;
 import org.springframework.scheduling.concurrent.CustomizableThreadFactory;
 import org.springframework.util.LinkedCaseInsensitiveMap;
 
-import java.io.File;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.net.InetAddress;
@@ -109,14 +108,12 @@ public class Util {
         return errMsg;
     }
 
-    public static File getConfDirPath(String subConf) {
+    public static URL getConfDirPath(String subConf) {
         URL url = Util.class.getClassLoader().getResource(subConf);
-        String path = url.getPath();
-        File dir = new File(path);
-        if (!dir.exists()) {
-            throw new RuntimeException("Config dir not exists. = " + dir);
+        if (url == null) {
+            throw new RuntimeException("Config dir not exists. = " + subConf);
         }
-        return dir;
+        return url;
     }
 
     public static boolean isBlank(String str) {

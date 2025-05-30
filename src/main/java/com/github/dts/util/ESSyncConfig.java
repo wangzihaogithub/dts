@@ -8,6 +8,7 @@ import org.springframework.util.AntPathMatcher;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.URL;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -36,7 +37,7 @@ public class ESSyncConfig {
                                         Map<String, ESSyncConfig> configMap,
                                         Properties envProperties, CanalConfig.CanalAdapter canalAdapter,
                                         String adapterName,
-                                        File resourcesDir, String env) {
+                                        URL resourcesDir, String env) {
         Map<String, ESSyncConfig> load = loadYamlToBean(envProperties, canalAdapter, resourcesDir, env);
         for (Map.Entry<String, ESSyncConfig> entry : load.entrySet()) {
             ESSyncConfig config = entry.getValue();
@@ -76,7 +77,7 @@ public class ESSyncConfig {
         }
     }
 
-    public static Map<String, ESSyncConfig> loadYamlToBean(Properties envProperties, CanalConfig.CanalAdapter canalAdapter, File resourcesDir, String env) {
+    public static Map<String, ESSyncConfig> loadYamlToBean(Properties envProperties, CanalConfig.CanalAdapter canalAdapter, URL resourcesDir, String env) {
         log.info("## Start loading es mapping config {}", resourcesDir);
         Map<String, ESSyncConfig> esSyncConfig = new LinkedHashMap<>();
         Map<String, byte[]> yamlMap = ESSyncUtil.loadYamlToBytes(resourcesDir);
