@@ -391,7 +391,7 @@ public class ESSyncUtil {
         }
     }
 
-    private static boolean equalsValue(Object mysql, Object es) {
+    private static boolean equalsValue(Object es, Object mysql) {
         if (mysql == es) {
             return true;
         }
@@ -413,8 +413,14 @@ public class ESSyncUtil {
                 for (int i = 0; i < mysqlLength; i++) {
                     Object mysqlValue = Array.get(mysql, i);
                     Object esValue = iterator.next();
-                    if (!equalsEsDate(mysqlValue, esValue)) {
-                        return false;
+                    if (mysqlValue instanceof Date || esValue instanceof Date) {
+                        if (!equalsEsDate(mysqlValue, esValue)) {
+                            return false;
+                        }
+                    } else {
+                        if (!Objects.equals(Objects.toString(mysqlValue, null), Objects.toString(esValue, null))) {
+                            return false;
+                        }
                     }
                 }
                 return true;
@@ -427,8 +433,14 @@ public class ESSyncUtil {
                 for (int i = 0; i < mysqlLength; i++) {
                     Object mysqlValue = Array.get(mysql, i);
                     Object esValue = Array.get(es, i);
-                    if (!equalsEsDate(mysqlValue, esValue)) {
-                        return false;
+                    if (mysqlValue instanceof Date || esValue instanceof Date) {
+                        if (!equalsEsDate(mysqlValue, esValue)) {
+                            return false;
+                        }
+                    } else {
+                        if (!Objects.equals(Objects.toString(mysqlValue, null), Objects.toString(esValue, null))) {
+                            return false;
+                        }
                     }
                 }
                 return true;
@@ -436,7 +448,7 @@ public class ESSyncUtil {
                 return false;
             }
         } else {
-            return Objects.equals(mysql, es);
+            return Objects.equals(Objects.toString(mysql, null), Objects.toString(es, null));
         }
     }
 
@@ -472,7 +484,12 @@ public class ESSyncUtil {
                     }
                     Object refEs = esRowData.get(refTextFieldName);
                     Object refMysql = mysqlRowData.get(refTextFieldName);
-                    return equalsValue(refEs, refMysql);
+                    ESSyncConfig.ObjectField refObjectField = objectField.getEsMapping().getObjectField(null, refTextFieldName);
+                    if (refObjectField == null) {
+                        return equalsValue(refEs, refMysql);
+                    } else {
+                        return equalsObjectFieldRowDataValue(refMysql, refEs, refObjectField, mysqlRowData, esRowData, requireSequential);
+                    }
                 }
             }
             case ARRAY: {
@@ -499,7 +516,7 @@ public class ESSyncUtil {
                 }
             }
             default: {
-                return equalsValue(mysql, es);
+                return equalsValue(es, mysql);
             }
         }
     }
