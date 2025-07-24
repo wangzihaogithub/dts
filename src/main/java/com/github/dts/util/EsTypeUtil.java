@@ -1,21 +1,28 @@
 package com.github.dts.util;
 
-import org.joda.time.DateTime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.sql.Blob;
 import java.sql.SQLException;
+import java.time.ZonedDateTime;
 import java.util.*;
 
 public class EsTypeUtil {
     private static final Logger log = LoggerFactory.getLogger(EsTypeUtil.class);
-    private static final String[] ES_FORMAT_SUPPORT = {"yyyy-MM-dd HH:mm:ss.SSS", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd"};
+    private static String[] ES_DATE_FORMAT_SUPPORT = {"yyyy-MM-dd HH:mm:ss.SSS", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd"};
     private static final JsonUtil.ObjectReader OBJECT_READER = JsonUtil.objectReader();
+
+    public static void setEsDateFormatSupport(String[] esDateFormatSupport) {
+        ES_DATE_FORMAT_SUPPORT = esDateFormatSupport;
+    }
+
+    public static String[] getEsDateFormatSupport() {
+        return ES_DATE_FORMAT_SUPPORT;
+    }
 
     public static Map<String, Object> mysql2EsType(ESSyncConfig.ESMapping mapping,
                                                    Map<String, Object> mysqlData,
@@ -127,8 +134,7 @@ public class EsTypeUtil {
         // 如果es mapping里没有这个属性
         if (esTypeVO == null) {
             if (mysqlValue instanceof Date) {
-                DateTime dateTime = new DateTime(((Date) mysqlValue).getTime());
-                return dateTime.toString(ES_FORMAT_SUPPORT[0]);
+                return DateUtil.dateFormat((Date) mysqlValue, ES_DATE_FORMAT_SUPPORT[0]);
             } else if (mysqlValue instanceof Number) {
                 return mysqlValue;
             } else if (mysqlValue instanceof Boolean) {
@@ -187,63 +193,46 @@ public class EsTypeUtil {
                 res = Boolean.parseBoolean(mysqlValue.toString());
             }
         } else if ("date".equals(esType)) {
-            if (mysqlValue instanceof java.sql.Time) {
-                DateTime dateTime = new DateTime(((java.sql.Time) mysqlValue).getTime());
-                res = parseDate(dateTime, esTypeVO);
-            } else if (mysqlValue instanceof java.sql.Timestamp) {
-                DateTime dateTime = new DateTime(((java.sql.Timestamp) mysqlValue).getTime());
-                res = parseDate(dateTime, esTypeVO);
-            } else if (mysqlValue instanceof java.sql.Date || mysqlValue instanceof Date) {
-                DateTime dateTime;
-                if (mysqlValue instanceof java.sql.Date) {
-                    dateTime = new DateTime(((java.sql.Date) mysqlValue).getTime());
-                } else {
-                    dateTime = new DateTime(((Date) mysqlValue).getTime());
-                }
-                res = parseDate(dateTime, esTypeVO);
+            if (mysqlValue instanceof Date) {
+                res = parseEsDate((Date) mysqlValue, esTypeVO);
             } else if (mysqlValue instanceof Long) {
-                DateTime dateTime = new DateTime(((Long) mysqlValue).longValue());
-                res = parseDate(dateTime, esTypeVO);
+                res = parseEsDate(new Date((Long) mysqlValue), esTypeVO);
             } else if (mysqlValue instanceof String) {
                 String v = ((String) mysqlValue).trim();
                 if (v.length() > 18 && v.charAt(4) == '-' && v.charAt(7) == '-' && v.charAt(10) == ' '
                         && v.charAt(13) == ':' && v.charAt(16) == ':') {
                     String dt = v.substring(0, 10) + "T" + v.substring(11);
-                    Date date = Util.parseDate(dt);
+                    Date date = DateUtil.parseDate(dt);
                     if (date != null) {
-                        DateTime dateTime = new DateTime(date);
-                        res = parseDate(dateTime, esTypeVO);
+                        res = parseEsDate(date, esTypeVO);
                     }
                 } else if (v.length() == 10 && v.charAt(4) == '-' && v.charAt(7) == '-') {
-                    Date date = Util.parseDate(v);
+                    Date date = DateUtil.parseDate(v);
                     if (date != null) {
-                        DateTime dateTime = new DateTime(date);
-                        res = parseDate(dateTime, esTypeVO);
+                        res = parseEsDate(date, esTypeVO);
                     }
                 } else if (v.length() == 7 && v.charAt(4) == '-') {
-                    Date date = Util.parseDate(v);
+                    Date date = DateUtil.parseDate(v);
                     if (date != null) {
-                        DateTime dateTime = new DateTime(date);
-                        res = parseDate(dateTime, esTypeVO);
+                        res = parseEsDate(date, esTypeVO);
                     }
                 } else if (v.length() == 4) {
-                    Date date = Util.parseDate(v);
+                    Date date = DateUtil.parseDate(v);
                     if (date != null) {
-                        DateTime dateTime = new DateTime(date);
-                        res = parseDate(dateTime, esTypeVO);
+                        res = parseEsDate(date, esTypeVO);
                     }
                 }
             }
         } else if ("binary".equals(esType)) {
             if (mysqlValue instanceof byte[]) {
-                res = new String(Base64.getEncoder().encode((byte[]) mysqlValue), Charset.forName("UTF-8"));
+                res = new String(Base64.getEncoder().encode((byte[]) mysqlValue), StandardCharsets.UTF_8);
             } else if (mysqlValue instanceof Blob) {
                 byte[] b = blobToBytes((Blob) mysqlValue);
-                res = new String(Base64.getEncoder().encode(b), Charset.forName("UTF-8"));
+                res = new String(Base64.getEncoder().encode(b), StandardCharsets.UTF_8);
             } else if (mysqlValue instanceof String) {
                 // 对应canal中的单字节编码
                 byte[] b = ((String) mysqlValue).getBytes(StandardCharsets.ISO_8859_1);
-                res = new String(Base64.getEncoder().encode(b), Charset.forName("UTF-8"));
+                res = new String(Base64.getEncoder().encode(b), StandardCharsets.UTF_8);
             }
         } else if ("geo_point".equals(esType)) {
             if (!(mysqlValue instanceof String)) {
@@ -257,7 +246,7 @@ public class EsTypeUtil {
             }
             return ESSyncUtil.parseGeoPointToMap((String) mysqlValue);
         } else if ("array".equals(esType)) {
-            if ("".equals(mysqlValue.toString().trim())) {
+            if (Util.isBlank(mysqlValue.toString())) {
                 res = new ArrayList<>();
             } else {
                 String value = mysqlValue.toString();
@@ -275,7 +264,7 @@ public class EsTypeUtil {
                 return Arrays.asList(values);
             }
         } else if ("object".equals(esType)) {
-            if ("".equals(mysqlValue.toString().trim())) {
+            if (Util.isBlank(mysqlValue.toString())) {
                 res = new HashMap<>();
             } else {
                 try {
@@ -286,8 +275,7 @@ public class EsTypeUtil {
             }
         } else {
             if (mysqlValue instanceof Date) {
-                DateTime dateTime = new DateTime(((Date) mysqlValue).getTime());
-                res = dateTime.toString("yyyy-MM-dd HH:mm:ss.SSS");
+                res = DateUtil.dateFormat((Date) mysqlValue, "yyyy-MM-dd HH:mm:ss.SSS");
             } else if (mysqlValue instanceof Map) {
             } else if (mysqlValue instanceof Collection) {
             } else if (mysqlValue.getClass().isArray()) {
@@ -314,29 +302,30 @@ public class EsTypeUtil {
         }
     }
 
-    private static Object parseDate(DateTime dateTime, ESFieldTypesCache esFieldType) {
+    private static Object parseEsDate(Date dateTime, ESFieldTypesCache esFieldType) {
         Set<String> esFormatSet = esFieldType.getFormatSet();
         if (esFormatSet != null) {
             if (esFormatSet.size() == 1) {
-                return dateTime.toString(esFormatSet.iterator().next());
+                return DateUtil.dateFormat(dateTime, esFormatSet.iterator().next());
             }
-            for (String format : ES_FORMAT_SUPPORT) {
+            for (String format : ES_DATE_FORMAT_SUPPORT) {
                 if (esFormatSet.contains(format)) {
-                    return dateTime.toString(format);
+                    return DateUtil.dateFormat(dateTime, format);
                 }
             }
             if (esFormatSet.contains("epoch_millis")) {
-                return dateTime.toDate().getTime();
+                return dateTime.getTime();
             }
         }
-        if (dateTime.getHourOfDay() == 0 && dateTime.getMinuteOfHour() == 0 && dateTime.getSecondOfMinute() == 0
-                && dateTime.getMillisOfSecond() == 0) {
-            return dateTime.toString("yyyy-MM-dd");
+        ZonedDateTime zonedDateTime = dateTime.toInstant().atZone(DateUtil.zoneId);
+        if (zonedDateTime.getHour() == 0 && zonedDateTime.getMinute() == 0 && zonedDateTime.getSecond() == 0
+                && zonedDateTime.getNano() == 0) {
+            return DateUtil.dateFormat(dateTime, "yyyy-MM-dd");
         } else {
-            if (dateTime.getMillisOfSecond() != 0) {
-                return dateTime.toString("yyyy-MM-dd HH:mm:ss.SSS");
+            if (zonedDateTime.getNano() != 0) {
+                return DateUtil.dateFormat(dateTime, "yyyy-MM-dd HH:mm:ss.SSS");
             } else {
-                return dateTime.toString("yyyy-MM-dd HH:mm:ss");
+                return DateUtil.dateFormat(dateTime, "yyyy-MM-dd HH:mm:ss");
             }
         }
     }

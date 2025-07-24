@@ -1,5 +1,6 @@
 package com.github.dts.impl.elasticsearch.nested;
 
+import com.github.dts.util.DateUtil;
 import com.github.dts.util.ESSyncUtil;
 
 import java.text.SimpleDateFormat;
@@ -85,7 +86,7 @@ public class SQL {
                 if (arg instanceof String) {
                     value = "'" + arg + "'";
                 } else if (arg instanceof Date) {
-                    value = "'" + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(arg) + "'";
+                    value = "'" + DateUtil.dateFormat((Date) arg, "yyyy-MM-dd HH:mm:ss") + "'";
                 } else {
                     value = String.valueOf(arg);
                 }

@@ -3,7 +3,6 @@ package com.github.dts.util;
 import com.github.dts.impl.elasticsearch.nested.SQL;
 import com.github.dts.util.ESSyncConfig.ESMapping;
 import com.github.dts.util.SchemaItem.TableItem;
-import org.joda.time.DateTime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -21,6 +20,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
+import java.util.stream.Collectors;
 
 /**
  * ES 同步工具同类
@@ -365,29 +365,30 @@ public class ESSyncUtil {
     }
 
     private static boolean equalsEsDate(Object mysqlDate, Object esDate) {
-        Date dateEs;
-        Date dateMysql;
-        if (esDate instanceof Date) {
-            dateEs = (Date) esDate;
+        String esStringDate;
+        String mysqlStringDate;
+        String stringDateFormat = "yyyy-MM-dd HH:mm:ss.SSS";
+        if (esDate instanceof String) {
+            esStringDate = (String) esDate;
+        } else if (esDate instanceof Date) {
+            esStringDate = DateUtil.dateFormat((Date) esDate, stringDateFormat);
         } else {
-            dateEs = DateUtil.parseDate(esDate.toString());
+            esStringDate = "";
         }
-        if (mysqlDate instanceof Date) {
-            dateMysql = (Date) mysqlDate;
+        if (mysqlDate instanceof String) {
+            mysqlStringDate = (String) mysqlDate;
+        } else if (mysqlDate instanceof Date) {
+            mysqlStringDate = DateUtil.dateFormat((Date) mysqlDate, stringDateFormat);
         } else {
-            dateMysql = DateUtil.parseDate(mysqlDate.toString());
+            mysqlStringDate = "";
         }
-
-        DateTime dateMysqlDateTime = new DateTime(dateMysql);
-        DateTime dateEsDateTime = new DateTime(dateEs);
-        String format;
-        if (dateEsDateTime.getHourOfDay() == 0 && dateEsDateTime.getMinuteOfHour() == 0 && dateEsDateTime.getSecondOfMinute() == 0
-                && dateEsDateTime.getMillisOfSecond() == 0) {
-            format = "yyyy-MM-dd";
+        if (mysqlStringDate.length() < esStringDate.length()) {
+            String substring = esStringDate.substring(0, mysqlStringDate.length());
+            return Objects.equals(mysqlStringDate, substring);
         } else {
-            format = "yyyy-MM-dd HH:mm:ss";
+            String substring = mysqlStringDate.substring(0, esStringDate.length());
+            return Objects.equals(esStringDate, substring);
         }
-        return dateEsDateTime.toString(format).equals(dateMysqlDateTime.toString(format));
     }
 
     private static boolean equalsValue(Object mysql, Object es) {
@@ -439,7 +440,10 @@ public class ESSyncUtil {
         }
     }
 
-    public static boolean equalsObjectFieldRowDataValue(Object mysql, Object es, ESSyncConfig.ObjectField objectField, Map<String, Object> mysqlRowData, Map<String, Object> esRowData) {
+    public static boolean equalsObjectFieldRowDataValue(Object mysql, Object es,
+                                                        ESSyncConfig.ObjectField objectField,
+                                                        Map<String, Object> mysqlRowData, Map<String, Object> esRowData,
+                                                        boolean requireSequential) {
         ESSyncConfig.ObjectField.Type type = objectField.getType();
         switch (type) {
             case OBJECT_FLAT_SQL://equalsObjectFieldRowDataValue
@@ -475,17 +479,17 @@ public class ESSyncUtil {
                 if (es == null && mysql == null) {
                     return true;
                 }
-                if (es == null || mysql == null) {
-                    return false;
-                }
                 Collection<?> mysqlParse = (Collection) objectField.parse(mysql, objectField.getEsMapping(), mysqlRowData);
+                if (es == null && mysqlParse == null) {
+                    return true;
+                }
                 Collection<?> esParse;
                 if (es instanceof Collection) {
                     esParse = (Collection) es;
                 } else {
                     return false;
                 }
-                return equalsToStringList(mysqlParse, esParse);
+                return equalsToStringList(mysqlParse, esParse, requireSequential);
             }
             case BOOLEAN: {
                 try {
@@ -500,7 +504,7 @@ public class ESSyncUtil {
         }
     }
 
-    private static boolean equalsToStringList(Collection<?> mysqlList, Collection<?> esList) {
+    private static boolean equalsToStringList(Collection<?> mysqlList, Collection<?> esList, boolean requireSequential) {
         if (mysqlList == null && esList == null) {
             return true;
         }
@@ -510,16 +514,28 @@ public class ESSyncUtil {
         if (mysqlList.size() != esList.size()) {
             return false;
         }
-        Iterator<?> mysqlIterator = mysqlList.iterator();
-        for (Object es : esList) {
-            Object mysql = mysqlIterator.next();
-            if (Objects.equals(mysql, es)) {
-                continue;
+        if (requireSequential) {
+            Iterator<?> mysqlIterator = mysqlList.iterator();
+            for (Object es : esList) {
+                Object mysql = mysqlIterator.next();
+                if (Objects.equals(mysql, es)) {
+                    continue;
+                }
+                if (!Objects.equals(
+                        Objects.toString(mysql, null),
+                        Objects.toString(es, null))) {
+                    return false;
+                }
             }
-            if (!Objects.equals(
-                    Objects.toString(mysql, null),
-                    Objects.toString(es, null))) {
-                return false;
+        } else {
+            Set<String> mysqlStringList = mysqlList.stream()
+                    .map(e -> Objects.toString(e, null))
+                    .collect(Collectors.toSet());
+            for (Object es : esList) {
+                String esString = Objects.toString(es, null);
+                if (!mysqlStringList.contains(esString)) {
+                    return false;
+                }
             }
         }
         return true;
@@ -560,9 +576,10 @@ public class ESSyncUtil {
                 if (esList.size() != mysqlRowData.size()) {
                     return false;
                 }
+                boolean requireSequential = isRequireSequential(objectField);
                 if (objectField.getType().isFlatSqlType()) {
                     List<Object> mysqlRowFlatData = flatValue0List(mysqlRowData);
-                    return equalsToStringList(mysqlRowFlatData, esList);
+                    return equalsToStringList(mysqlRowFlatData, esList, requireSequential);
                 } else {
                     Iterator<Map<String, Object>> mysqlIterator = mysqlRowData.iterator();
                     for (Object esObj : esList) {
@@ -576,7 +593,7 @@ public class ESSyncUtil {
                             Object esValue = es.get(field);
                             ESSyncConfig.ObjectField fieldObjectField = objectField.getEsMapping().getObjectField(objectField.getFieldName(), field);
                             if (fieldObjectField != null) {
-                                if (!equalsObjectFieldRowDataValue(mysqlValue, esValue, fieldObjectField, mysql, es)) {
+                                if (!equalsObjectFieldRowDataValue(mysqlValue, esValue, fieldObjectField, mysql, es, requireSequential)) {
                                     return false;
                                 }
                             } else if (!equalsRowDataValue(mysqlValue, esValue)) {
@@ -594,6 +611,19 @@ public class ESSyncUtil {
         }
     }
 
+    /**
+     * 是否需要保持顺序
+     *
+     * @param objectField 字段
+     * @return true=需要保持顺序
+     */
+    private static boolean isRequireSequential(ESSyncConfig.ObjectField objectField) {
+        return Optional.ofNullable(objectField.getParamSql())
+                .map(ESSyncConfig.ObjectField.ParamSql::getSchemaItem)
+                .map(SchemaItem::existAnyOrderColumn)
+                .orElse(Boolean.FALSE);
+    }
+
     public static Collection<String> getRowChangeList(Map<String, Object> mysqlRowData, Map<String, Object> esRowData, Set<String> diffFields, ESMapping esMapping) {
         if (diffFields == null || diffFields.isEmpty()) {
             diffFields = mysqlRowData.keySet();
@@ -607,7 +637,8 @@ public class ESSyncUtil {
             Object mysql = mysqlRowData.get(diffField);
             Object es = esRowData.get(diffField);
             if (objectField != null) {
-                if (!equalsObjectFieldRowDataValue(mysql, es, objectField, mysqlRowData, esRowData)) {
+                boolean requireSequential = isRequireSequential(objectField);
+                if (!equalsObjectFieldRowDataValue(mysql, es, objectField, mysqlRowData, esRowData, requireSequential)) {
                     changeList.add(diffField);
                 }
             } else {

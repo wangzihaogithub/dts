@@ -270,12 +270,13 @@ public class StringEsETLService {
                 long updateSize = 0;
                 List<String> deleteIdList = new ArrayList<>();
                 List<String> updateIdList = new ArrayList<>();
-                Map<String, AtomicInteger> allRowChangeMap = new LinkedHashMap<>();
                 Timestamp timestamp = new Timestamp(System.currentTimeMillis());
                 ESSyncConfig lastConfig = null;
+                Map<String, AtomicInteger> lastAllRowChangeMap = Collections.emptyMap();
                 try {
                     Map<String, ESSyncConfig> configMap = adapter.getEsSyncConfigByIndex(esIndexName);
                     for (ESSyncConfig config : configMap.values()) {
+                        Map<String, AtomicInteger> allRowChangeMap = lastAllRowChangeMap = new LinkedHashMap<>();
                         lastConfig = config;
                         ESSyncConfig.ESMapping esMapping = config.getEsMapping();
                         JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(config.getDataSourceKey());
@@ -331,7 +332,7 @@ public class StringEsETLService {
                         sendDiffDone(messageService, timestamp, hitListSize, deleteSize, deleteIdList, updateSize, updateIdList, allRowChangeMap, diffFields, adapter, config);
                     }
                 } catch (Exception e) {
-                    sendDiffError(messageService, e, timestamp, hitListSize, deleteSize, deleteIdList, updateSize, updateIdList, allRowChangeMap, diffFields, adapter, lastConfig);
+                    sendDiffError(messageService, e, timestamp, hitListSize, deleteSize, deleteIdList, updateSize, updateIdList, lastAllRowChangeMap, diffFields, adapter, lastConfig);
                 }
             });
         }
@@ -460,15 +461,17 @@ public class StringEsETLService {
                 Timestamp timestamp = new Timestamp(System.currentTimeMillis());
 
                 ESSyncConfig lastConfig = null;
+                Map<String, AtomicInteger> lastAllRowChangeMap = Collections.emptyMap();
                 Set<String> diffFieldsFinal = diffFields;
                 try {
                     Map<String, ESSyncConfig> configMap = adapter.getEsSyncConfigByIndex(esIndexName);
                     for (ESSyncConfig config : configMap.values()) {
+                        Map<String, AtomicInteger> allRowChangeMap = new LinkedHashMap<>();
                         lastConfig = config;
                         ESSyncConfig.ESMapping esMapping = config.getEsMapping();
 
-                        String pkFieldName = config.getEsMapping().getSchemaItem().getIdField().getFieldName();
-                        String pkFieldExpr = config.getEsMapping().getSchemaItem().getIdField().getOwnerAndColumnName();
+                        String pkFieldName = esMapping.getSchemaItem().getIdField().getFieldName();
+                        String pkFieldExpr = esMapping.getSchemaItem().getIdField().getOwnerAndColumnName();
                         JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(config.getDataSourceKey());
 
                         if (diffFields == null || diffFields.isEmpty()) {
@@ -569,11 +572,11 @@ public class StringEsETLService {
                             log.info("updateEsNestedDiff hits={}, searchAfter = {}", hitListSize, searchAfter);
                         } while (!Thread.currentThread().isInterrupted());
                         esTemplate.commit();
-                        sendNestedDiffDone(messageService, timestamp, hitListSize, updateSize, updateIdList, diffFieldsFinal, adapter, config);
+                        sendNestedDiffDone(messageService, timestamp, hitListSize, updateSize, updateIdList, allRowChangeMap, diffFieldsFinal, adapter, config);
                     }
                 } catch (Exception e) {
                     log.error("updateEsNestedDiff error {}", e.toString(), e);
-                    sendNestedDiffError(messageService, e, timestamp, hitListSize, updateSize, updateIdList, diffFieldsFinal, adapter, lastConfig, lastId);
+                    sendNestedDiffError(messageService, e, timestamp, hitListSize, updateSize, updateIdList, lastAllRowChangeMap, diffFieldsFinal, adapter, lastConfig, lastId);
                 } finally {
                     done.set(true);
                 }
@@ -585,6 +588,7 @@ public class StringEsETLService {
     protected void sendNestedDiffDone(AbstractMessageService messageService, Date startTime,
                                       long dmlSize,
                                       long updateSize, List<String> updateIdList,
+                                      Map<String, AtomicInteger> allRowChangeMap,
                                       Set<String> diffFields,
                                       ESAdapter adapter, ESSyncConfig config) {
         String title = "ES搜索全量校验嵌套Diff数据-结束";
@@ -596,6 +600,7 @@ public class StringEsETLService {
                 + ",\n\n 开始时间 = " + startTime
                 + ",\n\n 结束时间 = " + new Timestamp(System.currentTimeMillis())
                 + ",\n\n 比较nested字段 = " + (diffFields == null ? "全部" : diffFields)
+                + ",\n\n 影响字段数 = " + allRowChangeMap
                 + ",\n\n 校验条数 = " + dmlSize
                 + ",\n\n 更新条数 = " + updateSize
                 + ",\n\n 更新ID = " + updateIdList;
@@ -605,6 +610,7 @@ public class StringEsETLService {
     protected void sendNestedDiffError(AbstractMessageService messageService, Throwable throwable,
                                        Date timestamp, long dmlSize,
                                        long updateSize, List<String> updateIdList,
+                                       Map<String, AtomicInteger> allRowChangeMap,
                                        Set<String> diffFields,
                                        ESAdapter adapter, ESSyncConfig config,
                                        String lastId) {
@@ -619,6 +625,7 @@ public class StringEsETLService {
                 + ",\n\n 索引 = " + config.getEsMapping().get_index()
                 + ",\n\n 开始时间 = " + timestamp
                 + ",\n\n 比较nested字段 = " + (diffFields == null ? "全部" : diffFields)
+                + ",\n\n 影响字段数 = " + allRowChangeMap
                 + ",\n\n 校验条数 = " + dmlSize
                 + ",\n\n 最近的ID = " + lastId
                 + ",\n\n 异常 = " + throwable

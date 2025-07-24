@@ -21,7 +21,6 @@ import java.math.BigInteger;
 import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.time.temporal.TemporalAccessor;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -264,14 +263,14 @@ public class TypeUtil {
                     || "NULL".equals(strVal)) {
                 return null;
             }
-            Date date = parseDate(strVal);
+            Date date = DateUtil.parseDate(strVal);
             if (date != null) {
                 return date;
             }
         } else if (value instanceof LocalDateTime) {
-            return new Date(((LocalDateTime) value).atZone(ZoneOffset.of("+08:00")).toEpochSecond());
+            return new Date(((LocalDateTime) value).atZone(DateUtil.zoneId).toEpochSecond());
         } else if (value instanceof LocalDate) {
-            return new Date(((LocalDate) value).atStartOfDay(ZoneOffset.of("+08:00")).toEpochSecond());
+            return new Date(((LocalDate) value).atStartOfDay(DateUtil.zoneId).toEpochSecond());
         }
         throw new IllegalArgumentException("can not cast to Date, value : " + value);
     }
@@ -331,107 +330,6 @@ public class TypeUtil {
         return result.toArray(new Integer[0]);
     }
 
-    public static Timestamp parseDate(String noHasZoneAnyDateString) {
-        if (noHasZoneAnyDateString == null || noHasZoneAnyDateString.isEmpty()) {
-            return null;
-        }
-        int shotTimestampLength = 10;
-        int longTimestampLength = 13;
-        if (noHasZoneAnyDateString.length() == shotTimestampLength || noHasZoneAnyDateString.length() == longTimestampLength) {
-            if (isNumeric(noHasZoneAnyDateString)) {
-                long timestamp = Long.parseLong(noHasZoneAnyDateString);
-                if (noHasZoneAnyDateString.length() == shotTimestampLength) {
-                    timestamp = timestamp * 1000;
-                }
-                return new Timestamp(timestamp);
-            }
-        }
-        if ("null".equals(noHasZoneAnyDateString)) {
-            return null;
-        }
-        if ("NULL".equals(noHasZoneAnyDateString)) {
-            return null;
-        }
-        Integer[] numbers = parseIntegerNumbers(noHasZoneAnyDateString);
-        if (numbers.length == 0) {
-            return null;
-        } else {
-            if (numbers[0] > 2999 || numbers[0] < 1900) {
-                return null;
-            }
-            if (numbers.length >= 2) {
-                if (numbers[1] > 12 || numbers[1] <= 0) {
-                    return null;
-                }
-            }
-            if (numbers.length >= 3) {
-                if (numbers[2] > 31 || numbers[2] <= 0) {
-                    return null;
-                }
-            }
-            if (numbers.length >= 4) {
-                if (numbers[3] > 24 || numbers[3] < 0) {
-                    return null;
-                }
-            }
-            if (numbers.length >= 5) {
-                if (numbers[4] >= 60 || numbers[4] < 0) {
-                    return null;
-                }
-            }
-            if (numbers.length >= 6) {
-                if (numbers[5] >= 60 || numbers[5] < 0) {
-                    return null;
-                }
-            }
-            try {
-                Calendar calendar = Calendar.getInstance();
-                calendar.set(Calendar.MONTH, 0);
-                calendar.set(Calendar.DAY_OF_MONTH, 1);
-                calendar.set(Calendar.HOUR_OF_DAY, 0);
-                calendar.set(Calendar.MINUTE, 0);
-                calendar.set(Calendar.SECOND, 0);
-                calendar.set(Calendar.MILLISECOND, 0);
-                if (numbers.length == 1) {
-                    calendar.set(Calendar.YEAR, numbers[0]);
-                } else if (numbers.length == 2) {
-                    calendar.set(Calendar.YEAR, numbers[0]);
-                    if (noHasZoneAnyDateString.contains("Q") &&
-                            (noHasZoneAnyDateString.contains("Q1") || noHasZoneAnyDateString.contains("Q2") || noHasZoneAnyDateString.contains("Q3") || noHasZoneAnyDateString.contains("Q4"))) {
-                        calendar.set(Calendar.MONTH, ((numbers[1] - 1) * 3));
-                    } else {
-                        calendar.set(Calendar.MONTH, numbers[1] - 1);
-                    }
-                } else if (numbers.length == 3) {
-                    calendar.set(Calendar.YEAR, numbers[0]);
-                    calendar.set(Calendar.MONTH, numbers[1] - 1);
-                    calendar.set(Calendar.DAY_OF_MONTH, numbers[2]);
-                } else if (numbers.length == 4) {
-                    calendar.set(Calendar.YEAR, numbers[0]);
-                    calendar.set(Calendar.MONTH, numbers[1] - 1);
-                    calendar.set(Calendar.DAY_OF_MONTH, numbers[2]);
-                    calendar.set(Calendar.HOUR_OF_DAY, numbers[3]);
-                } else if (numbers.length == 5) {
-                    calendar.set(Calendar.YEAR, numbers[0]);
-                    calendar.set(Calendar.MONTH, numbers[1] - 1);
-                    calendar.set(Calendar.DAY_OF_MONTH, numbers[2]);
-                    calendar.set(Calendar.HOUR_OF_DAY, numbers[3]);
-                    calendar.set(Calendar.MINUTE, numbers[4]);
-                } else {
-                    calendar.set(Calendar.YEAR, numbers[0]);
-                    calendar.set(Calendar.MONTH, numbers[1] - 1);
-                    calendar.set(Calendar.DAY_OF_MONTH, numbers[2]);
-                    calendar.set(Calendar.HOUR_OF_DAY, numbers[3]);
-                    calendar.set(Calendar.MINUTE, numbers[4]);
-                    calendar.set(Calendar.SECOND, numbers[5]);
-                }
-                return new Timestamp(calendar.getTimeInMillis());
-            } catch (Exception e) {
-                return null;
-            }
-        }
-    }
-
     public static java.sql.Date castToSqlDate(Object value) {
         if (value == null) {
             return null;
@@ -458,14 +356,14 @@ public class TypeUtil {
                     || "NULL".equals(strVal)) {
                 return null;
             }
-            Date date = parseDate(strVal);
+            Date date = DateUtil.parseDate(strVal);
             if (date != null) {
                 return new java.sql.Date(date.getTime());
             }
         } else if (value instanceof LocalDateTime) {
-            return new java.sql.Date(((LocalDateTime) value).atZone(ZoneOffset.of("+08:00")).toEpochSecond());
+            return new java.sql.Date(((LocalDateTime) value).atZone(DateUtil.zoneId).toEpochSecond());
         } else if (value instanceof LocalDate) {
-            return new java.sql.Date(((LocalDate) value).atStartOfDay(ZoneOffset.of("+08:00")).toEpochSecond());
+            return new java.sql.Date(((LocalDate) value).atStartOfDay(DateUtil.zoneId).toEpochSecond());
         }
         throw new IllegalArgumentException("can not cast to Date, value : " + value);
 
@@ -500,14 +398,14 @@ public class TypeUtil {
                     || "NULL".equals(strVal)) {
                 return null;
             }
-            Timestamp date = parseDate(strVal);
+            Timestamp date = DateUtil.parseDate(strVal);
             if (date != null) {
                 return date;
             }
         } else if (value instanceof LocalDateTime) {
-            return Timestamp.from(((LocalDateTime) value).atZone(ZoneOffset.of("+08:00")).toInstant());
+            return Timestamp.from(((LocalDateTime) value).atZone(DateUtil.zoneId).toInstant());
         } else if (value instanceof LocalDate) {
-            return Timestamp.from(((LocalDate) value).atStartOfDay(ZoneOffset.of("+08:00")).toInstant());
+            return Timestamp.from(((LocalDate) value).atStartOfDay(DateUtil.zoneId).toInstant());
         }
         throw new IllegalArgumentException("can not cast to Timestamp, value : " + value);
     }

@@ -181,6 +181,11 @@ public class SchemaItem {
         return onSlaveTableChangeWhereSqlVarList;
     }
 
+    public boolean existAnyOrderColumn() {
+        return !getOnSlaveTableChangeOrderBySqlColumnList().isEmpty()
+                || !getOnMainTableChangeOrderBySqlColumnList().isEmpty();
+    }
+
     public Map<String, List<String>> getOnMainTableChangeOrderBySqlColumnList() {
         if (onMainTableChangeOrderBySqlColumnList == null && objectField != null && objectField.isSqlType()) {
             this.onMainTableChangeOrderBySqlColumnList = SqlParser.getOrderByColumnList(objectField.getParamSql().getOnMainTableChangeWhereSql());

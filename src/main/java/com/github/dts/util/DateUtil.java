@@ -1,12 +1,23 @@
 package com.github.dts.util;
 
 import java.sql.Timestamp;
-import java.util.ArrayList;
-import java.util.Calendar;
-import java.util.Date;
-import java.util.List;
+import java.text.SimpleDateFormat;
+import java.time.ZoneId;
+import java.util.*;
 
 public class DateUtil {
+    public static TimeZone timeZone;
+    public static ZoneId zoneId;
+    private static final ThreadLocal<Map<String, SimpleDateFormat>> DATE_FORMAT_THREAD_LOCAL = ThreadLocal.withInitial(() -> new HashMap<>(5));
+
+    static {
+        setTimeZone(TimeZone.getDefault());
+    }
+
+    public static void setTimeZone(TimeZone timeZone) {
+        DateUtil.timeZone = timeZone;
+        DateUtil.zoneId = timeZone.toZoneId();
+    }
 
     private static Integer[] parseNumber(String fontSize) {
         if (fontSize == null) {
@@ -42,8 +53,18 @@ public class DateUtil {
         return true;
     }
 
-    public static Date parseDate(String date) {
-        if (date == null || date.isEmpty()) {
+    public static String dateFormat(Date date, String pattern) {
+        Map<String, SimpleDateFormat> dateFormatMap = DATE_FORMAT_THREAD_LOCAL.get();
+        SimpleDateFormat dateFormat = dateFormatMap.computeIfAbsent(pattern, SimpleDateFormat::new);
+        return dateFormat.format(date);
+    }
+
+    public static Timestamp parseDate(String date) {
+        return parseDate(date, timeZone);
+    }
+
+    public static Timestamp parseDate(String date, TimeZone timeZone) {
+        if (date == null || (date = date.trim()).isEmpty()) {
             return null;
         }
         int shotTimestampLength = 10;
@@ -95,46 +116,42 @@ public class DateUtil {
                     return null;
                 }
             }
-            try {
-                Calendar calendar = Calendar.getInstance();
-                calendar.set(Calendar.MONTH, 0);
-                calendar.set(Calendar.DAY_OF_MONTH, 1);
-                calendar.set(Calendar.HOUR_OF_DAY, 0);
-                calendar.set(Calendar.MINUTE, 0);
-                calendar.set(Calendar.SECOND, 0);
-                calendar.set(Calendar.MILLISECOND, 0);
-                if (numbers.length == 1) {
-                    calendar.set(Calendar.YEAR, numbers[0]);
-                } else if (numbers.length == 2) {
-                    calendar.set(Calendar.YEAR, numbers[0]);
-                    calendar.set(Calendar.MONTH, numbers[1] - 1);
-                } else if (numbers.length == 3) {
-                    calendar.set(Calendar.YEAR, numbers[0]);
-                    calendar.set(Calendar.MONTH, numbers[1] - 1);
-                    calendar.set(Calendar.DAY_OF_MONTH, numbers[2]);
-                } else if (numbers.length == 4) {
-                    calendar.set(Calendar.YEAR, numbers[0]);
-                    calendar.set(Calendar.MONTH, numbers[1] - 1);
-                    calendar.set(Calendar.DAY_OF_MONTH, numbers[2]);
-                    calendar.set(Calendar.HOUR_OF_DAY, numbers[3]);
-                } else if (numbers.length == 5) {
-                    calendar.set(Calendar.YEAR, numbers[0]);
-                    calendar.set(Calendar.MONTH, numbers[1] - 1);
-                    calendar.set(Calendar.DAY_OF_MONTH, numbers[2]);
-                    calendar.set(Calendar.HOUR_OF_DAY, numbers[3]);
-                    calendar.set(Calendar.MINUTE, numbers[4]);
-                } else {
-                    calendar.set(Calendar.YEAR, numbers[0]);
-                    calendar.set(Calendar.MONTH, numbers[1] - 1);
-                    calendar.set(Calendar.DAY_OF_MONTH, numbers[2]);
-                    calendar.set(Calendar.HOUR_OF_DAY, numbers[3]);
-                    calendar.set(Calendar.MINUTE, numbers[4]);
-                    calendar.set(Calendar.SECOND, numbers[5]);
-                }
-                return new Timestamp(calendar.getTime().getTime());
-            } catch (Exception e) {
-                return null;
+            Calendar calendar = Calendar.getInstance(timeZone);
+            calendar.set(Calendar.MONTH, 0);
+            calendar.set(Calendar.DAY_OF_MONTH, 1);
+            calendar.set(Calendar.HOUR_OF_DAY, 0);
+            calendar.set(Calendar.MINUTE, 0);
+            calendar.set(Calendar.SECOND, 0);
+            calendar.set(Calendar.MILLISECOND, 0);
+            if (numbers.length == 1) {
+                calendar.set(Calendar.YEAR, numbers[0]);
+            } else if (numbers.length == 2) {
+                calendar.set(Calendar.YEAR, numbers[0]);
+                calendar.set(Calendar.MONTH, numbers[1] - 1);
+            } else if (numbers.length == 3) {
+                calendar.set(Calendar.YEAR, numbers[0]);
+                calendar.set(Calendar.MONTH, numbers[1] - 1);
+                calendar.set(Calendar.DAY_OF_MONTH, numbers[2]);
+            } else if (numbers.length == 4) {
+                calendar.set(Calendar.YEAR, numbers[0]);
+                calendar.set(Calendar.MONTH, numbers[1] - 1);
+                calendar.set(Calendar.DAY_OF_MONTH, numbers[2]);
+                calendar.set(Calendar.HOUR_OF_DAY, numbers[3]);
+            } else if (numbers.length == 5) {
+                calendar.set(Calendar.YEAR, numbers[0]);
+                calendar.set(Calendar.MONTH, numbers[1] - 1);
+                calendar.set(Calendar.DAY_OF_MONTH, numbers[2]);
+                calendar.set(Calendar.HOUR_OF_DAY, numbers[3]);
+                calendar.set(Calendar.MINUTE, numbers[4]);
+            } else {
+                calendar.set(Calendar.YEAR, numbers[0]);
+                calendar.set(Calendar.MONTH, numbers[1] - 1);
+                calendar.set(Calendar.DAY_OF_MONTH, numbers[2]);
+                calendar.set(Calendar.HOUR_OF_DAY, numbers[3]);
+                calendar.set(Calendar.MINUTE, numbers[4]);
+                calendar.set(Calendar.SECOND, numbers[5]);
             }
+            return new Timestamp(calendar.getTimeInMillis());
         }
     }
 }

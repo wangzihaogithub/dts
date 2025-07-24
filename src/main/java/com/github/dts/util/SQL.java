@@ -365,7 +365,7 @@ public abstract class SQL implements Cloneable {
         for (int i = 0; i < objects.length; i++) {
             Object o = values.get(i).data;
             if (o instanceof Date) {
-                o = "'" + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(o) + "'";
+                o = "'" + DateUtil.dateFormat((Date) o,"yyyy-MM-dd HH:mm:ss") + "'";
             } else if (o instanceof Number) {
                 o = o.toString();
             } else if (o instanceof byte[]) {
