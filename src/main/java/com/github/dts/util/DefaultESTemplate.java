@@ -530,8 +530,8 @@ public class DefaultESTemplate implements ESTemplate {
     @Override
     public String toString() {
         return "DefaultESTemplate{" +
-                "esConnection=" + esConnection +
-                ", esBulkRequest=" + esBulkRequest +
+                "connection=" + esConnection +
+                ", request=" + esBulkRequest +
                 '}';
     }
 

@@ -546,12 +546,19 @@ public class ESConnection {
     }
 
     public static class ConcurrentBulkRequest extends BulkRequest {
-        private final ReentrantLock lock = new ReentrantLock();
         private final int id;
+        private final OwnerReentrantLock lock = new OwnerReentrantLock();
         private final List<ESUpdateByQueryRequestImpl> bbUpdateByQueryRequests;
         private final List<DocWriteRequest<?>> bbDocWriteRequests;
         private long estimatedSizeInBytes;
         private long updateByQueryRequestsEstimatedSizeInBytes;
+
+        static class OwnerReentrantLock extends ReentrantLock {
+            @Override
+            public Thread getOwner() {
+                return super.getOwner();
+            }
+        }
 
         public ConcurrentBulkRequest(int id, int bulkCommitSize) {
             this.id = id;
@@ -620,11 +627,6 @@ public class ESConnection {
             return super.numberOfActions() + bbUpdateByQueryRequests.size() + bbDocWriteRequests.size();
         }
 
-        @Override
-        public int numberOfActions() {
-            return super.numberOfActions() + bbDocWriteRequests.size();
-        }
-
         public ESUpdateByQueryRequestImpl pollUpdateByQuery() {
             int size = bbUpdateByQueryRequests.size();
             return size == 0 ? null : bbUpdateByQueryRequests.remove(size - 1);
@@ -632,10 +634,14 @@ public class ESConnection {
 
         @Override
         public String toString() {
+            Thread owner = lock.getOwner();
+            double kb = Math.round((double) estimatedSizeInBytes * 100D / 1024D) / 100D;
+            String kbString = (kb >= 1D || kb == 0D ? String.valueOf(Math.round(kb)) : String.valueOf(kb));
             return "ConcurrentBulkRequest{" +
                     "id=" + id +
                     ", size=" + requestNumberOfActions() +
-                    ", lock=" + lock +
+                    ", historyBytes=" + kbString + "/kb" +
+                    ", lock=" + (owner == null ? "[Unlocked]" : "[Locked by thread " + owner.getName() + "]") +
                     '}';
         }
 
@@ -1131,11 +1137,9 @@ public class ESConnection {
 
         @Override
         public String toString() {
-            String string = new ArrayList<>(bulkRequests[0].requests()).stream().limit(20).collect(Collectors.toList()).toString();
-            string = string.length() > 500 ? string.substring(500) : string;
             return "BulkRequest{" +
                     "size=" + numberOfActions() +
-                    ", requests=" + string +
+                    ", requests=" + Arrays.toString(bulkRequests) +
                     '}';
         }
     }
