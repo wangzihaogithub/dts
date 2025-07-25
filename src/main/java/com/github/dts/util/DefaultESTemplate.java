@@ -322,9 +322,11 @@ public class DefaultESTemplate implements ESTemplate {
         ESBulkRequest.ESBulkResponse response = esBulkRequest.bulk();
         if (!response.isEmpty()) {
             if (log.isInfoEnabled()) {
+                double kb = Math.round((double) response.requestEstimatedSizeInBytes() * 100D / 1024D) / 100D;
+                double mb = Math.round((double) response.requestTotalEstimatedSizeInBytes() * 100D / 1024D / 1024D) / 100D;
                 log.info("commit size={}, {}/ms, bytes={}kb, history={}mb, {}", response.size(), System.currentTimeMillis() - timestamp,
-                        Math.round((double) response.requestEstimatedSizeInBytes() / 1024),
-                        Math.round((double) response.requestTotalEstimatedSizeInBytes() / 1024 / 1024),
+                        (kb >= 1D || kb == 0D ? String.valueOf(Math.round(kb)) : String.valueOf(kb)),
+                        (mb >= 1D || mb == 0D ? String.valueOf(Math.round(mb)) : String.valueOf(mb)),
                         Arrays.toString(response.requestBytesToString())
                 );
             }
