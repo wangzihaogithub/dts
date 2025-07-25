@@ -27,6 +27,7 @@ import org.elasticsearch.client.*;
 import org.elasticsearch.client.indices.GetMappingsRequest;
 import org.elasticsearch.client.indices.GetMappingsResponse;
 import org.elasticsearch.cluster.metadata.MappingMetadata;
+import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.index.reindex.BulkByScrollResponse;
@@ -361,9 +362,9 @@ public class ESConnection {
     }
 
     public static class ESUpdateByQueryRequestImpl extends UpdateByQueryRequest implements com.github.dts.util.ESBulkRequest.ESUpdateByQueryRequest {
-
         private final Map<String, Object> params = new HashMap<>();
         private int size = 1;
+        private int estimatedSizeInBytes;
 
         public ESUpdateByQueryRequestImpl(String index) {
             super(index);
@@ -389,6 +390,7 @@ public class ESConnection {
         @Override
         public void beforeBulk() {
             VectorCompletableFuture.beforeBulk(params);
+            this.estimatedSizeInBytes = countEstimatedSizeInBytes();
         }
 
         @Override
@@ -398,6 +400,45 @@ public class ESConnection {
 
         public ESUpdateByQueryRequestImpl build() {
             return this;
+        }
+
+        private int countEstimatedSizeInBytes() {
+            int[] bytesCount = new int[1];
+            try {
+                super.writeTo(new StreamOutput() {
+                    @Override
+                    public void writeByte(byte b) throws IOException {
+                        bytesCount[0] += 1;
+                    }
+
+                    @Override
+                    public void writeBytes(byte[] b, int offset, int length) throws IOException {
+                        bytesCount[0] += length;
+                    }
+
+                    @Override
+                    public void flush() throws IOException {
+
+                    }
+
+                    @Override
+                    public void close() throws IOException {
+
+                    }
+
+                    @Override
+                    public void reset() throws IOException {
+
+                    }
+                });
+            } catch (IOException ignored) {
+                // 不会有
+            }
+            return bytesCount[0];
+        }
+
+        public int estimatedSizeInBytes() {
+            return estimatedSizeInBytes;
         }
     }
 
@@ -463,7 +504,7 @@ public class ESConnection {
             return id;
         }
 
-        public UpdateRequest build() {
+        public ESUpdateRequestImpl build() {
             return this;
         }
     }
@@ -499,7 +540,7 @@ public class ESConnection {
             }
         }
 
-        public DeleteRequest build() {
+        public ESDeleteRequestImpl build() {
             return this;
         }
     }
@@ -507,11 +548,15 @@ public class ESConnection {
     public static class ConcurrentBulkRequest extends BulkRequest {
         private final ReentrantLock lock = new ReentrantLock();
         private final int id;
-        private final List<ESUpdateByQueryRequestImpl> updateByQueryRequests = new ArrayList<>();
-        private long beforeEstimatedSizeInBytes;
+        private final List<ESUpdateByQueryRequestImpl> bbUpdateByQueryRequests;
+        private final List<DocWriteRequest<?>> bbDocWriteRequests;
+        private long estimatedSizeInBytes;
+        private long updateByQueryRequestsEstimatedSizeInBytes;
 
-        public ConcurrentBulkRequest(int id) {
+        public ConcurrentBulkRequest(int id, int bulkCommitSize) {
             this.id = id;
+            this.bbUpdateByQueryRequests = new ArrayList<>(bulkCommitSize);
+            this.bbDocWriteRequests = new ArrayList<>(bulkCommitSize);
         }
 
         public int getId() {
@@ -531,32 +576,58 @@ public class ESConnection {
         }
 
         public void clear() {
-            requests().clear();
-            this.beforeEstimatedSizeInBytes = super.estimatedSizeInBytes();
+            super.requests().clear();
+        }
+
+        @Override
+        public BulkRequest add(DocWriteRequest<?> request) {
+            return super.add(request);
+        }
+
+        public <T extends com.github.dts.util.ESBulkRequest.ESRequest & DocWriteRequest<?>> void addBulkBuffer(T request) {
+            bbDocWriteRequests.add(request);
+        }
+
+        public void addBulkBuffer(ESUpdateByQueryRequestImpl request) {
+            bbUpdateByQueryRequests.add(request);
         }
 
         public void beforeBulk() {
-            for (DocWriteRequest<?> request : requests()) {
-                if (request instanceof com.github.dts.util.ESBulkRequest.ESRequest) {
-                    ((com.github.dts.util.ESBulkRequest.ESRequest) request).beforeBulk();
+            // 调用这里前，有tryLock
+//            assert lock.isLocked();
+            long beforeEstimatedSizeInBytes = totalEstimatedSizeInBytes();
+            try {
+                for (DocWriteRequest<?> request : bbDocWriteRequests) {
+                    if (request instanceof com.github.dts.util.ESBulkRequest.ESRequest) {
+                        ((com.github.dts.util.ESBulkRequest.ESRequest) request).beforeBulk();
+                    }
+                    super.add(request);
                 }
-            }
-            for (ESUpdateByQueryRequestImpl request : updateByQueryRequests) {
-                request.beforeBulk();
-            }
-        }
+                bbDocWriteRequests.clear();
 
-        public void add(ESUpdateByQueryRequestImpl updateByQueryRequest) {
-            updateByQueryRequests.add(updateByQueryRequest);
+                long updateByQueryRequestsEstimatedSizeInBytes = 0;
+                for (ESUpdateByQueryRequestImpl request : bbUpdateByQueryRequests) {
+                    request.beforeBulk();
+                    updateByQueryRequestsEstimatedSizeInBytes += request.estimatedSizeInBytes();
+                }
+                this.updateByQueryRequestsEstimatedSizeInBytes += updateByQueryRequestsEstimatedSizeInBytes;
+            } finally {
+                this.estimatedSizeInBytes = totalEstimatedSizeInBytes() - beforeEstimatedSizeInBytes;
+            }
         }
 
         public int requestNumberOfActions() {
-            return super.numberOfActions() + updateByQueryRequests.size();
+            return super.numberOfActions() + bbUpdateByQueryRequests.size() + bbDocWriteRequests.size();
+        }
+
+        @Override
+        public int numberOfActions() {
+            return super.numberOfActions() + bbDocWriteRequests.size();
         }
 
         public ESUpdateByQueryRequestImpl pollUpdateByQuery() {
-            int size = updateByQueryRequests.size();
-            return size == 0 ? null : updateByQueryRequests.remove(size - 1);
+            int size = bbUpdateByQueryRequests.size();
+            return size == 0 ? null : bbUpdateByQueryRequests.remove(size - 1);
         }
 
         @Override
@@ -569,18 +640,17 @@ public class ESConnection {
         }
 
         public long totalEstimatedSizeInBytes() {
-            return super.estimatedSizeInBytes();
+            return super.estimatedSizeInBytes() + this.updateByQueryRequestsEstimatedSizeInBytes;
         }
 
         @Override
         public long estimatedSizeInBytes() {
-            return super.estimatedSizeInBytes() - beforeEstimatedSizeInBytes;
+            return estimatedSizeInBytes;
         }
     }
 
     public static class BulkRequestResponse {
         private final ConcurrentBulkRequest request;
-        private final List<DocWriteRequest<?>> requests;
         private final long estimatedSizeInBytes;
         private final long totalEstimatedSizeInBytes;
         private final List<UpdateByQuery> updateByQueryList = new ArrayList<>();
@@ -588,7 +658,6 @@ public class ESConnection {
 
         public BulkRequestResponse(ConcurrentBulkRequest request) {
             this.request = request;
-            this.requests = request.requests();
             this.estimatedSizeInBytes = request.estimatedSizeInBytes();
             this.totalEstimatedSizeInBytes = request.totalEstimatedSizeInBytes();
         }
@@ -645,9 +714,9 @@ public class ESConnection {
         }
 
         public String requestBytesToString() {
-            long kb = Math.round((double) estimatedSizeInBytes / 1024);
-            long mb = Math.round((double) totalEstimatedSizeInBytes / 1024 / 1024);
-            return request.getId() + ":" + kb + "kb/" + mb + "mb";
+            double kb = Math.round((double) estimatedSizeInBytes * 100D / 1024D) / 100D;
+            double mb = Math.round((double) totalEstimatedSizeInBytes * 100D / 1024D / 1024D) / 100D;
+            return request.getId() + ":" + (kb >= 1D || kb == 0D ? String.valueOf(Math.round(kb)) : kb) + "kb/" + (mb >= 1D || mb == 0D ? String.valueOf(Math.round(mb)) : mb) + "mb";
         }
 
         public boolean hasFailures() {
@@ -751,7 +820,7 @@ public class ESConnection {
             this.bulkCommitSize = Math.max(1, connection.bulkCommitSize);
             bulkRequests = new ConcurrentBulkRequest[Math.max(1, connection.concurrentBulkRequest)];
             for (int i = 0; i < bulkRequests.length; i++) {
-                bulkRequests[i] = new ConcurrentBulkRequest(i);
+                bulkRequests[i] = new ConcurrentBulkRequest(i, bulkCommitSize);
             }
             this.highBulkRequests = Arrays.asList(bulkRequests);
             ArrayList<ConcurrentBulkRequest> lowBulkRequests = new ArrayList<>(Arrays.asList(bulkRequests));
@@ -796,7 +865,7 @@ public class ESConnection {
             Iterator<List<DocWriteRequest<?>>> iterator = partition.iterator();
             for (int i = 0; i < result.length; i++) {
                 BulkRequest item = new BulkRequest();
-                iterator.next().forEach(item::add);
+                iterator.next().forEach(item::add);//retry
                 result[i] = item;
             }
             return result;
@@ -831,11 +900,11 @@ public class ESConnection {
                         try {
                             for (Object request : requests) {
                                 if (request instanceof ESUpdateByQueryRequestImpl) {
-                                    bulkRequest.add(((ESUpdateByQueryRequestImpl) request).build());
+                                    bulkRequest.addBulkBuffer(((ESUpdateByQueryRequestImpl) request).build());
                                 } else if (request instanceof ESUpdateRequestImpl) {
-                                    bulkRequest.add(((ESUpdateRequestImpl) request).build());
+                                    bulkRequest.addBulkBuffer(((ESUpdateRequestImpl) request).build());
                                 } else if (request instanceof ESDeleteRequestImpl) {
-                                    bulkRequest.add(((ESDeleteRequestImpl) request).build());
+                                    bulkRequest.addBulkBuffer(((ESDeleteRequestImpl) request).build());
                                 } else {
                                     throw new IllegalArgumentException("Unknown request type: " + request.getClass());
                                 }
@@ -857,7 +926,7 @@ public class ESConnection {
                 for (ConcurrentBulkRequest bulkRequest : bulkRequests) {
                     if (bulkRequest.requestNumberOfActions() < bulkCommitSize && bulkRequest.tryLock()) {
                         try {
-                            bulkRequest.add(eir.build());
+                            bulkRequest.addBulkBuffer(eir.build());
                         } finally {
                             bulkRequest.unlock();
                         }
@@ -875,7 +944,7 @@ public class ESConnection {
                 for (ConcurrentBulkRequest bulkRequest : bulkRequests) {
                     if (bulkRequest.requestNumberOfActions() < bulkCommitSize && bulkRequest.tryLock()) {
                         try {
-                            bulkRequest.add(eur.build());
+                            bulkRequest.addBulkBuffer(eur.build());
                         } finally {
                             bulkRequest.unlock();
                         }
@@ -893,7 +962,7 @@ public class ESConnection {
                 for (ConcurrentBulkRequest bulkRequest : bulkRequests) {
                     if (bulkRequest.requestNumberOfActions() < bulkCommitSize && bulkRequest.tryLock()) {
                         try {
-                            bulkRequest.add(edr.build());
+                            bulkRequest.addBulkBuffer(edr.build());
                         } finally {
                             bulkRequest.unlock();
                         }
@@ -947,9 +1016,6 @@ public class ESConnection {
             if (bulkRequest.numberOfActions() == 0) {
                 return new BulkResponse(new BulkItemResponse[0], 0L);
             }
-            if (bulkRequest instanceof ConcurrentBulkRequest) {
-                ((ConcurrentBulkRequest) bulkRequest).beforeBulk();
-            }
             if (connection.requestEntityTooLargeBytes > 0 && bulkRequest.estimatedSizeInBytes() > connection.requestEntityTooLargeBytes) {
                 return requestEntityTooLarge(bulkRequest);
             }
@@ -992,6 +1058,7 @@ public class ESConnection {
         }
 
         private BulkRequestResponse commit(ConcurrentBulkRequest bulkRequest, boolean retry) throws IOException {
+            bulkRequest.beforeBulk();
             BulkRequestResponse requestResponse = new BulkRequestResponse(bulkRequest);
             BulkResponse response = requestResponse.response = bulk(bulkRequest);
             if (retry && response.hasFailures()) {
@@ -1004,12 +1071,12 @@ public class ESConnection {
                         if (retryAndGetErrorRequests(Collections.unmodifiableList(errorRequests1), errorRequests2)) {
                             bulkRequest.clear();
                             for (DocWriteRequest<?> errorRequest : errorRequests2) {
-                                bulkRequest.add(errorRequest);
+                                bulkRequest.add(errorRequest);//retry
                             }
                         } else {
                             bulkRequest.clear();
                             for (DocWriteRequest<?> errorRequest : errorRequests1) {
-                                bulkRequest.add(errorRequest);
+                                bulkRequest.add(errorRequest);//retry
                             }
                             yieldThreadRandom();
                         }
@@ -1039,7 +1106,7 @@ public class ESConnection {
             List<List<DocWriteRequest<?>>> partition = Lists.partition(readonlyRequests, (readonlyRequests.size() + 1) / 2);
             for (List<DocWriteRequest<?>> rowList : partition) {
                 BulkRequest bulkRequest = new BulkRequest();
-                rowList.forEach(bulkRequest::add);
+                rowList.forEach(bulkRequest::add);//retry
                 BulkResponse bulkItemResponses = bulk(bulkRequest);
                 if (hasTooManyRequests(bulkItemResponses)) {
                     return false;

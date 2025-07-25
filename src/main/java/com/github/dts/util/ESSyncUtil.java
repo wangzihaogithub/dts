@@ -18,6 +18,7 @@ import java.net.URL;
 import java.nio.file.Files;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.stream.Collectors;
@@ -29,16 +30,11 @@ import java.util.stream.Collectors;
  * @version 1.0.0
  */
 public class ESSyncUtil {
-    private static final Map<String, JdbcTemplate> JDBC_TEMPLATE_MAP = new HashMap<>(3);
-    private static final Map<String, String> STRING_CACHE = new ConcurrentHashMap<>();
-    private static final Map<String, String> STRING_LRU_CACHE = Collections.synchronizedMap(new LinkedHashMap<String, String>(32, 0.75F, true) {
-        @Override
-        protected boolean removeEldestEntry(Map.Entry eldest) {
-            return size() > 5000;
-        }
-    });
     private static final Logger log = LoggerFactory.getLogger(ESSyncUtil.class);
-    private static final Map<String, Map<String, byte[]>> LOAD_YAML_TO_BYTES_CACHE = new ConcurrentHashMap<>();
+    private static final Map<String, JdbcTemplate> JDBC_TEMPLATE_MAP = new HashMap<>(3);
+    private static final Map<String, String> STRING_CACHE = Util.newComputeIfAbsentMap(32, 0.75F, true, 1000);
+    private static final Map<String, String> STRING_LRU_CACHE = Util.newComputeIfAbsentMap(32, 0.75F, true, 5000);
+    private static final Map<String, Map<String, byte[]>> LOAD_YAML_TO_BYTES_CACHE = Util.newComputeIfAbsentMap(32, 0.75F, true, 30);
 
     public static String trimWhere(String where) {
         if (where == null) {
@@ -391,67 +387,6 @@ public class ESSyncUtil {
         }
     }
 
-    private static boolean equalsValue(Object es, Object mysql) {
-        if (mysql == es) {
-            return true;
-        }
-        if (mysql != null && es == null) {
-            return false;
-        }
-        if (mysql == null && es != null) {
-            return false;
-        }
-        if (mysql.getClass().isArray()) {
-            if (es instanceof Collection) {
-                int mysqlLength = Array.getLength(mysql);
-                Collection<?> esColl = ((Collection<?>) es);
-                int esLength = esColl.size();
-                if (mysqlLength != esLength) {
-                    return false;
-                }
-                Iterator<?> iterator = esColl.iterator();
-                for (int i = 0; i < mysqlLength; i++) {
-                    Object mysqlValue = Array.get(mysql, i);
-                    Object esValue = iterator.next();
-                    if (mysqlValue instanceof Date || esValue instanceof Date) {
-                        if (!equalsEsDate(mysqlValue, esValue)) {
-                            return false;
-                        }
-                    } else {
-                        if (!Objects.equals(Objects.toString(mysqlValue, null), Objects.toString(esValue, null))) {
-                            return false;
-                        }
-                    }
-                }
-                return true;
-            } else if (es.getClass().isArray()) {
-                int mysqlLength = Array.getLength(mysql);
-                int esLength = Array.getLength(es);
-                if (mysqlLength != esLength) {
-                    return false;
-                }
-                for (int i = 0; i < mysqlLength; i++) {
-                    Object mysqlValue = Array.get(mysql, i);
-                    Object esValue = Array.get(es, i);
-                    if (mysqlValue instanceof Date || esValue instanceof Date) {
-                        if (!equalsEsDate(mysqlValue, esValue)) {
-                            return false;
-                        }
-                    } else {
-                        if (!Objects.equals(Objects.toString(mysqlValue, null), Objects.toString(esValue, null))) {
-                            return false;
-                        }
-                    }
-                }
-                return true;
-            } else {
-                return false;
-            }
-        } else {
-            return Objects.equals(Objects.toString(mysql, null), Objects.toString(es, null));
-        }
-    }
-
     public static boolean equalsObjectFieldRowDataValue(Object mysql, Object es,
                                                         ESSyncConfig.ObjectField objectField,
                                                         Map<String, Object> mysqlRowData, Map<String, Object> esRowData,
@@ -468,7 +403,7 @@ public class ESSyncUtil {
             }
             case STATIC_METHOD: {
                 Object mysqlParse = objectField.parse(mysql, objectField.getEsMapping(), mysqlRowData);
-                return equalsValue(es, mysqlParse);
+                return equalsRowDataValue(mysqlParse, es);
             }
             case LLM_VECTOR: {
                 boolean mysqlEmpty = mysql == null || "".equals(mysql);
@@ -486,7 +421,7 @@ public class ESSyncUtil {
                     Object refMysql = mysqlRowData.get(refTextFieldName);
                     ESSyncConfig.ObjectField refObjectField = objectField.getEsMapping().getObjectField(null, refTextFieldName);
                     if (refObjectField == null) {
-                        return equalsValue(refEs, refMysql);
+                        return equalsRowDataValue(refMysql, refEs);
                     } else {
                         return equalsObjectFieldRowDataValue(refMysql, refEs, refObjectField, mysqlRowData, esRowData, requireSequential);
                     }
@@ -516,7 +451,7 @@ public class ESSyncUtil {
                 }
             }
             default: {
-                return equalsValue(es, mysql);
+                return equalsRowDataValue(mysql, es);
             }
         }
     }

@@ -19,6 +19,7 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
@@ -252,6 +253,39 @@ public class Util {
 
     public static boolean isNotEmpty(String str) {
         return !isEmpty(str);
+    }
+
+    public static <K, V> LinkedHashMap<K, V> newComputeIfAbsentMap(int initialCapacity,
+                                                                   float loadFactor,
+                                                                   boolean accessOrder,
+                                                                   int removeEldestEntry) {
+        return new LinkedHashMap<K, V>(initialCapacity, loadFactor, accessOrder) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry eldest) {
+                if (removeEldestEntry >= 0) {
+                    return size() > removeEldestEntry;
+                } else {
+                    return false;
+                }
+            }
+
+            @Override
+            public V computeIfAbsent(K key, Function<? super K, ? extends V> mappingFunction) {
+                V v;
+                if ((v = get(key)) == null) {
+                    synchronized (this) {
+                        if ((v = get(key)) == null) {
+                            V newValue;
+                            if ((newValue = mappingFunction.apply(key)) != null) {
+                                put(key, newValue);
+                                return newValue;
+                            }
+                        }
+                    }
+                }
+                return v;
+            }
+        };
     }
 
     public static <V> Map<String, V> newLinkedCaseInsensitiveMap() {

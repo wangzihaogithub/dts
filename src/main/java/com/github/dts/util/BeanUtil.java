@@ -28,18 +28,8 @@ public class BeanUtil {
             return null;
         }
     };
-    private static final Map<Class, Constructor> CONSTRUCTOR_NO_ARG_MAP = new LinkedHashMap<Class, Constructor>(128, 0.75F, true) {
-        @Override
-        protected boolean removeEldestEntry(Map.Entry eldest) {
-            return size() > 300;
-        }
-    };
-    private static final Map<Class, Boolean> BASE_TYPE_FLAG_MAP = new LinkedHashMap<Class, Boolean>(256, 0.75F, true) {
-        @Override
-        protected boolean removeEldestEntry(Map.Entry eldest) {
-            return size() > 1000;
-        }
-    };
+    private static final Map<Class, Constructor> CONSTRUCTOR_NO_ARG_MAP = Util.newComputeIfAbsentMap(128, 0.75F, true, 300);
+    private static final Map<Class, Boolean> BASE_TYPE_FLAG_MAP = Util.newComputeIfAbsentMap(256, 0.75F, true, 1000);
     private static final ThreadLocal<SimpleDateFormat> FORMAT_THREAD_LOCAL = ThreadLocal.withInitial(SimpleDateFormat::new);
     private static final Class[] EMPTY_CLASS_ARRAY = {};
     private static final Object[] EMPTY_OBJECT_ARRAY = {};
@@ -96,7 +86,7 @@ public class BeanUtil {
      * class不同也支持拷贝
      *
      * @param source source
-     * @param <R> R
+     * @param <R>    R
      * @return R
      */
     public static <R> R copy(R source) {
@@ -183,7 +173,7 @@ public class BeanUtil {
             String key = entry.getKey();
             Object sourceValue = entry.getValue();
             Field sourceField = sourceBeanMap.getField(key);
-            if(sourceField != null && Modifier.isTransient(sourceField.getModifiers())){
+            if (sourceField != null && Modifier.isTransient(sourceField.getModifiers())) {
                 continue;
             }
             Object targetValue = transform(sourceValue, null, context);
@@ -216,7 +206,7 @@ public class BeanUtil {
             String key = entry.getKey();
             Object sourceValue = entry.getValue();
             Field sourceField = sourceBeanMap.getField(key);
-            if(sourceField != null && Modifier.isTransient(sourceField.getModifiers())){
+            if (sourceField != null && Modifier.isTransient(sourceField.getModifiers())) {
                 continue;
             }
             PropertyDescriptor targetDescriptor = targetBeanMap.getPropertyDescriptor(key);
@@ -401,9 +391,9 @@ public class BeanUtil {
      * class不同也支持拷贝
      * 支持循环依赖
      *
-     * @param source source
+     * @param source     source
      * @param returnType returnType
-     * @param <R> R
+     * @param <R>        R
      * @return R
      */
     public static <R> R transform(Object source, Class<R> returnType) {
@@ -615,7 +605,7 @@ public class BeanUtil {
      *
      * @param copySource copySource
      * @param copyTarget copyTarget
-     * @param <T> T
+     * @param <T>        T
      */
     public static <T> void copyToIfModify(T copySource, T copyTarget) {
         copyToIfModify(copySource, copyTarget, false);
@@ -647,7 +637,7 @@ public class BeanUtil {
      *
      * @param copySource copySource
      * @param copyTarget copyTarget
-     * @param <T> T
+     * @param <T>        T
      */
     public static <T> void fillIfNull(T copySource, T copyTarget) {
         if (copySource == null || copyTarget == null) {
