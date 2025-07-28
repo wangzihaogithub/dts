@@ -177,7 +177,7 @@ public class ESConnection {
         Response response = restClient.performRequest(request);
         InputStream content = response.getEntity().getContent();
         Map responseBody = JsonUtil.objectReader().readValue(content, Map.class);
-        return new EsTaskResponse(responseBody);
+        return new EsTaskResponse(taskId, responseBody);
     }
 
     private void scheduleTaskGet(EsTask task) {
