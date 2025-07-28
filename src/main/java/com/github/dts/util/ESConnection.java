@@ -191,7 +191,6 @@ public class ESConnection {
         } catch (Throwable e) {
             logger.warn("Scheduled taskId: {}, selectTaskScheduled error {}", id, e.toString(), e);
         }
-        ScheduledThreadPoolExecutor scheduled = getEsTaskSelectScheduled();
         if (response != null && response.isCompleted()) {
             try {
                 task.complete(response);
@@ -199,7 +198,7 @@ public class ESConnection {
                 logger.warn("Scheduled taskId: {}, selectTaskScheduled future.complete error {}", id, e.toString(), e);
             }
         } else {
-            scheduled.schedule(() -> scheduleTaskGet(task), scheduleSelectTaskIntervalMs, TimeUnit.MILLISECONDS);
+            getEsTaskSelectScheduled().schedule(() -> scheduleTaskGet(task), scheduleSelectTaskIntervalMs, TimeUnit.MILLISECONDS);
         }
     }
 
@@ -234,7 +233,7 @@ public class ESConnection {
         return xxByQuery("/" + indexName + "/_update_by_query", httpBody, httpQuery);
     }
 
-    public EsTask forcemerge(String indexName, Integer maxNumSegments, Boolean onlyExpungeDeletes) throws IOException {
+    public EsTask forcemerge(String indexName, Integer maxNumSegments, Boolean onlyExpungeDeletes, Boolean flush) throws IOException {
         // request
         Request request = new Request("POST", "/" + indexName + "/_forcemerge");
         request.addParameter("wait_for_completion", "false");
@@ -242,6 +241,9 @@ public class ESConnection {
             request.addParameter("only_expunge_deletes", onlyExpungeDeletes.toString());
         } else if (maxNumSegments != null) {
             request.addParameter("max_num_segments", maxNumSegments.toString());
+        }
+        if (flush != null) {
+            request.addParameter("flush", flush.toString());
         }
         Response response = restClient.performRequest(request);
         Map responseBody = JsonUtil.objectReader().readValue(response.getEntity().getContent(), Map.class);
@@ -251,6 +253,7 @@ public class ESConnection {
 
     private EsTask xxByQuery(String endpoint, Map<String, Object> httpBody, Map<String, Object> httpQuery) throws IOException {
         Objects.requireNonNull(httpBody, endpoint + "#requireNonNull(httpBody)");
+        httpBody = new LinkedHashMap<>(httpBody);
         if (!httpBody.containsKey("conflicts")) {
             httpBody.put("conflicts", "proceed");
         }
@@ -259,6 +262,8 @@ public class ESConnection {
         Request request = new Request("POST", endpoint);
         if (httpQuery == null) {
             httpQuery = new LinkedHashMap<>();
+        } else {
+            httpQuery = new LinkedHashMap<>(httpQuery);
         }
         if (!httpQuery.containsKey("wait_for_completion")) {
             httpQuery.put("wait_for_completion", "false");

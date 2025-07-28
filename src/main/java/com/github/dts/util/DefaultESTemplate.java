@@ -349,8 +349,8 @@ public class DefaultESTemplate implements ESTemplate {
         return esConnection.updateByQuery(indexName, httpBody, httpQuery);
     }
 
-    public EsTask forcemerge(String indexName, Integer maxNumSegments, Boolean onlyExpungeDeletes) throws IOException {
-        return esConnection.forcemerge(indexName, maxNumSegments, onlyExpungeDeletes);
+    public EsTask forcemerge(String indexName, Integer maxNumSegments, Boolean onlyExpungeDeletes, Boolean flush) throws IOException {
+        return esConnection.forcemerge(indexName, maxNumSegments, onlyExpungeDeletes, flush);
     }
 
     @Override
