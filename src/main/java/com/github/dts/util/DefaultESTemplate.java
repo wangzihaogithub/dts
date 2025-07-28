@@ -336,6 +336,50 @@ public class DefaultESTemplate implements ESTemplate {
         return response;
     }
 
+    public CompletableFuture<EsActionResponse> reindex(String aliasIndexName, String newIndexName) {
+        CompletableFuture<EsActionResponse> future = new CompletableFuture<>();
+        try {
+            // 新索引是否存在
+            boolean newIndexExist = esConnection.indexExist(newIndexName);
+            EsIndexMetaGetResponse metaGetResponse = esConnection.indexMetaGet(aliasIndexName);
+            if (!metaGetResponse.isSuccess()) {
+                future.complete(metaGetResponse);
+                return future;
+            }
+
+            // 新索引不存在自动创建
+            EsActionResponse indexCreateResponse = null;
+            if (!newIndexExist) {
+                indexCreateResponse = esConnection.indexCreate(newIndexName, metaGetResponse.toCreateIndexMeta());
+            }
+            // 如果创建失败
+            if (indexCreateResponse != null && !indexCreateResponse.isSuccess()) {
+                future.complete(indexCreateResponse);
+                return future;
+            }
+
+            String sourceIndexName = metaGetResponse.getResponseIndexName();
+            // 拷贝数据
+            EsTask reindex = esConnection.reindex(sourceIndexName, newIndexName);
+            reindex.thenAccept(esTaskResponse -> {
+                        try {
+                            // 删除旧引用，关联新索引
+                            EsActionResponse aliases = esConnection.aliases(aliasIndexName, sourceIndexName, aliasIndexName, newIndexName);
+                            future.complete(aliases);
+                        } catch (IOException e) {
+                            future.completeExceptionally(e);
+                        }
+                    })
+                    .exceptionally(throwable -> {
+                        future.completeExceptionally(throwable);
+                        return null;
+                    });
+        } catch (Throwable e) {
+            future.completeExceptionally(e);
+        }
+        return future;
+    }
+
     @Override
     public CompletableFuture<ESBulkRequest.EsRefreshResponse> refresh(Collection<String> indices) {
         return esConnection.refreshAsync(indices.toArray(new String[indices.size()]));

@@ -281,6 +281,101 @@ public class ESConnection {
         return new ConnectionEsTask(taskId, this);
     }
 
+    public EsActionResponse aliasesAdd(String addAlias, String addIndex) throws IOException {
+        return aliases(null, null, addAlias, addIndex);
+    }
+
+    public EsActionResponse aliasesRemove(String removeAlias, String removeIndex) throws IOException {
+        return aliases(removeAlias, removeIndex, null, null);
+    }
+
+    public EsActionResponse aliases(String removeAlias, String removeIndex,
+                                    String addAlias, String addIndex) throws IOException {
+        // request
+        Request request = new Request("POST", "/_aliases");
+        List<Map<String, Map<String, String>>> actions = new ArrayList<>(2);
+        if (!Util.isBlank(removeIndex) && !Util.isBlank(removeAlias)) {
+            Map<String, String> action = new HashMap<>();
+            action.put("index", removeIndex);
+            action.put("alias", removeAlias);
+            actions.add(Collections.singletonMap("remove", action));
+        }
+        if (!Util.isBlank(addIndex) && !Util.isBlank(addAlias)) {
+            Map<String, String> action = new HashMap<>();
+            action.put("index", addIndex);
+            action.put("alias", addAlias);
+            actions.add(Collections.singletonMap("add", action));
+        }
+        byte[] requestBody = JsonUtil.objectWriter().writeValueAsBytes(Collections.singletonMap("actions", actions));
+        request.setEntity(EntityBuilder.create()
+                .setContentType(ContentType.APPLICATION_JSON)
+                .setBinary(requestBody)
+                .build());
+        Response response = restClient.performRequest(request);
+        Map responseBody = JsonUtil.objectReader().readValue(response.getEntity().getContent(), Map.class);
+        return new EsActionResponse(responseBody);
+    }
+
+    public EsActionResponse indexDelete(String indexName) throws IOException {
+        // request
+        Request request = new Request("DELETE", "/" + indexName);
+        Response response = restClient.performRequest(request);
+        Map responseBody = JsonUtil.objectReader().readValue(response.getEntity().getContent(), Map.class);
+        return new EsActionResponse(responseBody);
+    }
+
+    public EsTask reindex(String sourceIndex, String destIndex) throws IOException {
+        // request
+        Request request = new Request("POST", "/_reindex");
+        request.addParameter("wait_for_completion", "false");
+
+        Map<String, Map<String, String>> body = new LinkedHashMap<>(2);
+        body.put("source", Collections.singletonMap("index", sourceIndex));
+        body.put("dest", Collections.singletonMap("index", destIndex));
+        byte[] requestBody = JsonUtil.objectWriter().writeValueAsBytes(body);
+        request.setEntity(EntityBuilder.create()
+                .setContentType(ContentType.APPLICATION_JSON)
+                .setBinary(requestBody)
+                .build());
+        Response response = restClient.performRequest(request);
+        Map responseBody = JsonUtil.objectReader().readValue(response.getEntity().getContent(), Map.class);
+        String taskId = Objects.toString(responseBody.get("task"), null);
+        return new ConnectionEsTask(taskId, this);
+    }
+
+    public boolean indexExist(String indexName) throws IOException {
+        // request
+        Request request = new Request("HEAD", "/" + indexName);
+        Response response = restClient.performRequest(request);
+        return response.getStatusLine().getStatusCode() == 200;
+    }
+
+    public EsIndexMetaGetResponse indexMetaGet(String indexName) throws IOException {
+        // request
+        Request request = new Request("GET", "/" + indexName);
+        Response response = restClient.performRequest(request);
+        int statusCode = response.getStatusLine().getStatusCode();
+        if (statusCode == 200) {
+            Map responseBody = JsonUtil.objectReader().readValue(response.getEntity().getContent(), Map.class);
+            return new EsIndexMetaGetResponse(indexName, responseBody);
+        } else {
+            throw new IOException(String.format("http status %s!", statusCode));
+        }
+    }
+
+    public EsActionResponse indexCreate(String indexName, Map<String, Object> createIndexMeta) throws IOException {
+        // request
+        Request request = new Request("PUT", "/" + indexName);
+        byte[] requestBody = JsonUtil.objectWriter().writeValueAsBytes(createIndexMeta);
+        request.setEntity(EntityBuilder.create()
+                .setContentType(ContentType.APPLICATION_JSON)
+                .setBinary(requestBody)
+                .build());
+        Response response = restClient.performRequest(request);
+        Map responseBody = JsonUtil.objectReader().readValue(response.getEntity().getContent(), Map.class);
+        return new EsActionResponse(responseBody);
+    }
+
     public static class ConnectionEsTask extends EsTask {
         private final ESConnection connection;
         private CompletableFuture<Map<String, Object>> tasksCancel;
