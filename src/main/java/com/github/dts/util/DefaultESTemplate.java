@@ -2,7 +2,7 @@ package com.github.dts.util;
 
 import com.github.dts.util.ESSyncConfig.ESMapping;
 import com.github.dts.util.SchemaItem.FieldItem;
-import com.google.common.collect.Lists;
+import com.github.dts.util.Lists;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.index.query.RangeQueryBuilder;
@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.sql.DataSource;
+import java.io.IOException;
 import java.sql.*;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -338,6 +339,18 @@ public class DefaultESTemplate implements ESTemplate {
     @Override
     public CompletableFuture<ESBulkRequest.EsRefreshResponse> refresh(Collection<String> indices) {
         return esConnection.refreshAsync(indices.toArray(new String[indices.size()]));
+    }
+
+    public EsTask deleteByQuery(String indexName, Map<String, Object> httpBody, Map<String, Object> httpQuery) throws IOException {
+        return esConnection.deleteByQuery(indexName, httpBody, httpQuery);
+    }
+
+    public EsTask updateByQuery(String indexName, Map<String, Object> httpBody, Map<String, Object> httpQuery) throws IOException {
+        return esConnection.updateByQuery(indexName, httpBody, httpQuery);
+    }
+
+    public EsTask forcemerge(String indexName, Integer maxNumSegments, Boolean onlyExpungeDeletes) throws IOException {
+        return esConnection.forcemerge(indexName, maxNumSegments, onlyExpungeDeletes);
     }
 
     @Override

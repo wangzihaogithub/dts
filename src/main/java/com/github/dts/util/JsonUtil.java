@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.Writer;
 
 public class JsonUtil {
@@ -50,6 +51,11 @@ public class JsonUtil {
             public <T> T readValue(byte[] src, Class<T> valueType) throws IOException {
                 return objectMapper.readValue(src, valueType);
             }
+
+            @Override
+            public <T> T readValue(InputStream src, Class<T> valueType) throws IOException {
+                return objectMapper.readValue(src, valueType);
+            }
         };
     }
 
@@ -67,5 +73,6 @@ public class JsonUtil {
 
         <T> T readValue(byte[] src, Class<T> valueType) throws IOException;
 
+        <T> T readValue(InputStream src, Class<T> valueType) throws IOException;
     }
 }

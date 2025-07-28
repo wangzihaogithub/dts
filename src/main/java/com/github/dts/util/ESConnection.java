@@ -1,12 +1,13 @@
 package com.github.dts.util;
 
 
-import com.google.common.collect.Lists;
 import org.apache.http.Header;
 import org.apache.http.HttpHost;
 import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.UsernamePasswordCredentials;
 import org.apache.http.client.CredentialsProvider;
+import org.apache.http.client.entity.EntityBuilder;
+import org.apache.http.entity.ContentType;
 import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.apache.http.impl.nio.reactor.IOReactorConfig;
 import org.apache.http.message.BasicHeader;
@@ -40,11 +41,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
@@ -58,6 +57,8 @@ public class ESConnection {
     public static final ESBulkResponseImpl EMPTY_RESPONSE = new ESBulkResponseImpl(Collections.emptyList());
     private static final Logger logger = LoggerFactory.getLogger(ESConnection.class);
     private final RestHighLevelClient restHighLevelClient;
+    private final RestClient restClient;
+    private volatile ScheduledThreadPoolExecutor esTaskScheduled;
     private final int concurrentBulkRequest;
     private final int bulkCommitSize;
     private final int maxRetryCount;
@@ -67,6 +68,7 @@ public class ESConnection {
     private final Map<String, CompletableFuture<Map<String, Object>>> getMappingAsyncCache = new ConcurrentHashMap<>(2);
     private final int updateByQueryChunkSize;
     private final String[] elasticsearchUri;
+    private final long scheduleSelectTaskIntervalMs;
     private long requestEntityTooLargeBytes = 0;
 
     public ESConnection(CanalConfig.OuterAdapterConfig.EsAccount esAccount) {
@@ -124,7 +126,9 @@ public class ESConnection {
         this.bulkRetryCount = esAccount.getBulkRetryCount();
         this.bulkCommitSize = esAccount.getBulkCommitSize();
         this.concurrentBulkRequest = concurrentBulkRequest;
+        this.scheduleSelectTaskIntervalMs = esAccount.getScheduleSelectTaskIntervalMs();
         this.restHighLevelClient = new RestHighLevelClient(clientBuilder);
+        this.restClient = restHighLevelClient.getLowLevelClient();
     }
 
     public int getUpdateByQueryChunkSize() {
@@ -165,6 +169,149 @@ public class ESConnection {
             });
             return future;
         });
+    }
+
+    public EsTaskResponse tasksGet(String taskId) throws IOException {
+        // request
+        Request request = new Request("GET", "/_tasks/" + taskId);
+        Response response = restClient.performRequest(request);
+        InputStream content = response.getEntity().getContent();
+        Map responseBody = JsonUtil.objectReader().readValue(content, Map.class);
+        return new EsTaskResponse(responseBody);
+    }
+
+    private void scheduleTaskGet(EsTask task) {
+        if (task.isDone()) {
+            return;
+        }
+        String id = task.getId();
+        EsTaskResponse response = null;
+        try {
+            response = tasksGet(id);
+        } catch (Throwable e) {
+            logger.warn("Scheduled taskId: {}, selectTaskScheduled error {}", id, e.toString(), e);
+        }
+        ScheduledThreadPoolExecutor scheduled = getEsTaskSelectScheduled();
+        if (response != null && response.isCompleted()) {
+            try {
+                task.complete(response);
+            } catch (Throwable e) {
+                logger.warn("Scheduled taskId: {}, selectTaskScheduled future.complete error {}", id, e.toString(), e);
+            }
+        } else {
+            scheduled.schedule(() -> scheduleTaskGet(task), scheduleSelectTaskIntervalMs, TimeUnit.MILLISECONDS);
+        }
+    }
+
+    public CompletableFuture<Map<String, Object>> tasksCancel(String taskId) {
+        // request
+        Request request = new Request("POST", "/_tasks/" + taskId + "/_cancel");
+        CompletableFuture<Map<String, Object>> future = new CompletableFuture<>();
+        restClient.performRequestAsync(request, new ResponseListener() {
+            @Override
+            public void onSuccess(Response response) {
+                try {
+                    Map responseBody = JsonUtil.objectReader().readValue(response.getEntity().getContent(), Map.class);
+                    future.complete(responseBody);
+                } catch (IOException e) {
+                    future.completeExceptionally(e);
+                }
+            }
+
+            @Override
+            public void onFailure(Exception exception) {
+                future.completeExceptionally(exception);
+            }
+        });
+        return future;
+    }
+
+    public EsTask deleteByQuery(String indexName, Map<String, Object> httpBody, Map<String, Object> httpQuery) throws IOException {
+        return xxByQuery("/" + indexName + "/_delete_by_query", httpBody, httpQuery);
+    }
+
+    public EsTask updateByQuery(String indexName, Map<String, Object> httpBody, Map<String, Object> httpQuery) throws IOException {
+        return xxByQuery("/" + indexName + "/_update_by_query", httpBody, httpQuery);
+    }
+
+    public EsTask forcemerge(String indexName, Integer maxNumSegments, Boolean onlyExpungeDeletes) throws IOException {
+        // request
+        Request request = new Request("POST", "/" + indexName + "/_forcemerge");
+        request.addParameter("wait_for_completion", "false");
+        if (onlyExpungeDeletes != null) {
+            request.addParameter("only_expunge_deletes", onlyExpungeDeletes.toString());
+        } else if (maxNumSegments != null) {
+            request.addParameter("max_num_segments", maxNumSegments.toString());
+        }
+        Response response = restClient.performRequest(request);
+        Map responseBody = JsonUtil.objectReader().readValue(response.getEntity().getContent(), Map.class);
+        String taskId = Objects.toString(responseBody.get("task"), null);
+        return new ConnectionEsTask(taskId, this);
+    }
+
+    private EsTask xxByQuery(String endpoint, Map<String, Object> httpBody, Map<String, Object> httpQuery) throws IOException {
+        Objects.requireNonNull(httpBody, endpoint + "#requireNonNull(httpBody)");
+        if (!httpBody.containsKey("conflicts")) {
+            httpBody.put("conflicts", "proceed");
+        }
+
+        // request
+        Request request = new Request("POST", endpoint);
+        if (httpQuery == null) {
+            httpQuery = new LinkedHashMap<>();
+        }
+        if (!httpQuery.containsKey("wait_for_completion")) {
+            httpQuery.put("wait_for_completion", "false");
+        }
+        httpQuery.forEach((s, o) -> request.addParameter(s, Objects.toString(o, "")));
+
+        byte[] requestBody = JsonUtil.objectWriter().writeValueAsBytes(httpBody);
+        request.setEntity(EntityBuilder.create()
+                .setContentType(ContentType.APPLICATION_JSON)
+                .setBinary(requestBody)
+                .build());
+        Response response = restClient.performRequest(request);
+        Map responseBody = JsonUtil.objectReader().readValue(response.getEntity().getContent(), Map.class);
+        String taskId = Objects.toString(responseBody.get("task"), null);
+        return new ConnectionEsTask(taskId, this);
+    }
+
+    public static class ConnectionEsTask extends EsTask {
+        private final ESConnection connection;
+        private CompletableFuture<Map<String, Object>> tasksCancel;
+
+        public ConnectionEsTask(String id, ESConnection connection) {
+            super(id);
+            this.connection = connection;
+            connection.scheduleTaskGet(this);
+        }
+
+        @Override
+        public boolean cancel(boolean mayInterruptIfRunning) {
+            boolean cancel = super.cancel(mayInterruptIfRunning);
+            if (cancel && mayInterruptIfRunning) {
+                this.tasksCancel = connection.tasksCancel(getId());
+            }
+            return cancel;
+        }
+
+        public CompletableFuture<Map<String, Object>> getTasksCancel() {
+            return tasksCancel;
+        }
+    }
+
+    private ScheduledThreadPoolExecutor getEsTaskSelectScheduled() {
+        if (esTaskScheduled == null) {
+            synchronized (this) {
+                if (esTaskScheduled == null) {
+                    esTaskScheduled = Util.newScheduled(1, () -> "elasticsearch_tasks.select", e -> logger.warn("Scheduled _tasksselectTaskScheduled error {}", e.toString(), e));
+                    esTaskScheduled.setKeepAliveTime(60, TimeUnit.SECONDS);
+                    esTaskScheduled.setMaximumPoolSize(3);
+                    esTaskScheduled.allowCoreThreadTimeOut(true);
+                }
+            }
+        }
+        return esTaskScheduled;
     }
 
     public CompletableFuture<Map<String, Object>> getMapping(String index) {

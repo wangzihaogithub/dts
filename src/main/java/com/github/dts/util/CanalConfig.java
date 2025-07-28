@@ -677,6 +677,7 @@ public class CanalConfig {
             private int bulkRetryCount = 0;
             private int concurrentBulkRequest = 16;// 最大并发bulk请求
             private int minAvailableSpaceHighBulkRequests = 2;// 高优先级bulk最少可用空间数量，最大实时性越好，保证实时性
+            private long scheduleSelectTaskIntervalMs = 1000L;//轮训es任务（EsTask对象）是否完成的间隔
             private int bulkCommitSize = 200;//每次bulk请求的大约提交条数
             private int httpKeepAliveMinutes = 3000;
             private int httpConnectTimeout = 10 * 60 * 60;
@@ -689,6 +690,14 @@ public class CanalConfig {
 
             public void setAddress(String[] address) {
                 this.address = address;
+            }
+
+            public long getScheduleSelectTaskIntervalMs() {
+                return scheduleSelectTaskIntervalMs;
+            }
+
+            public void setScheduleSelectTaskIntervalMs(long scheduleSelectTaskIntervalMs) {
+                this.scheduleSelectTaskIntervalMs = scheduleSelectTaskIntervalMs;
             }
 
             public String getClusterName() {
