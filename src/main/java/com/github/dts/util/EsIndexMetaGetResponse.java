@@ -26,6 +26,20 @@ public class EsIndexMetaGetResponse extends EsActionResponse {
         return iterator.hasNext() ? (Map<String, Object>) iterator.next() : null;
     }
 
+    public String getResponseAliasesIndexName() {
+        Map<String, Object> responseMeta = getResponseMeta();
+        if (responseMeta == null) {
+            return null;
+        }
+        Map<String, Object> aliases = (Map<String, Object>) responseMeta.get("aliases");
+        if (aliases != null) {
+            Iterator<String> iterator = aliases.keySet().iterator();
+            return iterator.hasNext() ? iterator.next() : null;
+        } else {
+            return null;
+        }
+    }
+
     public Map<String, Object> toCreateIndexMeta() {
         Map<String, Object> map = new LinkedHashMap<>();
         Map<String, Object> responseMeta = getResponseMeta();
@@ -45,8 +59,9 @@ public class EsIndexMetaGetResponse extends EsActionResponse {
     @Override
     public String toString() {
         return "EsIndexMetaGetResponse{" +
-                "requestIndexName=" + getRequestIndexName() +
-                ", responseIndexName=" + getResponseIndexName() +
+                "request=" + getRequestIndexName() +
+                ", indexName=" + getResponseIndexName() +
+                ", aliasesName=" + getResponseAliasesIndexName() +
                 '}';
     }
 }

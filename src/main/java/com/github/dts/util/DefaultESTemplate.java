@@ -341,11 +341,11 @@ public class DefaultESTemplate implements ESTemplate {
      *
      * @param aliasIndexName         别名
      * @param newIndexName           新索引名称（如果不存在，则自动创建结构）
-     * @param afterAliasRemoveAndAdd reindex后，是否需要绑定至别名
+     * @param afterAliasRemoveAndAdd 是否需要重新关联，reindex后，绑定至别名
      * @return 是否成功
      */
-    public CompletableFuture<EsActionResponse> reindex(String aliasIndexName, String newIndexName, boolean afterAliasRemoveAndAdd) {
-        CompletableFuture<EsActionResponse> future = new CompletableFuture<>();
+    public EsTaskCompletableFuture<EsActionResponse> reindex(String aliasIndexName, String newIndexName, boolean afterAliasRemoveAndAdd) {
+        EsTaskCompletableFuture<EsActionResponse> future = new EsTaskCompletableFuture<>();
         try {
             // 新索引是否存在
             boolean newIndexExist = esConnection.indexExist(newIndexName);
@@ -365,20 +365,24 @@ public class DefaultESTemplate implements ESTemplate {
                 future.complete(indexCreateResponse);
                 return future;
             }
-
+            String responseAliasesIndexName = Optional.ofNullable(metaGetResponse.getResponseAliasesIndexName()).orElse(aliasIndexName);
             String sourceIndexName = metaGetResponse.getResponseIndexName();
             // 拷贝数据
             EsTask reindex = esConnection.reindex(sourceIndexName, newIndexName);
+            future.setTaskId(reindex.getId());
+            log.info("reindex taskId = {},  sourceIndex = {}, destIndex = {}", reindex.getId(), sourceIndexName, newIndexName);
             reindex.thenAccept(esTaskResponse -> {
+                        // 如果需要重新关联
                         if (afterAliasRemoveAndAdd) {
                             try {
                                 // 删除旧引用，关联新索引
-                                EsActionResponse aliases = esConnection.aliases(aliasIndexName, sourceIndexName, aliasIndexName, newIndexName);
+                                EsActionResponse aliases = esConnection.aliases(responseAliasesIndexName, sourceIndexName, responseAliasesIndexName, newIndexName);
                                 future.complete(aliases);
                             } catch (IOException e) {
                                 future.completeExceptionally(e);
                             }
                         } else {
+                            // 不需要重新关联
                             future.complete(esTaskResponse);
                         }
                     })
@@ -435,6 +439,10 @@ public class DefaultESTemplate implements ESTemplate {
 
     public EsTask forcemerge(String indexName, Integer maxNumSegments, Boolean onlyExpungeDeletes, Boolean flush) throws IOException {
         return esConnection.forcemerge(indexName, maxNumSegments, onlyExpungeDeletes, flush);
+    }
+
+    public ESConnection getConnection() {
+        return esConnection;
     }
 
     @Override

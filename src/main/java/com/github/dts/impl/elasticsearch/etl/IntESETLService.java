@@ -55,6 +55,19 @@ public class IntESETLService {
         stop = true;
     }
 
+    public List<CompletableFuture<?>> checkAll(String esIndexName, List<String> adapterNames, int offsetAdd, int threads) {
+        List<SyncRunnable> l1 = syncAll(esIndexName, threads, 0, null, offsetAdd,
+                true, true, 100, null, adapterNames, null, true);
+        List<CompletableFuture<Counter>> l2 = updateEsDiff(esIndexName, null, null, offsetAdd, threads, null, 500, adapterNames);
+        List<CompletableFuture<Counter>> l3 = updateEsNestedDiff(esIndexName, null, null, offsetAdd, threads, null, 500, adapterNames);
+
+        List<CompletableFuture<?>> futureList = new ArrayList<>();
+        futureList.addAll(l1);
+        futureList.addAll(l2);
+        futureList.addAll(l3);
+        return futureList;
+    }
+
     public List<SyncRunnable> syncAll(String esIndexName) {
         return syncAll(esIndexName,
                 50, 0, null, 500,
@@ -617,6 +630,9 @@ public class IntESETLService {
             return new ArrayList<>();
         }
 
+        if (threads <= 0) {
+            threads = Math.max(Runtime.getRuntime().availableProcessors(), 1) * 2;
+        }
         List<SyncRunnable> runnableList = new ArrayList<>();
         for (ESAdapter adapter : adapterList) {
             Map<String, ESSyncConfig> configMap = adapter.getEsSyncConfigByIndex(esIndexName);

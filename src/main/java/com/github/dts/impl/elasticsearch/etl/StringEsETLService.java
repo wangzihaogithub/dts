@@ -69,6 +69,13 @@ public class StringEsETLService {
         }
     }
 
+    public int checkAll(String esIndexName, List<String> adapterNames, int offsetAdd) {
+        int i = updateEsNestedDiff(esIndexName, null, offsetAdd, null, 500, adapterNames);
+        i += syncAll(esIndexName, "0", offsetAdd, true, true, 100, null, adapterNames, null, false);
+        i += updateEsDiff(esIndexName, offsetAdd, null, 500, adapterNames);
+        return i;
+    }
+
     public void syncAll(
             String esIndexName) {
         syncAll(esIndexName, "0", 500, true, true, 100, null, null, null, false);

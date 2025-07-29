@@ -46,17 +46,17 @@ public abstract class AbstractEsETLDateController {
 
     @RequestMapping("/syncAll")
     public List<SyncRunnable> syncAll(
-            @RequestParam(required = false, defaultValue = "50") int threads,
-            @RequestParam(required = false, defaultValue = "0") String offsetStart,
-            String offsetEnd,
-            @RequestParam String fieldName,
-            @RequestParam String esIndexName,
-            @RequestParam(required = false, defaultValue = "600000") long offsetAdd,
-            @RequestParam(required = false, defaultValue = "defaultDS") String ds,
-            @RequestParam(required = false, defaultValue = "true") boolean append,
-            @RequestParam(required = false, defaultValue = "false") boolean discard,
-            @RequestParam(required = false, defaultValue = "true") boolean onlyCurrentIndex,
-            @RequestParam(required = false, defaultValue = "100") int joinUpdateSize,
+            @RequestParam(value = "esIndexName", required = true) String esIndexName,
+            @RequestParam(value = "threads", required = false, defaultValue = "50") int threads,
+            @RequestParam(value = "offsetStart", required = false, defaultValue = "0") String offsetStart,
+            @RequestParam(value = "offsetEnd", required = false) String offsetEnd,
+            @RequestParam(value = "fieldName", required = false) String fieldName,
+            @RequestParam(value = "offsetAdd", required = false, defaultValue = "600000") long offsetAdd,
+            @RequestParam(value = "ds", required = false, defaultValue = "defaultDS") String ds,
+            @RequestParam(value = "append", required = false, defaultValue = "true") boolean append,
+//            @RequestParam(value = "discard", required = false, defaultValue = "false") boolean discard,
+            @RequestParam(value = "onlyCurrentIndex", required = false, defaultValue = "true") boolean onlyCurrentIndex,
+            @RequestParam(value = "joinUpdateSize", required = false, defaultValue = "100") int joinUpdateSize,
             String[] onlyFieldName) {
         List<ESAdapter> adapterList = startupServer.getAdapter(ESAdapter.class);
         if (adapterList.isEmpty()) {
@@ -72,16 +72,16 @@ public abstract class AbstractEsETLDateController {
         Long offsetEndDate = offsetEndParse == null ? null : offsetEndParse.getTime();
 
         Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(Util::isNotBlank).collect(Collectors.toCollection(LinkedHashSet::new));
-        String clientIdentity = getESAdapter().getClientIdentity();
-        if (discard) {
-            new Thread(() -> {
-                try {
-                    discard(clientIdentity);
-                } catch (InterruptedException e) {
-                    log.info("discard {}", e.toString(), e);
-                }
-            }).start();
-        }
+//        String clientIdentity = getESAdapter().getClientIdentity();
+//        if (discard) {
+//            new Thread(() -> {
+//                try {
+//                    discard(clientIdentity);
+//                } catch (InterruptedException e) {
+//                    log.info("discard {}", e.toString(), e);
+//                }
+//            }).start();
+//        }
 
         AbstractMessageService messageService = startupServer.getMessageService();
         List<SyncRunnable> runnableList = new ArrayList<>();
