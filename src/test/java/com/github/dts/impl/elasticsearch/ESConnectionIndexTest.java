@@ -15,13 +15,13 @@ public class ESConnectionIndexTest {
     }
 
     public static void main(String[] args) throws IOException {
-        ESConnection esConnection = esConnection("http://elasticsearch8.xx.com");
+        ESConnection esConnection = esConnection("http://elasticsearch8.xxx.com");
 
         DefaultESTemplate esTemplate = new DefaultESTemplate(esConnection);
         String yyyyMmDd = new SimpleDateFormat("yyyy_MM_dd").format(new Date());
         String aliasIndexName = "cnwy_kn_employees_test";
-        String newIndexName = aliasIndexName + "_" + yyyyMmDd;
-        CompletableFuture<EsActionResponse> reindex = esTemplate.reindex(aliasIndexName, newIndexName);
+        String newIndexName = aliasIndexName + "_2" + yyyyMmDd;
+        CompletableFuture<EsActionResponse> reindex = esTemplate.reindex(aliasIndexName, newIndexName, true);
         EsActionResponse join = reindex.join();
 
         System.out.println("join = " + join);

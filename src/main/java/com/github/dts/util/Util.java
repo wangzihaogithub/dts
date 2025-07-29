@@ -334,6 +334,108 @@ public class Util {
         return out;
     }
 
+    /**
+     * 将一段范围拆分为n个子范围
+     *
+     * @param startId 起始ID
+     * @param endId   结束ID
+     * @param n       拆分段数
+     * @return 包含n个子范围的列表
+     */
+    public static List<Range> splitRange(Long startId, Long endId, int n) {
+        // 参数校验
+        if (startId == null) {
+            throw new IllegalArgumentException("startId不能为null");
+        }
+        if (endId == null) {
+            throw new IllegalArgumentException("endId不能为null");
+        }
+        List<Range> ranges = new ArrayList<>();
+        if (startId > endId) {
+            return ranges;
+        }
+
+        // 如果只需要一段，直接返回整个范围
+        if (n <= 1) {
+            ranges.add(new Range(0, 1, startId, endId));
+            return ranges;
+        }
+
+        // 计算总范围和每段的大小
+        long totalRange = endId - startId + 1;
+        long segmentSize = totalRange / n;
+        long remainder = totalRange % n;
+
+        int rangeCount = 0;
+        for (long i = 0, currentStart = startId; i < n; i++) {
+            // 前remainder段多分配一个元素，确保均匀分布
+            long currentEnd = currentStart + segmentSize - 1;
+            if (i < remainder) {
+                currentEnd += 1;
+            }
+            if (currentStart <= currentEnd) {
+                rangeCount++;
+            }
+            currentStart = currentEnd + 1;
+        }
+
+        // 拆分为n段
+        for (long i = 0, currentStart = startId; i < n; i++) {
+            // 前remainder段多分配一个元素，确保均匀分布
+            long currentEnd = currentStart + segmentSize - 1;
+            if (i < remainder) {
+                currentEnd += 1;
+            }
+            if (currentStart <= currentEnd) {
+                ranges.add(new Range((int) i, rangeCount, currentStart, currentEnd));
+            }
+            currentStart = currentEnd + 1;
+        }
+        return ranges;
+    }
+
+    /**
+     * 范围类
+     */
+    public static class Range {
+        private final int index;
+        private final int ranges;
+        private final Long start;
+        private final Long end;
+
+        public Range(int index, int ranges, Long start, Long end) {
+            this.index = index;
+            this.ranges = ranges;
+            this.start = start;
+            this.end = end;
+        }
+
+        public int getRanges() {
+            return ranges;
+        }
+
+        public int getIndex() {
+            return index;
+        }
+
+        public boolean isLast() {
+            return ranges - 1 == index;
+        }
+
+        public Long getStart() {
+            return start;
+        }
+
+        public Long getEnd() {
+            return end;
+        }
+
+        @Override
+        public String toString() {
+            return index + "/" + ranges + "[" + start + "-" + end + "]";
+        }
+    }
+
     public static boolean isDefaultRedisProps(Environment env) {
         String[] props = new String[]{
                 "spring.redis.url",

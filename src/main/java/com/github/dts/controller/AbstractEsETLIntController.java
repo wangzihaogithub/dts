@@ -11,6 +11,7 @@ import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 /**
@@ -31,6 +32,7 @@ public abstract class AbstractEsETLIntController {
 
     @RequestMapping("/updateEsNestedDiff")
     public int updateEsNestedDiff(@RequestParam String esIndexName,
+                                  @RequestParam(required = false, defaultValue = "6") int threads,
                                   @RequestParam(required = false, defaultValue = "1000") int offsetAdd,
                                   // 比较字段：必须是嵌套字段：空=全部，
                                   Long startId,
@@ -38,13 +40,14 @@ public abstract class AbstractEsETLIntController {
                                   String[] diffFields,
                                   String[] adapterNames,
                                   @RequestParam(required = false, defaultValue = "50") int maxSendMessageSize) {
-        return intESETLService.updateEsNestedDiff(esIndexName, startId, endId, offsetAdd,
+        return intESETLService.updateEsNestedDiff(esIndexName, startId, endId, offsetAdd, threads,
                 diffFields == null ? null : new LinkedHashSet<>(Arrays.asList(diffFields)), maxSendMessageSize,
-                adapterNames == null ? null : Arrays.asList(adapterNames));
+                adapterNames == null ? null : Arrays.asList(adapterNames)).size();
     }
 
     @RequestMapping("/updateEsDiff")
     public int updateEsDiff(@RequestParam String esIndexName,
+                            @RequestParam(required = false, defaultValue = "6") int threads,
                             @RequestParam(required = false, defaultValue = "1000") int offsetAdd,
                             Long startId,
                             Long endId,
@@ -52,9 +55,9 @@ public abstract class AbstractEsETLIntController {
                             String[] diffFields,
                             String[] adapterNames,
                             @RequestParam(required = false, defaultValue = "50") int maxSendMessageSize) {
-        return intESETLService.updateEsDiff(esIndexName, startId, endId, offsetAdd,
+        return intESETLService.updateEsDiff(esIndexName, startId, endId, offsetAdd, threads,
                 diffFields == null ? null : new LinkedHashSet<>(Arrays.asList(diffFields)), maxSendMessageSize,
-                adapterNames == null ? null : Arrays.asList(adapterNames));
+                adapterNames == null ? null : Arrays.asList(adapterNames)).size();
     }
 
     @RequestMapping("/deleteEsTrim")
@@ -65,7 +68,7 @@ public abstract class AbstractEsETLIntController {
                             @RequestParam(required = false, defaultValue = "1000") int offsetAdd,
                             @RequestParam(required = false, defaultValue = "1000") int maxSendMessageDeleteIdSize) {
         return intESETLService.deleteEsTrim(esIndexName, startId, endId, offsetAdd, maxSendMessageDeleteIdSize,
-                adapterNames == null ? null : Arrays.asList(adapterNames));
+                adapterNames == null ? null : Arrays.asList(adapterNames)).size();
     }
 
     @RequestMapping("/syncAll")
@@ -76,7 +79,6 @@ public abstract class AbstractEsETLIntController {
             Long offsetEnd,
             @RequestParam(required = false, defaultValue = "500") int offsetAdd,
             @RequestParam(required = false, defaultValue = "true") boolean append,
-            @RequestParam(required = false, defaultValue = "false") boolean discard,
             @RequestParam(required = false, defaultValue = "true") boolean onlyCurrentIndex,
             @RequestParam(required = false, defaultValue = "100") int joinUpdateSize,
             String[] onlyFieldName,
@@ -84,7 +86,7 @@ public abstract class AbstractEsETLIntController {
             String sqlWhere,
             @RequestParam(required = false, defaultValue = "false") boolean insertIgnore) {
         Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(Util::isNotBlank).collect(Collectors.toCollection(LinkedHashSet::new));
-        return intESETLService.syncAll(esIndexName, threads, offsetStart, offsetEnd, offsetAdd, append, discard, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet,
+        return intESETLService.syncAll(esIndexName, threads, offsetStart, offsetEnd, offsetAdd, append, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet,
                 adapterNames == null ? null : Arrays.asList(adapterNames), sqlWhere, insertIgnore);
     }
 

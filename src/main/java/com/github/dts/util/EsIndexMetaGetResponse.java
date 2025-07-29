@@ -8,7 +8,7 @@ public class EsIndexMetaGetResponse extends EsActionResponse {
     private final String requestIndexName;
 
     public EsIndexMetaGetResponse(String requestIndexName, Map<String, Object> responseBody) {
-        super(responseBody);
+        super("GET /" + requestIndexName, responseBody);
         this.requestIndexName = requestIndexName;
     }
 
@@ -46,6 +46,7 @@ public class EsIndexMetaGetResponse extends EsActionResponse {
     public String toString() {
         return "EsIndexMetaGetResponse{" +
                 "requestIndexName=" + getRequestIndexName() +
+                ", responseIndexName=" + getResponseIndexName() +
                 '}';
     }
 }

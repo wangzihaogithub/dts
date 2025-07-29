@@ -336,7 +336,15 @@ public class DefaultESTemplate implements ESTemplate {
         return response;
     }
 
-    public CompletableFuture<EsActionResponse> reindex(String aliasIndexName, String newIndexName) {
+    /**
+     * reindex
+     *
+     * @param aliasIndexName         别名
+     * @param newIndexName           新索引名称（如果不存在，则自动创建结构）
+     * @param afterAliasRemoveAndAdd reindex后，是否需要绑定至别名
+     * @return 是否成功
+     */
+    public CompletableFuture<EsActionResponse> reindex(String aliasIndexName, String newIndexName, boolean afterAliasRemoveAndAdd) {
         CompletableFuture<EsActionResponse> future = new CompletableFuture<>();
         try {
             // 新索引是否存在
@@ -362,12 +370,16 @@ public class DefaultESTemplate implements ESTemplate {
             // 拷贝数据
             EsTask reindex = esConnection.reindex(sourceIndexName, newIndexName);
             reindex.thenAccept(esTaskResponse -> {
-                        try {
-                            // 删除旧引用，关联新索引
-                            EsActionResponse aliases = esConnection.aliases(aliasIndexName, sourceIndexName, aliasIndexName, newIndexName);
-                            future.complete(aliases);
-                        } catch (IOException e) {
-                            future.completeExceptionally(e);
+                        if (afterAliasRemoveAndAdd) {
+                            try {
+                                // 删除旧引用，关联新索引
+                                EsActionResponse aliases = esConnection.aliases(aliasIndexName, sourceIndexName, aliasIndexName, newIndexName);
+                                future.complete(aliases);
+                            } catch (IOException e) {
+                                future.completeExceptionally(e);
+                            }
+                        } else {
+                            future.complete(esTaskResponse);
                         }
                     })
                     .exceptionally(throwable -> {
@@ -391,6 +403,34 @@ public class DefaultESTemplate implements ESTemplate {
 
     public EsTask updateByQuery(String indexName, Map<String, Object> httpBody, Map<String, Object> httpQuery) throws IOException {
         return esConnection.updateByQuery(indexName, httpBody, httpQuery);
+    }
+
+    public Hit searchMaxRow(String indexName, String sortFieldName) {
+        ESConnection.ESSearchRequest request = new ESConnection.ESSearchRequest(indexName);
+        request.sort(sortFieldName, "desc");
+        request.size(1);
+        SearchResponse response = request.getResponse(esConnection);
+        SearchHit[] hits = response.getHits().getHits();
+        if (hits.length > 0) {
+            SearchHit h = hits[0];
+            return new Hit(h.getId(), h.getSourceAsMap(), h.getSortValues());
+        } else {
+            return null;
+        }
+    }
+
+    public Hit searchMinRow(String indexName, String sortFieldName) {
+        ESConnection.ESSearchRequest request = new ESConnection.ESSearchRequest(indexName);
+        request.sort(sortFieldName, "asc");
+        request.size(1);
+        SearchResponse response = request.getResponse(esConnection);
+        SearchHit[] hits = response.getHits().getHits();
+        if (hits.length > 0) {
+            SearchHit h = hits[0];
+            return new Hit(h.getId(), h.getSourceAsMap(), h.getSortValues());
+        } else {
+            return null;
+        }
     }
 
     public EsTask forcemerge(String indexName, Integer maxNumSegments, Boolean onlyExpungeDeletes, Boolean flush) throws IOException {

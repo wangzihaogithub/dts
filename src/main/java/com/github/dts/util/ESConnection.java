@@ -292,7 +292,8 @@ public class ESConnection {
     public EsActionResponse aliases(String removeAlias, String removeIndex,
                                     String addAlias, String addIndex) throws IOException {
         // request
-        Request request = new Request("POST", "/_aliases");
+        String endpoint = "/_aliases";
+        Request request = new Request("POST", endpoint);
         List<Map<String, Map<String, String>>> actions = new ArrayList<>(2);
         if (!Util.isBlank(removeIndex) && !Util.isBlank(removeAlias)) {
             Map<String, String> action = new HashMap<>();
@@ -313,15 +314,16 @@ public class ESConnection {
                 .build());
         Response response = restClient.performRequest(request);
         Map responseBody = JsonUtil.objectReader().readValue(response.getEntity().getContent(), Map.class);
-        return new EsActionResponse(responseBody);
+        return new EsActionResponse("POST " + endpoint, responseBody);
     }
 
     public EsActionResponse indexDelete(String indexName) throws IOException {
         // request
-        Request request = new Request("DELETE", "/" + indexName);
+        String endpoint = "/" + indexName;
+        Request request = new Request("DELETE", endpoint);
         Response response = restClient.performRequest(request);
         Map responseBody = JsonUtil.objectReader().readValue(response.getEntity().getContent(), Map.class);
-        return new EsActionResponse(responseBody);
+        return new EsActionResponse("DELETE " + endpoint, responseBody);
     }
 
     public EsTask reindex(String sourceIndex, String destIndex) throws IOException {
@@ -365,7 +367,8 @@ public class ESConnection {
 
     public EsActionResponse indexCreate(String indexName, Map<String, Object> createIndexMeta) throws IOException {
         // request
-        Request request = new Request("PUT", "/" + indexName);
+        String endpoint = "/" + indexName;
+        Request request = new Request("PUT", endpoint);
         byte[] requestBody = JsonUtil.objectWriter().writeValueAsBytes(createIndexMeta);
         request.setEntity(EntityBuilder.create()
                 .setContentType(ContentType.APPLICATION_JSON)
@@ -373,7 +376,7 @@ public class ESConnection {
                 .build());
         Response response = restClient.performRequest(request);
         Map responseBody = JsonUtil.objectReader().readValue(response.getEntity().getContent(), Map.class);
-        return new EsActionResponse(responseBody);
+        return new EsActionResponse("PUT " + endpoint, responseBody);
     }
 
     public static class ConnectionEsTask extends EsTask {

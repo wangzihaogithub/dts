@@ -4,9 +4,15 @@ import java.util.Map;
 
 public class EsActionResponse {
     private final Map<String, Object> responseBody;
+    private final String endpoint;
 
-    public EsActionResponse(Map<String, Object> responseBody) {
+    public EsActionResponse(String endpoint, Map<String, Object> responseBody) {
+        this.endpoint = endpoint;
         this.responseBody = responseBody;
+    }
+
+    public String getEndpoint() {
+        return endpoint;
     }
 
     public boolean isSuccess() {
@@ -32,7 +38,8 @@ public class EsActionResponse {
     @Override
     public String toString() {
         return "EsActionResponse{" +
-                "success=" + isSuccess() +
+                "endpoint=" + endpoint +
+                ", success=" + isSuccess() +
                 '}';
     }
 }
