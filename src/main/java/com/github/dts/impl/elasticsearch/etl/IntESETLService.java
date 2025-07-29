@@ -216,7 +216,7 @@ public class IntESETLService {
                     Util.Range range = rangeList.get(i);
                     Counter counter = new Counter();
                     counterList[i] = counter;
-                    futureList[i] = newUpdateEsDiffRunnable(counter, esTemplate, config, range.getStart(), i == size - 1 ? null : range.getEnd(), offsetAdd, diffFields, maxSendMessageSize);
+                    futureList[i] = newUpdateEsDiffRunnable(counter, esTemplate, config, range.getStart(), range.isLast() ? null : range.getEnd(), offsetAdd, diffFields, maxSendMessageSize);
                 }
                 CompletableFuture<Counter> future = CompletableFuture.allOf(futureList).thenApply(unused -> Counter.merge(counterList, maxSendMessageSize));
                 resultFutureList.add(future);
@@ -442,7 +442,7 @@ public class IntESETLService {
                     Util.Range range = rangeList.get(i);
                     Counter counter = new Counter();
                     counterList[i] = counter;
-                    futureList[i] = newUpdateEsNestedDiffRunnable(counter, esTemplate, config, range.getStart(), i == size - 1 ? null : range.getEnd(), offsetAdd, diffFieldsFinal, maxSendMessageSize, maxIdInCount);
+                    futureList[i] = newUpdateEsNestedDiffRunnable(counter, esTemplate, config, range.getStart(), range.isLast() ? null : range.getEnd(), offsetAdd, diffFieldsFinal, maxSendMessageSize, maxIdInCount);
                 }
                 CompletableFuture<Counter> future = CompletableFuture.allOf(futureList).thenApply(unused -> Counter.merge(counterList, maxSendMessageSize));
                 resultFutureList.add(future);
