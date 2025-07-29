@@ -16,6 +16,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 public class CanalThread extends Thread {
     private static final int DEFAULT_BATCH_SIZE = 50;
@@ -243,6 +244,7 @@ public class CanalThread extends Thread {
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
                 + ",\n\n name = " + name
+                + ",\n\n 影响对象 = " + adapterNames()
                 + ",\n\n batchId = " + batchId
                 + ",\n\n offset = " + Arrays.toString(offset)
                 + ",\n\n 异常 = " + throwable
@@ -256,9 +258,14 @@ public class CanalThread extends Thread {
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
                 + ",\n\n name = " + name
+                + ",\n\n 影响对象 = " + adapterNames()
                 + ",\n\n batchId = " + batchId
                 + ",\n\n offset = " + Arrays.toString(offset);
         messageService.send(title, content);
+    }
+
+    private Set<String> adapterNames() {
+        return Arrays.stream(adapterList).map(Adapter::getConfiguration).map(CanalConfig.OuterAdapterConfig::getName).collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
     private String messageID(List<Dml> message) {
