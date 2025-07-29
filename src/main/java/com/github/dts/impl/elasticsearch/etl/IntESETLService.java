@@ -1059,7 +1059,6 @@ public class IntESETLService {
         private final boolean insertIgnore;
         private final Util.Range range;
         private long currOffset;
-        private boolean done;
 
         public SyncRunnable(List<SyncRunnable> runnableList, Util.Range range,
                             IntESETLService service,
@@ -1082,12 +1081,10 @@ public class IntESETLService {
         static Long minOffset(List<SyncRunnable> list) {
             Long min = null;
             for (SyncRunnable runnable : list) {
-                if (!runnable.done) {
-                    if (min == null) {
-                        min = runnable.currOffset;
-                    } else {
-                        min = Math.min(min, runnable.currOffset);
-                    }
+                if (min == null) {
+                    min = runnable.currOffset;
+                } else {
+                    min = Math.min(min, runnable.currOffset);
                 }
             }
             return min;
@@ -1095,10 +1092,6 @@ public class IntESETLService {
 
         public long getCurrOffset() {
             return currOffset;
-        }
-
-        public boolean isDone() {
-            return done;
         }
 
         @Override
@@ -1115,14 +1108,15 @@ public class IntESETLService {
                         break;
                     }
                 }
-            } catch (Exception e) {
+                super.complete(null);
+            } catch (Throwable e) {
+                super.completeExceptionally(e);
                 Long minOffset = minOffset(runnableList);
                 if (service.sendMessage) {
                     service.sendError(service.startupServer.getMessageService(), e, this, minOffset, onlyFieldNameSet, adapter, config, onlyCurrentIndex, sqlWhere, insertIgnore);
                 }
                 throw e;
             } finally {
-                done = true;
                 log.info("all sync done threadIndex {}/{}, offset = {}, i ={}, maxId = {}, info ={} ",
                         range.getIndex(), range.getRanges(), currOffset, i, range.getEnd(), this);
                 done();
