@@ -131,6 +131,10 @@ public class ESConnection {
         this.restClient = restHighLevelClient.getLowLevelClient();
     }
 
+    private static boolean isSuccessfulResponse(int statusCode) {
+        return statusCode < 300;
+    }
+
     public int getUpdateByQueryChunkSize() {
         return updateByQueryChunkSize;
     }
@@ -349,19 +353,19 @@ public class ESConnection {
         // request
         Request request = new Request("HEAD", "/" + indexName);
         Response response = restClient.performRequest(request);
-        return response.getStatusLine().getStatusCode() == 200;
+        // 200 or 404
+        return isSuccessfulResponse(response.getStatusLine().getStatusCode());
     }
 
     public EsIndexMetaGetResponse indexMetaGet(String indexName) throws IOException {
         // request
         Request request = new Request("GET", "/" + indexName);
         Response response = restClient.performRequest(request);
-        int statusCode = response.getStatusLine().getStatusCode();
-        if (statusCode == 200) {
+        if (isSuccessfulResponse(response.getStatusLine().getStatusCode())) {
             Map responseBody = JsonUtil.objectReader().readValue(response.getEntity().getContent(), Map.class);
             return new EsIndexMetaGetResponse(indexName, responseBody);
         } else {
-            throw new IOException(String.format("http status %s!", statusCode));
+            throw new ResponseException(response);
         }
     }
 
