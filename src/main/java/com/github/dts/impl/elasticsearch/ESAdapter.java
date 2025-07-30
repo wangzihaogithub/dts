@@ -556,6 +556,7 @@ public class ESAdapter implements Adapter {
             if (eventList.isEmpty()) {
                 return;
             }
+            List<CommitEvent> commitEventList = drainTo();
             List<SdkInstanceClient> configSdkUnmodifiableList = discoveryService.getConfigSdkUnmodifiableList();
             try (ReferenceCounted<List<SdkInstanceClient>> sdkListRef = discoveryService.getSdkListRef()) {
                 List<SdkInstanceClient> clientList = sdkListRef.get();
@@ -564,7 +565,7 @@ public class ESAdapter implements Adapter {
                 }
 
                 DiscoveryService.MessageIdIncrementer messageIdIncrementer = discoveryService.getMessageIdIncrementer();
-                Map<Dml, Map<Integer, ArrayList<SqlDependent>>> dmlListMap = groupByDml(drainTo());
+                Map<Dml, Map<Integer, ArrayList<SqlDependent>>> dmlListMap = groupByDml(commitEventList);
                 List<DmlDTO> dmlDTO = convert(dmlListMap, adapterName);
                 try {
                     for (DmlDTO dto : dmlDTO) {
