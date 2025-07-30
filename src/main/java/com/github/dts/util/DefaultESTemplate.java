@@ -2,11 +2,12 @@ package com.github.dts.util;
 
 import com.github.dts.util.ESSyncConfig.ESMapping;
 import com.github.dts.util.SchemaItem.FieldItem;
-import com.github.dts.util.Lists;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.index.query.RangeQueryBuilder;
 import org.elasticsearch.search.SearchHit;
+import org.elasticsearch.search.aggregations.AggregationBuilders;
+import org.elasticsearch.search.aggregations.metrics.NumericMetricsAggregation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -409,32 +410,40 @@ public class DefaultESTemplate implements ESTemplate {
         return esConnection.updateByQuery(indexName, httpBody, httpQuery);
     }
 
-    public Hit searchMaxRow(String indexName, String sortFieldName) {
+    public <T> T searchMaxValue(String indexName, String fieldName, Class<T> type) {
         ESConnection.ESSearchRequest request = new ESConnection.ESSearchRequest(indexName);
-        request.sort(sortFieldName, "desc");
-        request.size(1);
+        request.aggregation(AggregationBuilders.max(fieldName).field(fieldName));
+        request.size(0);
         SearchResponse response = request.getResponse(esConnection);
-        SearchHit[] hits = response.getHits().getHits();
-        if (hits.length > 0) {
-            SearchHit h = hits[0];
-            return new Hit(h.getId(), h.getSourceAsMap(), h.getSortValues());
-        } else {
+        NumericMetricsAggregation.SingleValue singleValue = response.getAggregations().get(fieldName);
+        if (singleValue == null) {
             return null;
         }
+        String value;
+        try {
+            value = singleValue.getValueAsString();
+        } catch (NullPointerException e) {
+            return null;
+        }
+        return TypeUtil.cast(value, type);
     }
 
-    public Hit searchMinRow(String indexName, String sortFieldName) {
+    public <T> T searchMinValue(String indexName, String fieldName, Class<T> type) {
         ESConnection.ESSearchRequest request = new ESConnection.ESSearchRequest(indexName);
-        request.sort(sortFieldName, "asc");
-        request.size(1);
+        request.aggregation(AggregationBuilders.min(fieldName).field(fieldName));
+        request.size(0);
         SearchResponse response = request.getResponse(esConnection);
-        SearchHit[] hits = response.getHits().getHits();
-        if (hits.length > 0) {
-            SearchHit h = hits[0];
-            return new Hit(h.getId(), h.getSourceAsMap(), h.getSortValues());
-        } else {
+        NumericMetricsAggregation.SingleValue singleValue = response.getAggregations().get(fieldName);
+        if (singleValue == null) {
             return null;
         }
+        String value;
+        try {
+            value = singleValue.getValueAsString();
+        } catch (NullPointerException e) {
+            return null;
+        }
+        return TypeUtil.cast(value, type);
     }
 
     public EsTask forcemerge(String indexName, Integer maxNumSegments, Boolean onlyExpungeDeletes, Boolean flush) throws IOException {

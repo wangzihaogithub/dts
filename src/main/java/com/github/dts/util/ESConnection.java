@@ -36,6 +36,7 @@ import org.elasticsearch.index.reindex.UpdateByQueryRequest;
 import org.elasticsearch.rest.RestStatus;
 import org.elasticsearch.script.Script;
 import org.elasticsearch.script.ScriptType;
+import org.elasticsearch.search.aggregations.AggregationBuilder;
 import org.elasticsearch.search.sort.SortOrder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -1024,6 +1025,11 @@ public class ESConnection {
 
         public ESSearchRequest searchAfter(Object[] values) {
             searchRequest.source().searchAfter(values);
+            return this;
+        }
+
+        public ESSearchRequest aggregation(AggregationBuilder builder) {
+            searchRequest.source().aggregation(builder);
             return this;
         }
 

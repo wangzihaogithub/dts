@@ -5,7 +5,6 @@ import com.github.dts.impl.elasticsearch.ESAdapter;
 import com.github.dts.impl.elasticsearch.nested.MergeJdbcTemplateSQL;
 import com.github.dts.impl.elasticsearch.nested.SQL;
 import com.github.dts.util.*;
-import dev.langchain4j.service.V;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -17,10 +16,8 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -129,7 +126,7 @@ public class IntESETLService {
 
                         ESTemplate esTemplate = adapter.getEsTemplate();
 
-                        Object[] searchAfter = startId == null ? null : new Object[]{startId - 1L};
+                        Object[] searchAfter = startId == null ? null : new Object[]{Math.max(startId - 1L, 0L)};
                         do {
                             if (stop) {
                                 break;
@@ -215,12 +212,12 @@ public class IntESETLService {
                 Long itemStartId = startId;
                 Long itemEndId = endId;
                 if (itemStartId == null) {
-                    ESTemplate.Hit minRow = esTemplate.searchMinRow(config.getEsMapping().get_index(), config.getEsMapping().getPk());
-                    itemStartId = minRow == null ? 0 : TypeUtil.castToLong(minRow.getId());
+                    Long minValue = esTemplate.searchMinValue(config.getEsMapping().get_index(), config.getEsMapping().getPk(), Long.class);
+                    itemStartId = minValue == null ? 0 : minValue;
                 }
                 if (itemEndId == null) {
-                    ESTemplate.Hit maxRow = esTemplate.searchMaxRow(config.getEsMapping().get_index(), config.getEsMapping().getPk());
-                    itemEndId = maxRow == null ? 1 : TypeUtil.castToLong(maxRow.getId());
+                    Long maxValue = esTemplate.searchMaxValue(config.getEsMapping().get_index(), config.getEsMapping().getPk(), Long.class);
+                    itemEndId = maxValue == null ? 1 : maxValue;
                 }
                 List<Util.Range> rangeList = Util.splitRange(itemStartId, itemEndId, threads);
                 Counter[] counterList = new Counter[rangeList.size()];
@@ -337,7 +334,7 @@ public class IntESETLService {
                 String pkFieldExpr = config.getEsMapping().getSchemaItem().getIdField().getOwnerAndColumnName();
                 String[] selectFields = esMapping.getSchemaItem().getSelectFields().keySet().toArray(new String[0]);
 
-                Object[] searchAfter = startId == null ? null : new Object[]{startId - 1L};
+                Object[] searchAfter = startId == null ? null : new Object[]{Math.max(startId - 1L, 0L)};
                 do {
                     if (stop) {
                         break;
@@ -435,12 +432,12 @@ public class IntESETLService {
                 Long itemStartId = startId;
                 Long itemEndId = endId;
                 if (itemStartId == null) {
-                    ESTemplate.Hit minRow = esTemplate.searchMinRow(config.getEsMapping().get_index(), config.getEsMapping().getPk());
-                    itemStartId = minRow == null ? 0 : TypeUtil.castToLong(minRow.getId());
+                    Long minValue = esTemplate.searchMinValue(config.getEsMapping().get_index(), config.getEsMapping().getPk(), Long.class);
+                    itemStartId = minValue == null ? 0 : minValue;
                 }
                 if (itemEndId == null) {
-                    ESTemplate.Hit maxRow = esTemplate.searchMaxRow(config.getEsMapping().get_index(), config.getEsMapping().getPk());
-                    itemEndId = maxRow == null ? 1 : TypeUtil.castToLong(maxRow.getId());
+                    Long maxValue = esTemplate.searchMaxValue(config.getEsMapping().get_index(), config.getEsMapping().getPk(), Long.class);
+                    itemEndId = maxValue == null ? 1 : maxValue;
                 }
                 Set<String> diffFieldsFinal;
                 if (diffFields == null || diffFields.isEmpty()) {
@@ -491,7 +488,7 @@ public class IntESETLService {
                 JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(config.getDataSourceKey());
 
                 int uncommit = 0;
-                Object[] searchAfter = startId == null ? null : new Object[]{startId - 1L};
+                Object[] searchAfter = startId == null ? null : new Object[]{Math.max(startId - 1L, 0L)};
                 do {
                     if (stop) {
                         break;
