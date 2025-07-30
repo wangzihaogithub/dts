@@ -428,7 +428,7 @@ public class DefaultESTemplate implements ESTemplate {
                 requestRetry.aggregation(AggregationBuilders.max(fieldName).script(new Script(ScriptType.INLINE, "painless",
                         "Double.parseDouble(doc['" + fieldName + "'].value)", // 转为 double
                         Collections.emptyMap())));
-                response = request.getResponse(esConnection);
+                response = requestRetry.getResponse(esConnection);
             } else {
                 throw e;
             }
@@ -437,10 +437,11 @@ public class DefaultESTemplate implements ESTemplate {
         if (singleValue == null) {
             return null;
         }
-        String value;
+        double value;
         try {
-            value = singleValue.getValueAsString();
+            value = singleValue.value();
         } catch (NullPointerException e) {
+            // 没有记录
             return null;
         }
         return TypeUtil.cast(value, type);
@@ -460,7 +461,7 @@ public class DefaultESTemplate implements ESTemplate {
                 requestRetry.aggregation(AggregationBuilders.min(fieldName).script(new Script(ScriptType.INLINE, "painless",
                         "Double.parseDouble(doc['" + fieldName + "'].value)", // 转为 double
                         Collections.emptyMap())));
-                response = request.getResponse(esConnection);
+                response = requestRetry.getResponse(esConnection);
             } else {
                 throw e;
             }
@@ -469,10 +470,11 @@ public class DefaultESTemplate implements ESTemplate {
         if (singleValue == null) {
             return null;
         }
-        String value;
+        double value;
         try {
-            value = singleValue.getValueAsString();
+            value = singleValue.value();
         } catch (NullPointerException e) {
+            // 没有记录
             return null;
         }
         return TypeUtil.cast(value, type);
