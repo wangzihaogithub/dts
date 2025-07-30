@@ -26,7 +26,7 @@ https://github.com/wangzihaogithub/dts-demo
 <dependency>
   <groupId>com.github.wangzihaogithub</groupId>
   <artifactId>dts</artifactId>
-  <version>1.1.20</version>
+  <version>1.1.21</version>
 </dependency>
 ```
     
@@ -224,7 +224,7 @@ https://github.com/wangzihaogithub/dts-demo
 <dependency>
   <groupId>com.github.wangzihaogithub</groupId>
   <artifactId>dts-sdk</artifactId>
-  <version>1.1.20</version>
+  <version>1.1.21</version>
 </dependency>
 ```
 
