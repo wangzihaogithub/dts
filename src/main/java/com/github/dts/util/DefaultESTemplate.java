@@ -2,9 +2,13 @@ package com.github.dts.util;
 
 import com.github.dts.util.ESSyncConfig.ESMapping;
 import com.github.dts.util.SchemaItem.FieldItem;
+import org.elasticsearch.ElasticsearchStatusException;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.index.query.RangeQueryBuilder;
+import org.elasticsearch.rest.RestStatus;
+import org.elasticsearch.script.Script;
+import org.elasticsearch.script.ScriptType;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.aggregations.AggregationBuilders;
 import org.elasticsearch.search.aggregations.metrics.NumericMetricsAggregation;
@@ -412,9 +416,23 @@ public class DefaultESTemplate implements ESTemplate {
 
     public <T> T searchMaxValue(String indexName, String fieldName, Class<T> type) {
         ESConnection.ESSearchRequest request = new ESConnection.ESSearchRequest(indexName);
-        request.aggregation(AggregationBuilders.max(fieldName).field(fieldName));
         request.size(0);
-        SearchResponse response = request.getResponse(esConnection);
+        request.aggregation(AggregationBuilders.max(fieldName).field(fieldName));
+        SearchResponse response;
+        try {
+            response = request.getResponse(esConnection);
+        } catch (ElasticsearchStatusException e) {
+            if (e.status() == RestStatus.BAD_REQUEST) {
+                ESConnection.ESSearchRequest requestRetry = new ESConnection.ESSearchRequest(indexName);
+                requestRetry.size(0);
+                requestRetry.aggregation(AggregationBuilders.max(fieldName).script(new Script(ScriptType.INLINE, "painless",
+                        "Double.parseDouble(doc['" + fieldName + "'].value)", // 转为 double
+                        Collections.emptyMap())));
+                response = request.getResponse(esConnection);
+            } else {
+                throw e;
+            }
+        }
         NumericMetricsAggregation.SingleValue singleValue = response.getAggregations().get(fieldName);
         if (singleValue == null) {
             return null;
@@ -430,9 +448,23 @@ public class DefaultESTemplate implements ESTemplate {
 
     public <T> T searchMinValue(String indexName, String fieldName, Class<T> type) {
         ESConnection.ESSearchRequest request = new ESConnection.ESSearchRequest(indexName);
-        request.aggregation(AggregationBuilders.min(fieldName).field(fieldName));
         request.size(0);
-        SearchResponse response = request.getResponse(esConnection);
+        request.aggregation(AggregationBuilders.min(fieldName).field(fieldName));
+        SearchResponse response;
+        try {
+            response = request.getResponse(esConnection);
+        } catch (ElasticsearchStatusException e) {
+            if (e.status() == RestStatus.BAD_REQUEST) {
+                ESConnection.ESSearchRequest requestRetry = new ESConnection.ESSearchRequest(indexName);
+                requestRetry.size(0);
+                requestRetry.aggregation(AggregationBuilders.min(fieldName).script(new Script(ScriptType.INLINE, "painless",
+                        "Double.parseDouble(doc['" + fieldName + "'].value)", // 转为 double
+                        Collections.emptyMap())));
+                response = request.getResponse(esConnection);
+            } else {
+                throw e;
+            }
+        }
         NumericMetricsAggregation.SingleValue singleValue = response.getAggregations().get(fieldName);
         if (singleValue == null) {
             return null;
