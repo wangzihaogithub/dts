@@ -53,10 +53,10 @@ public class IntESETLService {
     }
 
     public List<CompletableFuture<?>> checkAll(String esIndexName, List<String> adapterNames, int offsetAdd, int threads) {
-        List<SyncRunnable> l1 = syncAll(esIndexName, threads, 0, null, offsetAdd,
+        List<SyncRunnable> l1 = syncAll(esIndexName, threads, null, null, offsetAdd,
                 true, true, 100, null, adapterNames, null, true);
-        List<CompletableFuture<Counter>> l2 = updateEsDiff(esIndexName, null, null, offsetAdd, threads, null, 500, adapterNames);
-        List<CompletableFuture<Counter>> l3 = updateEsNestedDiff(esIndexName, null, null, offsetAdd, threads, null, 500, adapterNames);
+        List<CompletableFuture<Counter>> l2 = updateEsDiff(esIndexName, null, null, offsetAdd, threads, null, 100, adapterNames);
+        List<CompletableFuture<Counter>> l3 = updateEsNestedDiff(esIndexName, null, null, offsetAdd, threads, null, 100, adapterNames);
 
         List<CompletableFuture<?>> futureList = new ArrayList<>();
         futureList.addAll(l1);
@@ -67,7 +67,7 @@ public class IntESETLService {
 
     public List<SyncRunnable> syncAll(String esIndexName) {
         return syncAll(esIndexName,
-                50, 0, null, 500,
+                50, null, null, 500,
                 true, true, 100, null, null, null, false);
     }
 
@@ -77,11 +77,11 @@ public class IntESETLService {
     }
 
     public List<CompletableFuture<Counter>> updateEsDiff(String esIndexName) {
-        return updateEsDiff(esIndexName, null, null, 1000, 0, null, 500, null);
+        return updateEsDiff(esIndexName, null, null, 1000, 0, null, 100, null);
     }
 
     public List<CompletableFuture<Void>> deleteEsTrim(String esIndexName) {
-        return deleteEsTrim(esIndexName, null, null, 1000, 1000, null);
+        return deleteEsTrim(esIndexName, null, null, 1000, 100, null);
     }
 
     public List<CompletableFuture<Void>> deleteEsTrim(String esIndexName,
@@ -609,8 +609,8 @@ public class IntESETLService {
     public List<SyncRunnable> syncAll(
             String esIndexName,
             int threads,
-            long offsetStart,
-            Long offsetEnd,
+            Number offsetStart,
+            Number offsetEnd,
             int offsetAdd,
             boolean append,
 //            boolean discard,
@@ -654,15 +654,19 @@ public class IntESETLService {
                 String catalog = CanalConfig.DatasourceConfig.getCatalog(config.getDataSourceKey());
                 String pk = config.getEsMapping().getPk();
                 String tableName = config.getEsMapping().getSchemaItem().getMainTable().getTableName();
-
+                Long minId = offsetStart == null ?
+                        selectMinId(jdbcTemplate, pk, tableName) : offsetStart.longValue();
                 Long maxId = offsetEnd == null ?
-                        selectMaxId(jdbcTemplate, pk, tableName) : offsetEnd;
+                        selectMaxId(jdbcTemplate, pk, tableName) : offsetEnd.longValue();
+                if (minId == null) {
+                    minId = 0L;
+                }
                 if (maxId == null) {
                     maxId = 1L;
                 }
                 Date timestamp = new Timestamp(System.currentTimeMillis());
                 AtomicLong dmlSize = new AtomicLong(0);
-                List<Util.Range> rangeList = Util.splitRange(offsetStart, maxId, threads);
+                List<Util.Range> rangeList = Util.splitRange(minId, maxId, threads);
                 AtomicInteger done = new AtomicInteger(rangeList.size());
                 for (Util.Range range : rangeList) {
                     runnableList.add(new SyncRunnable(runnableList, range, this,
@@ -760,6 +764,10 @@ public class IntESETLService {
                 thread.startThread();
             }
         }
+    }
+
+    protected Long selectMinId(JdbcTemplate jdbcTemplate, String idFiled, String tableName) {
+        return jdbcTemplate.queryForObject("select min(" + idFiled + ") from " + tableName, Long.class);
     }
 
     protected Long selectMaxId(JdbcTemplate jdbcTemplate, String idFiled, String tableName) {
