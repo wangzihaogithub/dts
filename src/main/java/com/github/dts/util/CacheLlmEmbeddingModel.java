@@ -8,6 +8,7 @@ public class CacheLlmEmbeddingModel implements LlmEmbeddingModel {
     public static final WeakMapCache WEAK_MAP_CACHE = new WeakMapCache();
     private final LlmEmbeddingModel source;
     private final Cache cache;
+    private boolean beforeEmbedAllGetCache = false;
 
     public CacheLlmEmbeddingModel(LlmEmbeddingModel source, Cache cache) {
         this.source = source;
@@ -19,6 +20,14 @@ public class CacheLlmEmbeddingModel implements LlmEmbeddingModel {
         this.cache = WEAK_MAP_CACHE;
     }
 
+    public void setBeforeEmbedAllGetCache(boolean beforeEmbedAllGetCache) {
+        this.beforeEmbedAllGetCache = beforeEmbedAllGetCache;
+    }
+
+    public boolean isBeforeEmbedAllGetCache() {
+        return beforeEmbedAllGetCache;
+    }
+
     @Override
     public ESSyncConfig.ObjectField.ParamLlmVector getConfig() {
         return source.getConfig();
@@ -26,9 +35,17 @@ public class CacheLlmEmbeddingModel implements LlmEmbeddingModel {
 
     @Override
     public List<float[]> embedAll(List<String> contentList) {
-        Map<String, float[]> cacheMap = cache.getCache(contentList, source.getConfig());
-        List<String> cacheMissList = contentList.stream().filter(e -> cacheMap.get(e) == null).collect(Collectors.toList());
-        Map<String, float[]> embeddingMap = new HashMap<>(cacheMap);
+        ESSyncConfig.ObjectField.ParamLlmVector config = source.getConfig();
+        List<String> cacheMissList;
+        Map<String, float[]> embeddingMap;
+        if (beforeEmbedAllGetCache) {
+            Map<String, float[]> cacheMap = cache.getCache(contentList, config);
+            cacheMissList = contentList.stream().filter(e -> cacheMap.get(e) == null).collect(Collectors.toList());
+            embeddingMap = new HashMap<>(cacheMap);
+        } else {
+            cacheMissList = contentList;
+            embeddingMap = new HashMap<>(contentList.size());
+        }
         if (!cacheMissList.isEmpty()) {
             List<float[]> list = source.embedAll(cacheMissList);
             Map<String, float[]> insertCacheMap = new HashMap<>();
@@ -36,9 +53,17 @@ public class CacheLlmEmbeddingModel implements LlmEmbeddingModel {
                 embeddingMap.put(cacheMissList.get(i), list.get(i));
                 insertCacheMap.put(cacheMissList.get(i), list.get(i));
             }
-            cache.putCache(insertCacheMap, source.getConfig());
+            cache.putCache(insertCacheMap, config);
         }
         return contentList.stream().map(embeddingMap::get).collect(Collectors.toList());
+    }
+
+    public Cache getCache() {
+        return cache;
+    }
+
+    public LlmEmbeddingModel getSource() {
+        return source;
     }
 
     public interface Cache {

@@ -133,7 +133,7 @@ public abstract class AbstractEsETLIntController {
     public List<IntESETLService.SyncRunnable> syncAll(
             @RequestParam(value = "esIndexName", required = true) String esIndexName,
             @RequestParam(value = "threads", required = false, defaultValue = "50") int threads,
-            @RequestParam(value = "offsetStart", required = false, defaultValue = "0") long offsetStart,
+            @RequestParam(value = "offsetStart", required = false) Long offsetStart,
             @RequestParam(value = "offsetEnd", required = false) Long offsetEnd,
             @RequestParam(value = "offsetAdd", required = false, defaultValue = "500") int offsetAdd,
             @RequestParam(value = "append", required = false, defaultValue = "true") boolean append,

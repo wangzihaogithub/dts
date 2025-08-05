@@ -891,6 +891,10 @@ public class ESSyncConfig {
                 getTypeLlmVectorAPI();
             }
 
+            public RateLimiterBlockingQueue<VectorCompletableFuture> getQueue() {
+                return VectorCompletableFuture.getQueue(requestQueueName, requestMaxContentSize, qpm);
+            }
+
             public Properties getProperties() {
                 return properties;
             }
