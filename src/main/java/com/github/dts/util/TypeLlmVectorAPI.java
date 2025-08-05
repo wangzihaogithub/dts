@@ -21,7 +21,7 @@ public class TypeLlmVectorAPI {
         this.llmEmbeddingModel = llmVector.getModelClass().getConstructor(ESSyncConfig.ObjectField.ParamLlmVector.class).newInstance(llmVector);
         this.cacheLlmEmbeddingModel = llmVector.isEnableWeakCache() ? new CacheLlmEmbeddingModel(llmEmbeddingModel) : null;
         this.cacheList = flatCacheList(llmEmbeddingModel, cacheLlmEmbeddingModel);
-        this.futureList = VectorCompletableFuture.getQueue(llmVector.getRequestQueueName(), llmVector.getRequestMaxContentSize(), llmVector.getQpm());
+        this.futureList = llmVector.getQueue();
     }
 
     private static CacheLlmEmbeddingModel.Cache[] flatCacheList(LlmEmbeddingModel llmEmbeddingModel, CacheLlmEmbeddingModel cacheLlmEmbeddingModel) {
