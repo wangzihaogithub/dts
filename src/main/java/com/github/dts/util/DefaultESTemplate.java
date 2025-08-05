@@ -342,6 +342,35 @@ public class DefaultESTemplate implements ESTemplate {
     }
 
     /**
+     * aliases至新表
+     *
+     * @param aliasIndexName 别名
+     * @param newIndexName   新索引名称（如果不存在，则自动创建结构）
+     * @return 是否成功
+     */
+    public EsActionResponse indexAliasesTo(String aliasIndexName, String newIndexName) throws IOException {
+        // 新索引是否存在
+        boolean newIndexExist = esConnection.indexExist(newIndexName);
+        EsIndexMetaGetResponse metaGetResponse = esConnection.indexMetaGet(aliasIndexName);
+        if (!metaGetResponse.isSuccess()) {
+            return metaGetResponse;
+        }
+
+        // 新索引不存在自动创建
+        EsActionResponse indexCreateResponse = null;
+        if (!newIndexExist) {
+            indexCreateResponse = esConnection.indexCreate(newIndexName, metaGetResponse.toCreateIndexMeta());
+        }
+        // 如果创建失败
+        if (indexCreateResponse != null && !indexCreateResponse.isSuccess()) {
+            return indexCreateResponse;
+        }
+        String responseAliasesIndexName = Optional.ofNullable(metaGetResponse.getResponseAliasesIndexName()).orElse(aliasIndexName);
+        String sourceIndexName = metaGetResponse.getResponseIndexName();
+        return esConnection.aliases(responseAliasesIndexName, sourceIndexName, responseAliasesIndexName, newIndexName);
+    }
+
+    /**
      * reindex
      *
      * @param aliasIndexName         别名
