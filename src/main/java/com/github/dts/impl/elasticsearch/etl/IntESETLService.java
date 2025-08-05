@@ -9,9 +9,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.sql.Timestamp;
+import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -745,6 +747,21 @@ public class IntESETLService {
             }
         }
         return count;
+    }
+
+    public List<CompletableFuture<?>> rebuildIndex(ESAdapter esAdapter,
+                                                   String esIndexName, String newIndexName,
+                                                   int offsetAdd, int threads, String sqlWhere) throws IOException {
+        EsActionResponse esActionResponse = esAdapter.getEsTemplate().indexAliasesTo(esIndexName, newIndexName);
+        if (!esActionResponse.isSuccess()) {
+            Map<String, Object> responseBody = esActionResponse.getResponseBody();
+            throw new IOException("rebuildIndex indexAliasesTo fail!" + responseBody);
+        }
+
+        List<IntESETLService.SyncRunnable> l1 = syncAll(esIndexName, threads, null, null, offsetAdd,
+                true, true, 100, null, Collections.singletonList(esAdapter.getConfiguration().getName()),
+                sqlWhere, false);
+        return new ArrayList<>(l1);
     }
 
     public List discard(String clientIdentity) throws InterruptedException {
