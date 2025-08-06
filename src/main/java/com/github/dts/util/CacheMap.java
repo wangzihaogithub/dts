@@ -19,6 +19,11 @@ public class CacheMap {
         public <V> V cacheComputeIfAbsent(String key, Supplier<V> mappingFunction) {
             return mappingFunction.get();
         }
+
+        @Override
+        public void cacheClear() {
+
+        }
     };
 
     public CacheMap(int maxValueSize) {

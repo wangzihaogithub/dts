@@ -22,7 +22,7 @@ public class RDSAdapter implements Adapter {
 
     @Override
     public void init(CanalConfig.CanalAdapter canalAdapter, CanalConfig.OuterAdapterConfig configuration,
-                     Properties envProperties, DiscoveryService discoveryService) {
+                     Properties envProperties, DiscoveryService discoveryService, String env) {
         this.configuration = configuration;
     }
 

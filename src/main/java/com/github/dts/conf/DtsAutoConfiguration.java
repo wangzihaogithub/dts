@@ -78,7 +78,7 @@ public class DtsAutoConfiguration {
     @ConditionalOnMissingBean(AbstractMessageService.class)
     public AbstractMessageService messageService() {
         return new AbstractMessageService() {
-            private final Logger log = LoggerFactory.getLogger(AbstractMessageService.class);
+            private final Logger log = LoggerFactory.getLogger(DtsAutoConfiguration.class);
 
             @Override
             public Map send(String title, String content) {

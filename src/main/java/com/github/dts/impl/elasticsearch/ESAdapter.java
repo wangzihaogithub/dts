@@ -30,7 +30,6 @@ public class ESAdapter implements Adapter {
     private final Map<String, ESSyncConfig> esSyncConfig = new ConcurrentHashMap<>(); // 文件名对应配置
     private final Map<String, Map<String, ESSyncConfig>> dbTableEsSyncConfig = new ConcurrentHashMap<>(); // schema-table对应配置
     private final List<ESSyncServiceListener> listenerList = new ArrayList<>();
-    private final ReferenceCounted<CacheMap> emptyCacheMap = new ReferenceCounted<>(CacheMap.EMPTY);
     private ESConnection esConnection;
     private CanalConfig.OuterAdapterConfig configuration;
     private DefaultESTemplate esTemplate;
@@ -39,8 +38,6 @@ public class ESAdapter implements Adapter {
     private Executor mainJoinTableExecutor;
     private BasicFieldWriter basicFieldWriter;
     private NestedFieldWriter nestedFieldWriter;
-    @Value("${spring.profiles.active:}")
-    private String env;
     private boolean refresh = true;
     private boolean onlyEffect = true;
     private int refreshThreshold = 10;
@@ -52,7 +49,7 @@ public class ESAdapter implements Adapter {
     @Override
     public void init(CanalConfig.CanalAdapter canalAdapter,
                      CanalConfig.OuterAdapterConfig configuration, Properties envProperties,
-                     DiscoveryService discoveryService) {
+                     DiscoveryService discoveryService, String env) {
         this.configuration = configuration;
         this.connectorCommitListener = discoveryService == null ? null : new RealtimeListener(discoveryService, configuration.getName(), configuration.getEs().getCommitEventPublishScheduledTickMs(), configuration.getEs().getCommitEventPublishMaxBlockCount());
         this.onlyEffect = configuration.getEs().isOnlyEffect();

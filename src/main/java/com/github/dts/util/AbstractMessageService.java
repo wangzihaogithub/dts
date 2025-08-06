@@ -99,6 +99,14 @@ public abstract class AbstractMessageService {
         }
     }
 
+    public String getEnv() {
+        return env;
+    }
+
+    public void setEnv(String env) {
+        this.env = env;
+    }
+
     public int getMaxRetryCount() {
         return maxRetryCount;
     }

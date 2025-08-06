@@ -21,10 +21,11 @@ public interface Adapter {
      * @param configuration    外部适配器配置信息
      * @param envProperties    环境变量的配置属性
      * @param discoveryService 服务发现
+     * @param env              环境
      */
     void init(CanalConfig.CanalAdapter canalAdapter,
               CanalConfig.OuterAdapterConfig configuration, Properties envProperties,
-              DiscoveryService discoveryService);
+              DiscoveryService discoveryService, String env);
 
     /**
      * 往适配器中同步数据
