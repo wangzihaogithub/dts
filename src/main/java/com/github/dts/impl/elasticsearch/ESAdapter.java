@@ -15,6 +15,8 @@ import org.springframework.core.annotation.AnnotationAwareOrderComparator;
 import java.sql.Timestamp;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.function.BiPredicate;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -28,6 +30,7 @@ public class ESAdapter implements Adapter {
     private final Map<String, ESSyncConfig> esSyncConfig = new ConcurrentHashMap<>(); // 文件名对应配置
     private final Map<String, Map<String, ESSyncConfig>> dbTableEsSyncConfig = new ConcurrentHashMap<>(); // schema-table对应配置
     private final List<ESSyncServiceListener> listenerList = new ArrayList<>();
+    private final ReferenceCounted<CacheMap> emptyCacheMap = new ReferenceCounted<>(CacheMap.EMPTY);
     private ESConnection esConnection;
     private CanalConfig.OuterAdapterConfig configuration;
     private DefaultESTemplate esTemplate;
@@ -85,29 +88,41 @@ public class ESAdapter implements Adapter {
                 "ESNestJoinM-", esSyncConfig, esTemplate);
     }
 
-    private ReferenceCounted<CacheMap> newCacheMap(Object id) {
-        Function<Object, ReferenceCounted<CacheMap>> cacheFactory = k -> new ReferenceCounted<CacheMap>(new CacheMap(configuration.getEs().getMaxQueryCacheSize())) {
-            @Override
-            public void close() {
-                super.close();
-                if (refCnt() == 0) {
-                    IDENTITY_CACHE_MAP.remove(k);
-                    get().cacheClear();
-                }
-            }
-        };
-        if (configuration.getEs().isShareAdapterCache()) {
-            while (true) {
-                ReferenceCounted<CacheMap> counted = IDENTITY_CACHE_MAP.computeIfAbsent(id, cacheFactory);
-                try {
-                    return counted.open();
-                } catch (IllegalStateException e) {
-                    log.warn("newCacheMap counted.open() fail {}", e.toString());
-                    Thread.yield();
-                }
+    private ReferenceCounted<CacheMap> newCacheMap(Object id, int adapterListSize, boolean etl) {
+        if (adapterListSize <= 1) {
+            if (etl) {
+                return new ReferenceCounted<>(CacheMap.EMPTY);
+            } else {
+                int maxQueryCacheSize = configuration.getEs().getMaxQueryCacheSize();
+                ReferenceCounted<CacheMap> counted = new ReferenceCounted<>(new CacheMap(maxQueryCacheSize));
+                counted.destroy(CacheMap::cacheClear);
+                return counted;
             }
         } else {
-            return cacheFactory.apply(id);
+            int maxQueryCacheSize = configuration.getEs().getMaxQueryCacheSize();
+            Function<Object, ReferenceCounted<CacheMap>> cacheFactory = k -> new ReferenceCounted<CacheMap>(new CacheMap(maxQueryCacheSize)) {
+                @Override
+                public void close() {
+                    super.close();
+                    if (refCnt() == 0) {
+                        IDENTITY_CACHE_MAP.remove(k);
+                        get().cacheClear();
+                    }
+                }
+            };
+            if (configuration.getEs().isShareAdapterCache()) {
+                while (true) {
+                    ReferenceCounted<CacheMap> counted = IDENTITY_CACHE_MAP.computeIfAbsent(id, cacheFactory);
+                    try {
+                        return counted.open();
+                    } catch (IllegalStateException e) {
+                        log.warn("newCacheMap counted.open() fail {}", e.toString());
+                        Thread.yield();
+                    }
+                }
+            } else {
+                return cacheFactory.apply(id);
+            }
         }
     }
 
@@ -135,21 +150,42 @@ public class ESAdapter implements Adapter {
         return Collections.unmodifiableMap(esSyncConfig);
     }
 
+    public Set<String> selectIndexNameSet(BiPredicate<ESSyncConfig, String> test) {
+        Set<String> set = new LinkedHashSet<>(3);
+        for (Map.Entry<String, ESSyncConfig> entry : esSyncConfig.entrySet()) {
+            ESSyncConfig config = entry.getValue();
+            String index = config.getEsMapping().get_index();
+            if (test.test(config, index)) {
+                set.add(index);
+            }
+        }
+        return set;
+    }
+
     @Override
-    public CompletableFuture<Void> sync(List<Dml> dmls) {
-        return sync(dmls, refresh, onlyEffect, false, joinUpdateSize, null, connectorCommitListener);
+    public CompletableFuture<Void> sync(List<Dml> dmls, int adapterListSize) {
+        return sync(dmls, refresh, onlyEffect, false, joinUpdateSize, null, connectorCommitListener, adapterListSize, false);
     }
 
     public <L extends EsDependentCommitListener & ESTemplate.RefreshListener> CompletableFuture<Void> sync(List<Dml> dmls, boolean refresh, boolean onlyEffect,
                                                                                                            boolean onlyCurrentIndex, int joinUpdateSize,
                                                                                                            Collection<String> onlyFieldName,
                                                                                                            L commitListener) {
+        // 入口为etl调用
+        return sync(dmls, refresh, onlyEffect, onlyCurrentIndex, joinUpdateSize, onlyFieldName, commitListener, 1, true);
+    }
+
+    private <L extends EsDependentCommitListener & ESTemplate.RefreshListener> CompletableFuture<Void> sync(List<Dml> dmls, boolean refresh, boolean onlyEffect,
+                                                                                                            boolean onlyCurrentIndex, int joinUpdateSize,
+                                                                                                            Collection<String> onlyFieldName,
+                                                                                                            L commitListener, int adapterListSize,
+                                                                                                            boolean etl) {
         if (dmls == null || dmls.isEmpty()) {
             return CompletableFuture.completedFuture(null);
         }
 
         // share Adapter Cache
-        ReferenceCounted<CacheMap> cacheMapRef = newCacheMap(dmls);
+        ReferenceCounted<CacheMap> cacheMapRef = newCacheMap(dmls, adapterListSize, etl);
         CacheMap cacheMap = cacheMapRef.get();
         try {
             ESTemplate.BulkRequestList bulkRequestList = esTemplate.newBulkRequestList(BulkPriorityEnum.HIGH);
@@ -175,7 +211,7 @@ public class ESAdapter implements Adapter {
                     }
                 }
                 for (Map.Entry<Map<String, ESSyncConfig>, List<Dml>> entry : groupByMap.entrySet()) {
-                    BasicFieldWriter.WriteResult item = basicFieldWriter.writeEsReturnSql(entry.getKey().values(), entry.getValue(), onlyFieldName,bulkRequestList);
+                    BasicFieldWriter.WriteResult item = basicFieldWriter.writeEsReturnSql(entry.getKey().values(), entry.getValue(), onlyFieldName, bulkRequestList);
                     writeResult.add(item);
                 }
                 BasicFieldWriter.executeUpdate(writeResult.getSqlList(), maxIdIn);

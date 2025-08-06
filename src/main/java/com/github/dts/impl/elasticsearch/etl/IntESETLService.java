@@ -56,7 +56,7 @@ public class IntESETLService {
 
     public List<CompletableFuture<?>> checkAll(String esIndexName, List<String> adapterNames, int offsetAdd, int threads) {
         List<SyncRunnable> l1 = syncAll(esIndexName, threads, null, null, offsetAdd,
-                true, true, 100, null, adapterNames, null, true);
+                true, 100, null, adapterNames, null, true);
         List<CompletableFuture<Counter>> l2 = updateEsDiff(esIndexName, null, null, offsetAdd, threads, null, 100, adapterNames);
         List<CompletableFuture<Counter>> l3 = updateEsNestedDiff(esIndexName, null, null, offsetAdd, threads, null, 100, adapterNames);
 
@@ -69,8 +69,8 @@ public class IntESETLService {
 
     public List<SyncRunnable> syncAll(String esIndexName) {
         return syncAll(esIndexName,
-                50, null, null, 500,
-                true, true, 100, null, null, null, false);
+                10, null, null, 100,
+                true, 100, null, null, null, false);
     }
 
     public Object syncById(Long[] id,
@@ -603,7 +603,7 @@ public class IntESETLService {
             return adapterList;
         } else {
             return adapterList.stream()
-                    .filter(e -> adapterNames.contains(e.getConfiguration().getName()))
+                    .filter(e -> adapterNames.contains(e.getName()))
                     .collect(Collectors.toList());
         }
     }
@@ -614,7 +614,7 @@ public class IntESETLService {
             Number offsetStart,
             Number offsetEnd,
             int offsetAdd,
-            boolean append,
+//            boolean append,
 //            boolean discard,
             boolean onlyCurrentIndex,
             int joinUpdateSize,
@@ -668,6 +668,7 @@ public class IntESETLService {
                 }
                 Date timestamp = new Timestamp(System.currentTimeMillis());
                 AtomicLong dmlSize = new AtomicLong(0);
+                AtomicLong updateSize = new AtomicLong(0);
                 List<Util.Range> rangeList = Util.splitRange(minId, maxId, threads);
                 AtomicInteger done = new AtomicInteger(rangeList.size());
                 for (Util.Range range : rangeList) {
@@ -686,13 +687,11 @@ public class IntESETLService {
                             } else {
                                 filterDmlList = dmlList;
                             }
-                            if (!append) {
-                                adapter.getEsTemplate().deleteByRange(config.getEsMapping(), ESSyncConfig.ES_ID_FIELD_NAME, offset, dmlListMaxId, offsetAdd);
-                            }
                             if (!filterDmlList.isEmpty()) {
                                 adapter.sync(filterDmlList, false, false, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet, null);
                             }
-                            dmlSize.addAndGet(filterDmlList.size());
+                            dmlSize.addAndGet(dmlList.size());
+                            updateSize.addAndGet(filterDmlList.size());
                             if (log.isInfoEnabled()) {
                                 log.info("syncAll dmlSize = {}, minOffset = {} ", dmlSize.longValue(), SyncRunnable.minOffset(runnableList));
                             }
@@ -709,7 +708,7 @@ public class IntESETLService {
 //                                    setSuspendEs(false, clientIdentity);
 //                                }
                                 if (sendMessage) {
-                                    sendDone(messageService, runnableList, timestamp, dmlSize.longValue(), onlyFieldNameSet, adapter, config, onlyCurrentIndex, sqlWhere, insertIgnore);
+                                    sendDone(messageService, runnableList, timestamp, dmlSize.longValue(), updateSize.longValue(), onlyFieldNameSet, adapter, config, onlyCurrentIndex, sqlWhere, insertIgnore);
                                 }
                             }
                         }
@@ -759,7 +758,7 @@ public class IntESETLService {
         }
 
         List<IntESETLService.SyncRunnable> l1 = syncAll(esIndexName, threads, null, null, offsetAdd,
-                true, true, 100, null, Collections.singletonList(esAdapter.getConfiguration().getName()),
+                true, 100, null, Collections.singletonList(esAdapter.getName()),
                 sqlWhere, false);
         return new ArrayList<>(l1);
     }
@@ -813,7 +812,7 @@ public class IntESETLService {
     }
 
     protected void sendDone(AbstractMessageService messageService, List<SyncRunnable> runnableList,
-                            Date startTime, long dmlSize,
+                            Date startTime, long dmlSize, long updateSize,
                             Set<String> onlyFieldNameSet,
                             ESAdapter adapter, ESSyncConfig config, boolean onlyCurrentIndex, String sqlWhere,
                             boolean insertIgnore) {
@@ -821,7 +820,8 @@ public class IntESETLService {
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
                 + ",\n\n 对象 = " + getName()
-                + ",\n\n 使用实现 = " + adapter.getConfiguration().getName()
+                + ",\n\n 方式 = syncAll"
+                + ",\n\n 使用实现 = " + adapter.getName()
                 + ",\n\n 索引 = " + config.getEsMapping().get_index()
                 + ",\n\n insertIgnore = " + insertIgnore
                 + ",\n\n 开始时间 = " + startTime
@@ -829,7 +829,8 @@ public class IntESETLService {
                 + ",\n\n 是否需要更新关联索引 = " + !onlyCurrentIndex
                 + ",\n\n 限制条件 = " + sqlWhere
                 + ",\n\n 影响字段 = " + (onlyFieldNameSet == null ? "全部" : onlyFieldNameSet)
-                + ",\n\n DML条数 = " + dmlSize
+                + ",\n\n 校验条数 = " + dmlSize
+                + ",\n\n 更新条数 = " + updateSize
                 + ",\n\n 明细 = " + runnableList.stream().map(SyncRunnable::toString).collect(Collectors.joining("\r\n,"));
         messageService.send(title, content);
     }
@@ -845,7 +846,8 @@ public class IntESETLService {
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
                 + ",\n\n 对象 = " + getName()
-                + ",\n\n 使用实现 = " + adapter.getConfiguration().getName()
+                + ",\n\n 方式 = syncAll"
+                + ",\n\n 使用实现 = " + adapter.getName()
                 + ",\n\n 索引 = " + config.getEsMapping().get_index()
                 + ",\n\n insertIgnore = " + insertIgnore
                 + ",\n\n 是否需要更新关联索引 = " + !onlyCurrentIndex
@@ -866,7 +868,8 @@ public class IntESETLService {
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
                 + ",\n\n 对象 = " + getName()
-                + ",\n\n 使用实现 = " + adapter.getConfiguration().getName()
+                + ",\n\n 方式 = deleteEsTrim"
+                + ",\n\n 使用实现 = " + adapter.getName()
                 + ",\n\n 索引 = " + config.getEsMapping().get_index()
                 + ",\n\n 开始时间 = " + startTime
                 + ",\n\n 结束时间 = " + new Timestamp(System.currentTimeMillis())
@@ -886,7 +889,8 @@ public class IntESETLService {
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
                 + ",\n\n 对象 = " + getName()
-                + ",\n\n 使用实现 = " + adapter.getConfiguration().getName()
+                + ",\n\n 方式 = deleteEsTrim"
+                + ",\n\n 使用实现 = " + adapter.getName()
                 + ",\n\n 索引 = " + config.getEsMapping().get_index()
                 + ",\n\n 开始时间 = " + timestamp
                 + ",\n\n 校验条数 = " + dmlSize
@@ -908,7 +912,8 @@ public class IntESETLService {
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
                 + ",\n\n 对象 = " + getName()
-                + ",\n\n 使用实现 = " + adapter.getConfiguration().getName()
+                + ",\n\n 方式 = updateEsDiff"
+                + ",\n\n 使用实现 = " + adapter.getName()
                 + ",\n\n 索引 = " + config.getEsMapping().get_index()
                 + ",\n\n 开始时间 = " + startTime
                 + ",\n\n 结束时间 = " + new Timestamp(System.currentTimeMillis())
@@ -935,7 +940,8 @@ public class IntESETLService {
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
                 + ",\n\n 对象 = " + getName()
-                + ",\n\n 使用实现 = " + adapter.getConfiguration().getName()
+                + ",\n\n 方式 = updateEsDiff"
+                + ",\n\n 使用实现 = " + adapter.getName()
                 + ",\n\n 索引 = " + config.getEsMapping().get_index()
                 + ",\n\n 开始时间 = " + timestamp
                 + ",\n\n 比较字段(不含nested) = " + (diffFields == null ? "全部" : diffFields)
@@ -961,7 +967,8 @@ public class IntESETLService {
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
                 + ",\n\n 对象 = " + getName()
-                + ",\n\n 使用实现 = " + adapter.getConfiguration().getName()
+                + ",\n\n 方式 = updateEsNestedDiff"
+                + ",\n\n 使用实现 = " + adapter.getName()
                 + ",\n\n 索引 = " + config.getEsMapping().get_index()
                 + ",\n\n 开始时间 = " + startTime
                 + ",\n\n 结束时间 = " + new Timestamp(System.currentTimeMillis())
@@ -987,7 +994,8 @@ public class IntESETLService {
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
                 + ",\n\n 对象 = " + getName()
-                + ",\n\n 使用实现 = " + adapter.getConfiguration().getName()
+                + ",\n\n 方式 = updateEsNestedDiff"
+                + ",\n\n 使用实现 = " + adapter.getName()
                 + ",\n\n 索引 = " + config.getEsMapping().get_index()
                 + ",\n\n 开始时间 = " + timestamp
                 + ",\n\n 比较nested字段 = " + (diffFields == null ? "全部" : diffFields)

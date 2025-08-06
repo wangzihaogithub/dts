@@ -28,6 +28,7 @@ public class ESSyncConfig {
     private String[] adapterNamePattern;
     private ESMapping esMapping;
     private String md5;
+    private String fileName;
 
     public static String getEsSyncConfigKey(String destination, String database, String table) {
         return destination + "_" + database + "_" + table;
@@ -102,7 +103,7 @@ public class ESSyncConfig {
             }
             String md5 = Util.md5(content);
             try {
-                config.init(md5);
+                config.init(fileName, md5);
             } catch (Exception e) {
                 throw new RuntimeException("ERROR Config: " + fileName + " " + e, e);
             }
@@ -122,7 +123,12 @@ public class ESSyncConfig {
         return md5;
     }
 
-    private void init(String md5) {
+    public String getFileName() {
+        return fileName;
+    }
+
+    private void init(String fileName, String md5) {
+        this.fileName = fileName;
         if (Util.isBlank(esMapping._index)) {
             throw new NullPointerException("empty esMapping._index");
         }

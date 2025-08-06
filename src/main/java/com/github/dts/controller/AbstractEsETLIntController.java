@@ -76,12 +76,12 @@ public abstract class AbstractEsETLIntController {
             if (afterAliasRemoveAndAdd && afterReindexCheckDiff) {
                 reindex.thenAccept(esActionResponse -> {
                     if (esActionResponse.isSuccess()) {
-                        intESETLService.checkAll(esIndexName, Collections.singletonList(adapter.getConfiguration().getName()), afterReindexCheckDiffOffsetAdd, afterReindexCheckDiffThreads);
+                        intESETLService.checkAll(esIndexName, Collections.singletonList(adapter.getName()), afterReindexCheckDiffOffsetAdd, afterReindexCheckDiffThreads);
                     }
                 });
             }
             Map<String, Object> result = new LinkedHashMap<>();
-            result.put("adapterName", adapter.getConfiguration().getName());
+            result.put("adapterName", adapter.getName());
             result.put("taskId", reindex.getTaskId());
             resultList.add(result);
         }
@@ -136,7 +136,6 @@ public abstract class AbstractEsETLIntController {
             @RequestParam(value = "offsetStart", required = false) Long offsetStart,
             @RequestParam(value = "offsetEnd", required = false) Long offsetEnd,
             @RequestParam(value = "offsetAdd", required = false, defaultValue = "500") int offsetAdd,
-            @RequestParam(value = "append", required = false, defaultValue = "true") boolean append,
             @RequestParam(value = "onlyCurrentIndex", required = false, defaultValue = "true") boolean onlyCurrentIndex,
             @RequestParam(value = "joinUpdateSize", required = false, defaultValue = "100") int joinUpdateSize,
             @RequestParam(value = "onlyFieldName", required = false) String[] onlyFieldName,
@@ -144,7 +143,7 @@ public abstract class AbstractEsETLIntController {
             @RequestParam(value = "sqlWhere", required = false) String sqlWhere,
             @RequestParam(value = "insertIgnore", required = false, defaultValue = "false") boolean insertIgnore) {
         Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(Util::isNotBlank).collect(Collectors.toCollection(LinkedHashSet::new));
-        return intESETLService.syncAll(esIndexName, threads, offsetStart, offsetEnd, offsetAdd, append, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet,
+        return intESETLService.syncAll(esIndexName, threads, offsetStart, offsetEnd, offsetAdd, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet,
                 adapterNames == null ? null : Arrays.asList(adapterNames), sqlWhere, insertIgnore);
     }
 

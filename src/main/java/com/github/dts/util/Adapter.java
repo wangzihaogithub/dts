@@ -17,9 +17,9 @@ public interface Adapter {
     /**
      * 外部适配器初始化接口
      *
-     * @param canalAdapter 适配器参数
-     * @param configuration 外部适配器配置信息
-     * @param envProperties 环境变量的配置属性
+     * @param canalAdapter     适配器参数
+     * @param configuration    外部适配器配置信息
+     * @param envProperties    环境变量的配置属性
      * @param discoveryService 服务发现
      */
     void init(CanalConfig.CanalAdapter canalAdapter,
@@ -29,10 +29,11 @@ public interface Adapter {
     /**
      * 往适配器中同步数据
      *
-     * @param dmls 数据包
+     * @param dmls            数据包
+     * @param adapterListSize 一共有几个在一起跑
      * @return 同步结束后则完毕
      */
-    CompletableFuture<Void> sync(List<Dml> dmls);
+    CompletableFuture<Void> sync(List<Dml> dmls, int adapterListSize);
 
     /**
      * 外部适配器销毁接口
@@ -40,6 +41,10 @@ public interface Adapter {
     void destroy();
 
     CanalConfig.OuterAdapterConfig getConfiguration();
+
+    default String getName() {
+        return getConfiguration().getName();
+    }
 
     default String[] getDestination() {
         return getConfiguration().getCanalAdapter().getDestination();

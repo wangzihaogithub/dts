@@ -81,12 +81,12 @@ public abstract class AbstractEsETLStringController {
             if (afterAliasRemoveAndAdd && afterReindexCheckDiff) {
                 reindex.thenAccept(esActionResponse -> {
                     if (esActionResponse.isSuccess()) {
-                        stringEsETLService.checkAll(esIndexName, Collections.singletonList(adapter.getConfiguration().getName()), afterReindexCheckDiffOffsetAdd);
+                        stringEsETLService.checkAll(esIndexName, Collections.singletonList(adapter.getName()), afterReindexCheckDiffOffsetAdd);
                     }
                 });
             }
             Map<String, Object> result = new LinkedHashMap<>();
-            result.put("adapterName", adapter.getConfiguration().getName());
+            result.put("adapterName", adapter.getName());
             result.put("taskId", reindex.getTaskId());
             resultList.add(result);
         }
@@ -132,7 +132,6 @@ public abstract class AbstractEsETLStringController {
             @RequestParam(value = "esIndexName", required = true) String esIndexName,
             @RequestParam(value = "offsetStart", required = false, defaultValue = "0") String offsetStart,
             @RequestParam(value = "offsetAdd", required = false, defaultValue = "1000") int offsetAdd,
-            @RequestParam(value = "append", required = false, defaultValue = "true") boolean append,
             @RequestParam(value = "onlyCurrentIndex", required = false, defaultValue = "true") boolean onlyCurrentIndex,
             @RequestParam(value = "joinUpdateSize", required = false, defaultValue = "100") int joinUpdateSize,
             @RequestParam(value = "onlyFieldName", required = false) String[] onlyFieldName,
@@ -140,7 +139,7 @@ public abstract class AbstractEsETLStringController {
             @RequestParam(value = "sqlWhere", required = false) String sqlWhere,
             @RequestParam(value = "insertIgnore", required = false, defaultValue = "false") boolean insertIgnore) {
         Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(Util::isNotBlank).collect(Collectors.toCollection(LinkedHashSet::new));
-        return stringEsETLService.syncAll(esIndexName, offsetStart, offsetAdd, append, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet,
+        return stringEsETLService.syncAll(esIndexName, offsetStart, offsetAdd, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet,
                 adapterNames == null ? null : Arrays.asList(adapterNames), sqlWhere, insertIgnore);
     }
 

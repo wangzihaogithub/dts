@@ -178,7 +178,7 @@ public class CanalThread extends Thread {
     }
 
     public ExecutorService getExecutor(Adapter adapter) {
-        String key = Objects.toString(adapter.getConfiguration().getName(), "");
+        String key = Objects.toString(adapter.getName(), "");
         return executorServiceMap.computeIfAbsent(key, k -> Util.newFixedThreadPool(2,
                 120_000L, limit(this.name, 8) + "-" + k, false));
     }
@@ -187,11 +187,11 @@ public class CanalThread extends Thread {
         CanalConnector.Ack2 ack2 = connector.getAck2();
         CompletableFuture<Void>[] futureList;
         if (adapterList.length == 1) {
-            futureList = new CompletableFuture[]{adapterList[0].sync(message)};
+            futureList = new CompletableFuture[]{adapterList[0].sync(message, adapterList.length)};
         } else {
             // 组间适配器并行运行
             Future<CompletableFuture<Void>>[] submitList = Arrays.stream(adapterList)
-                    .map(e -> getExecutor(e).submit(() -> e.sync(message)))
+                    .map(e -> getExecutor(e).submit(() -> e.sync(message, adapterList.length)))
                     .toArray(Future[]::new);
 
             // 等待所有适配器写入完成

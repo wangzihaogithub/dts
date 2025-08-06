@@ -9,6 +9,17 @@ public class CacheMap {
     private final int maxValueSize;
     private final Map<String, Object> cache = new ConcurrentHashMap<>();
     private int valueSize;
+    public static final CacheMap EMPTY = new CacheMap(0) {
+        @Override
+        public boolean containsKey(String key) {
+            return false;
+        }
+
+        @Override
+        public <V> V cacheComputeIfAbsent(String key, Supplier<V> mappingFunction) {
+            return mappingFunction.get();
+        }
+    };
 
     public CacheMap(int maxValueSize) {
         this.maxValueSize = maxValueSize;

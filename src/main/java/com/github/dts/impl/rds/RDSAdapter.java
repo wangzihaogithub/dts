@@ -27,7 +27,7 @@ public class RDSAdapter implements Adapter {
     }
 
     @Override
-    public CompletableFuture<Void> sync(List<Dml> dmls) {
+    public CompletableFuture<Void> sync(List<Dml> dmls, int adapterListSize) {
         List<SQL> sqlList = SQL.DEFAULT_BUILDER.convert(dmls.stream().limit(20).collect(Collectors.toList()));
         log.info("rds {}", sqlList);
         return CompletableFuture.completedFuture(null);

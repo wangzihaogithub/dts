@@ -64,21 +64,21 @@ public class StringEsETLService {
             return adapterList;
         } else {
             return adapterList.stream()
-                    .filter(e -> adapterNames.contains(e.getConfiguration().getName()))
+                    .filter(e -> adapterNames.contains(e.getName()))
                     .collect(Collectors.toList());
         }
     }
 
     public int checkAll(String esIndexName, List<String> adapterNames, int offsetAdd) {
-        int i = updateEsNestedDiff(esIndexName, null, offsetAdd, null, 500, adapterNames);
-        i += syncAll(esIndexName, "0", offsetAdd, true, true, 100, null, adapterNames, null, false);
-        i += updateEsDiff(esIndexName, offsetAdd, null, 500, adapterNames);
+        int i = updateEsNestedDiff(esIndexName, null, offsetAdd, null, 100, adapterNames);
+        i += syncAll(esIndexName, "0", offsetAdd, true, 100, null, adapterNames, null, false);
+        i += updateEsDiff(esIndexName, offsetAdd, null, 100, adapterNames);
         return i;
     }
 
     public void syncAll(
             String esIndexName) {
-        syncAll(esIndexName, "0", 500, true, true, 100, null, null, null, false);
+        syncAll(esIndexName, "0", 500, true, 100, null, null, null, false);
     }
 
     public Object syncById(String[] id,
@@ -87,7 +87,7 @@ public class StringEsETLService {
     }
 
     public int updateEsDiff(String esIndexName) {
-        return updateEsDiff(esIndexName, 1000, null, 500, null);
+        return updateEsDiff(esIndexName, 1000, null, 100, null);
     }
 
     public int deleteEsTrim(String esIndexName) {
@@ -98,7 +98,7 @@ public class StringEsETLService {
             String esIndexName,
             String offsetStart,
             int offsetAdd,
-            boolean append,
+//            boolean append,
             boolean onlyCurrentIndex,
             int joinUpdateSize,
             Set<String> onlyFieldNameSet,
@@ -129,22 +129,35 @@ public class StringEsETLService {
                     String minId = offsetStart;
                     Date timestamp = new Timestamp(System.currentTimeMillis());
                     AtomicInteger dmlSize = new AtomicInteger(0);
+                    AtomicInteger updateSize = new AtomicInteger(0);
                     try {
-                        List<Dml> list;
                         do {
                             if (stop) {
                                 break;
                             }
-                            list = syncAll(jdbcTemplate, catalog, minId, offsetAdd, append, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet, adapter, config, trimWhere, insertIgnore);
-                            dmlSize.addAndGet(list.size());
+                            String tableName = config.getEsMapping().getSchemaItem().getMainTable().getTableName();
+                            String pk = config.getEsMapping().getPk();
+                            List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, minId, offsetAdd, tableName, pk, config, trimWhere);
+                            List<Dml> filterDmlList;
+                            if (insertIgnore) {
+                                filterDmlList = filter(dmlList, adapter.getEsTemplate(), config.getEsMapping());
+                            } else {
+                                filterDmlList = dmlList;
+                            }
+                            if (!filterDmlList.isEmpty()) {
+                                adapter.sync(filterDmlList, false, false, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet, null);
+                            }
+
+                            dmlSize.addAndGet(dmlList.size());
+                            updateSize.addAndGet(filterDmlList.size());
                             if (log.isInfoEnabled()) {
                                 log.info("syncAll dmlSize = {}, minOffset = {} ", dmlSize.intValue(), minId);
                             }
-                            minId = getDmlListMaxId(list);
+                            minId = getDmlListMaxId(dmlList);
                         } while (minId != null);
-                        sendDone(messageService, timestamp, dmlSize.intValue(), onlyFieldNameSet, adapter, config, onlyCurrentIndex, sqlWhere, insertIgnore);
+                        sendDone(messageService, timestamp, dmlSize.intValue(), updateSize.intValue(), onlyFieldNameSet, adapter, config, onlyCurrentIndex, sqlWhere, insertIgnore);
                     } catch (Exception e) {
-                        sendError(messageService, e, minId, timestamp, dmlSize.get(), onlyFieldNameSet, adapter, config, onlyCurrentIndex, sqlWhere, insertIgnore);
+                        sendError(messageService, e, minId, timestamp, dmlSize.intValue(), updateSize.intValue(), onlyFieldNameSet, adapter, config, onlyCurrentIndex, sqlWhere, insertIgnore);
                         throw e;
                     }
                 }
@@ -352,29 +365,6 @@ public class StringEsETLService {
             list.add(thread.getCanalThread().getConnector().setDiscard(true));
         }
         return list;
-    }
-
-    protected List<Dml> syncAll(JdbcTemplate jdbcTemplate, String catalog, String minId, int limit, boolean append, boolean onlyCurrentIndex,
-                                int joinUpdateSize, Collection<String> onlyFieldNameSet,
-                                ESAdapter esAdapter, ESSyncConfig config, String where, boolean insertIgnore) {
-        String tableName = config.getEsMapping().getSchemaItem().getMainTable().getTableName();
-        String pk = config.getEsMapping().getPk();
-        List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, minId, limit, tableName, pk, config, where);
-        List<Dml> filterDmlList;
-        if (insertIgnore) {
-            filterDmlList = filter(dmlList, esAdapter.getEsTemplate(), config.getEsMapping());
-        } else {
-            filterDmlList = dmlList;
-        }
-        if (filterDmlList.isEmpty()) {
-            return filterDmlList;
-        }
-        if (!append) {
-            String dmlListMaxId = getDmlListMaxId(dmlList);
-            ESBulkRequest.ESBulkResponse esBulkResponse = esAdapter.getEsTemplate().deleteByRange(config.getEsMapping(), ESSyncConfig.ES_ID_FIELD_NAME, minId, dmlListMaxId, limit);
-        }
-        esAdapter.sync(filterDmlList, false, false, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet, null);
-        return filterDmlList;
     }
 
     protected List<Dml> filter(List<Dml> dmlList, DefaultESTemplate esTemplate, ESSyncConfig.ESMapping esMapping) {
@@ -602,7 +592,8 @@ public class StringEsETLService {
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
                 + ",\n\n 对象 = " + getName()
-                + ",\n\n 使用实现 = " + adapter.getConfiguration().getName()
+                + ",\n\n 方式 = updateEsNestedDiff"
+                + ",\n\n 使用实现 = " + adapter.getName()
                 + ",\n\n 索引 = " + config.getEsMapping().get_index()
                 + ",\n\n 开始时间 = " + startTime
                 + ",\n\n 结束时间 = " + new Timestamp(System.currentTimeMillis())
@@ -628,7 +619,8 @@ public class StringEsETLService {
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
                 + ",\n\n 对象 = " + getName()
-                + ",\n\n 使用实现 = " + adapter.getConfiguration().getName()
+                + ",\n\n 方式 = updateEsNestedDiff"
+                + ",\n\n 使用实现 = " + adapter.getName()
                 + ",\n\n 索引 = " + config.getEsMapping().get_index()
                 + ",\n\n 开始时间 = " + timestamp
                 + ",\n\n 比较nested字段 = " + (diffFields == null ? "全部" : diffFields)
@@ -642,14 +634,15 @@ public class StringEsETLService {
         messageService.send(title, content);
     }
 
-    protected void sendDone(AbstractMessageService messageService, Date startTime, int dmlSize,
+    protected void sendDone(AbstractMessageService messageService, Date startTime, int dmlSize, int updateSize,
                             Set<String> onlyFieldNameSet, ESAdapter adapter, ESSyncConfig config, boolean onlyCurrentIndex,
                             String sqlWhere, boolean insertIgnore) {
         String title = "ES搜索全量刷数据-结束";
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
                 + ",\n\n 对象 = " + getName()
-                + ",\n\n 使用实现 = " + adapter.getConfiguration().getName()
+                + ",\n\n 方式 = syncAll"
+                + ",\n\n 使用实现 = " + adapter.getName()
                 + ",\n\n 索引 = " + config.getEsMapping().get_index()
                 + ",\n\n insertIgnore = " + insertIgnore
                 + ",\n\n 是否需要更新关联索引 = " + !onlyCurrentIndex
@@ -657,12 +650,13 @@ public class StringEsETLService {
                 + ",\n\n 影响字段 = " + (onlyFieldNameSet == null ? "全部" : onlyFieldNameSet)
                 + ",\n\n 开始时间 = " + startTime
                 + ",\n\n 结束时间 = " + new Timestamp(System.currentTimeMillis())
-                + ",\n\n DML条数 = " + dmlSize;
+                + ",\n\n 校验条数 = " + dmlSize
+                + ",\n\n 更新条数 = " + updateSize;
         messageService.send(title, content);
     }
 
     protected void sendError(AbstractMessageService messageService, Throwable throwable, String minId,
-                             Date timestamp, int dmlSize, Set<String> onlyFieldNameSet, ESAdapter adapter,
+                             Date timestamp, int dmlSize, int updateSize, Set<String> onlyFieldNameSet, ESAdapter adapter,
                              ESSyncConfig config, boolean onlyCurrentIndex,
                              String sqlWhere, boolean insertIgnore) {
         String title = "ES搜索全量刷数据-异常";
@@ -672,7 +666,8 @@ public class StringEsETLService {
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
                 + ",\n\n 对象 = " + getName()
-                + ",\n\n 使用实现 = " + adapter.getConfiguration().getName()
+                + ",\n\n 方式 = syncAll"
+                + ",\n\n 使用实现 = " + adapter.getName()
                 + ",\n\n 索引 = " + config.getEsMapping().get_index()
                 + ",\n\n insertIgnore = " + insertIgnore
                 + ",\n\n 是否需要更新关联索引 = " + !onlyCurrentIndex
@@ -680,7 +675,8 @@ public class StringEsETLService {
                 + ",\n\n 影响字段 = " + (onlyFieldNameSet == null ? "全部" : onlyFieldNameSet)
                 + ",\n\n minOffset = " + minId
                 + ",\n\n 开始时间 = " + timestamp
-                + ",\n\n DML条数 = " + dmlSize
+                + ",\n\n 校验条数 = " + dmlSize
+                + ",\n\n 更新条数 = " + updateSize
                 + ",\n\n 异常 = " + throwable
                 + ",\n\n 明细 = " + writer;
         messageService.send(title, content);
@@ -691,7 +687,8 @@ public class StringEsETLService {
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
                 + ",\n\n 对象 = " + getName()
-                + ",\n\n 使用实现 = " + adapter.getConfiguration().getName()
+                + ",\n\n 方式 = deleteEsTrim"
+                + ",\n\n 使用实现 = " + adapter.getName()
                 + ",\n\n 索引 = " + config.getEsMapping().get_index()
                 + ",\n\n 开始时间 = " + startTime
                 + ",\n\n 结束时间 = " + new Timestamp(System.currentTimeMillis())
@@ -709,7 +706,8 @@ public class StringEsETLService {
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
                 + ",\n\n 对象 = " + getName()
-                + ",\n\n 使用实现 = " + adapter.getConfiguration().getName()
+                + ",\n\n 方式 = deleteEsTrim"
+                + ",\n\n 使用实现 = " + adapter.getName()
                 + ",\n\n 索引 = " + esIndexName
                 + ",\n\n 开始时间 = " + timestamp
                 + ",\n\n 校验条数 = " + dmlSize
@@ -730,7 +728,8 @@ public class StringEsETLService {
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
                 + ",\n\n 对象 = " + getName()
-                + ",\n\n 使用实现 = " + adapter.getConfiguration().getName()
+                + ",\n\n 方式 = updateEsDiff"
+                + ",\n\n 使用实现 = " + adapter.getName()
                 + ",\n\n 索引 = " + config.getEsMapping().get_index()
                 + ",\n\n 开始时间 = " + startTime
                 + ",\n\n 结束时间 = " + new Timestamp(System.currentTimeMillis())
@@ -757,7 +756,8 @@ public class StringEsETLService {
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
                 + ",\n\n 对象 = " + getName()
-                + ",\n\n 使用实现 = " + adapter.getConfiguration().getName()
+                + ",\n\n 方式 = updateEsDiff"
+                + ",\n\n 使用实现 = " + adapter.getName()
                 + ",\n\n 索引 = " + config.getEsMapping().get_index()
                 + ",\n\n 开始时间 = " + timestamp
                 + ",\n\n 比较字段(不含nested) = " + (diffFields == null ? "全部" : diffFields)
@@ -793,7 +793,7 @@ public class StringEsETLService {
             sql += " and (" + where + ")";
         }
         sql += " order by " + tableName + "." + idColumnName + " limit ?";
-        if (whereAppend) {
+        if (whereAppend && log.isInfoEnabled()) {
             log.info("selectList sql = {}", sql);
         }
         return jdbcTemplate.queryForList(sql, minId, limit);
