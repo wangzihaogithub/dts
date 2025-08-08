@@ -69,16 +69,18 @@ public class StringEsETLService {
         }
     }
 
-    public int checkAll(String esIndexName, List<String> adapterNames, int offsetAdd) {
-        int i = updateEsNestedDiff(esIndexName, null, offsetAdd, null, 100, adapterNames);
-        i += syncAll(esIndexName, "0", offsetAdd, true, 100, null, adapterNames, null, false);
-        i += updateEsDiff(esIndexName, offsetAdd, null, 100, adapterNames);
-        return i;
+    public List<CompletableFuture<?>> checkAll(String esIndexName, List<String> adapterNames, int offsetAdd) {
+        List<CompletableFuture<?>> futureList = new ArrayList<>();
+
+        futureList.addAll(updateEsNestedDiff(esIndexName, null, offsetAdd, null, 100, adapterNames));
+        futureList.addAll(syncAll(esIndexName, "0", offsetAdd, true, 100, null, adapterNames, null, true));
+        futureList.addAll(updateEsDiff(esIndexName, offsetAdd, null, 100, adapterNames));
+        return futureList;
     }
 
-    public void syncAll(
+    public List<CompletableFuture<Void>> syncAll(
             String esIndexName) {
-        syncAll(esIndexName, "0", 500, true, 100, null, null, null, false);
+        return syncAll(esIndexName, "0", 500, true, 100, null, null, null, false);
     }
 
     public Object syncById(String[] id,
@@ -86,15 +88,15 @@ public class StringEsETLService {
         return syncById(id, esIndexName, true, null, null);
     }
 
-    public int updateEsDiff(String esIndexName) {
+    public Collection<CompletableFuture<Void>> updateEsDiff(String esIndexName) {
         return updateEsDiff(esIndexName, 1000, null, 100, null);
     }
 
-    public int deleteEsTrim(String esIndexName) {
+    public List<CompletableFuture<Void>> deleteEsTrim(String esIndexName) {
         return deleteEsTrim(esIndexName, 1000, 100, null);
     }
 
-    public int syncAll(
+    public List<CompletableFuture<Void>> syncAll(
             String esIndexName,
             String offsetStart,
             int offsetAdd,
@@ -109,20 +111,23 @@ public class StringEsETLService {
         this.stop = false;
         List<ESAdapter> adapterList = getAdapterList(adapterNames);
         if (adapterList.isEmpty()) {
-            return 0;
+            return new ArrayList<>();
         }
         int count = 0;
         for (ESAdapter adapter : adapterList) {
             count += adapter.getEsSyncConfigByIndex(esIndexName).size();
         }
         if (count == 0) {
-            return 0;
+            return new ArrayList<>();
         }
+        List<CompletableFuture<Void>> futureList = new ArrayList<>();
         AbstractMessageService messageService = startupServer.getMessageService();
         for (ESAdapter adapter : adapterList) {
-            executorService.execute(() -> {
-                Map<String, ESSyncConfig> configMap = adapter.getEsSyncConfigByIndex(esIndexName);
-                for (ESSyncConfig config : configMap.values()) {
+            Map<String, ESSyncConfig> configMap = adapter.getEsSyncConfigByIndex(esIndexName);
+            for (ESSyncConfig config : configMap.values()) {
+                CompletableFuture<Void> future = new CompletableFuture<>();
+                futureList.add(future);
+                executorService.execute(() -> {
                     JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(config.getDataSourceKey());
                     String catalog = CanalConfig.DatasourceConfig.getCatalog(config.getDataSourceKey());
 
@@ -155,15 +160,17 @@ public class StringEsETLService {
                             }
                             minId = getDmlListMaxId(dmlList);
                         } while (minId != null);
+                        future.complete(null);
                         sendDone(messageService, timestamp, dmlSize.intValue(), updateSize.intValue(), onlyFieldNameSet, adapter, config, onlyCurrentIndex, sqlWhere, insertIgnore);
-                    } catch (Exception e) {
+                    } catch (Throwable e) {
+                        future.completeExceptionally(e);
                         sendError(messageService, e, minId, timestamp, dmlSize.intValue(), updateSize.intValue(), onlyFieldNameSet, adapter, config, onlyCurrentIndex, sqlWhere, insertIgnore);
                         throw e;
                     }
-                }
-            });
+                });
+            }
         }
-        return count;
+        return futureList;
     }
 
     public int syncById(String[] id,
@@ -192,40 +199,42 @@ public class StringEsETLService {
         return count;
     }
 
-    public int deleteEsTrim(String esIndexName,
-                            int offsetAdd,
-                            int maxSendMessageDeleteIdSize,
-                            List<String> adapterNames) {
+    public List<CompletableFuture<Void>> deleteEsTrim(String esIndexName,
+                                                      int offsetAdd,
+                                                      int maxSendMessageDeleteIdSize,
+                                                      List<String> adapterNames) {
         this.stop = false;
         List<ESAdapter> adapterList = getAdapterList(adapterNames);
         if (adapterList.isEmpty()) {
-            return 0;
+            return new ArrayList<>();
         }
         int r = 0;
         for (ESAdapter adapter : adapterList) {
             r += adapter.getEsSyncConfigByIndex(esIndexName).size();
         }
         if (r == 0) {
-            return r;
+            return new ArrayList<>();
         }
 
+        List<CompletableFuture<Void>> futureList = new ArrayList<>();
         AbstractMessageService messageService = startupServer.getMessageService();
         for (ESAdapter adapter : adapterList) {
-            executorService.execute(() -> {
-                int hitListSize = 0;
-                int deleteSize = 0;
-                List<String> deleteIdList = new ArrayList<>();
-                Timestamp timestamp = new Timestamp(System.currentTimeMillis());
-                try {
-                    Map<String, ESSyncConfig> configMap = adapter.getEsSyncConfigByIndex(esIndexName);
-                    for (ESSyncConfig config : configMap.values()) {
-                        ESSyncConfig.ESMapping esMapping = config.getEsMapping();
-                        JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(config.getDataSourceKey());
-                        String pk = esMapping.getPk();
-                        String tableName = esMapping.getSchemaItem().getMainTable().getTableName();
+            Map<String, ESSyncConfig> configMap = adapter.getEsSyncConfigByIndex(esIndexName);
+            for (ESSyncConfig config : configMap.values()) {
+                CompletableFuture<Void> future = new CompletableFuture<>();
+                futureList.add(future);
+                executorService.execute(() -> {
+                    int hitListSize = 0;
+                    int deleteSize = 0;
+                    List<String> deleteIdList = new ArrayList<>();
+                    Timestamp timestamp = new Timestamp(System.currentTimeMillis());
+                    ESSyncConfig.ESMapping esMapping = config.getEsMapping();
+                    JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(config.getDataSourceKey());
+                    String pk = esMapping.getPk();
+                    String tableName = esMapping.getSchemaItem().getMainTable().getTableName();
 
-                        ESTemplate esTemplate = adapter.getEsTemplate();
-
+                    ESTemplate esTemplate = adapter.getEsTemplate();
+                    try {
                         Object[] searchAfter = null;
                         do {
                             if (stop) {
@@ -254,52 +263,54 @@ public class StringEsETLService {
                             searchAfter = searchResponse.getLastSortValues();
                             log.info("deleteEsTrim hits={}, searchAfter = {}", hitListSize, searchAfter);
                         } while (true);
+                        future.complete(null);
                         sendTrimDone(messageService, timestamp, hitListSize, deleteSize, deleteIdList, config, adapter);
+                    } catch (Throwable e) {
+                        future.completeExceptionally(e);
+                        sendTrimError(messageService, e, timestamp, hitListSize, deleteSize, deleteIdList, esIndexName, adapter);
                     }
-                } catch (Exception e) {
-                    sendTrimError(messageService, e, timestamp, hitListSize, deleteSize, deleteIdList, esIndexName, adapter);
-                }
-            });
+                });
+            }
         }
-        return r;
+        return futureList;
     }
 
-    public int updateEsDiff(String esIndexName,
-                            int offsetAdd,
-                            Set<String> diffFields,
-                            int maxSendMessageSize,
-                            List<String> adapterNames) {
+    public List<CompletableFuture<Void>> updateEsDiff(String esIndexName,
+                                                      int offsetAdd,
+                                                      Set<String> diffFields,
+                                                      int maxSendMessageSize,
+                                                      List<String> adapterNames) {
         this.stop = false;
         List<ESAdapter> adapterList = getAdapterList(adapterNames);
         if (adapterList.isEmpty()) {
-            return 0;
+            return new ArrayList<>();
         }
         int r = 0;
         for (ESAdapter adapter : adapterList) {
             r += adapter.getEsSyncConfigByIndex(esIndexName).size();
         }
         if (r == 0) {
-            return r;
+            return new ArrayList<>();
         }
 
+        List<CompletableFuture<Void>> futureList = new ArrayList<>();
         AbstractMessageService messageService = startupServer.getMessageService();
         for (ESAdapter adapter : adapterList) {
-            executorService.execute(() -> {
-                long hitListSize = 0;
-                long deleteSize = 0;
-                long updateSize = 0;
-                List<String> deleteIdList = new ArrayList<>();
-                List<String> updateIdList = new ArrayList<>();
-                Timestamp timestamp = new Timestamp(System.currentTimeMillis());
-                ESSyncConfig lastConfig = null;
-                Map<String, AtomicInteger> lastAllRowChangeMap = Collections.emptyMap();
-                try {
-                    Map<String, ESSyncConfig> configMap = adapter.getEsSyncConfigByIndex(esIndexName);
-                    for (ESSyncConfig config : configMap.values()) {
-                        Map<String, AtomicInteger> allRowChangeMap = lastAllRowChangeMap = new LinkedHashMap<>();
-                        lastConfig = config;
-                        ESSyncConfig.ESMapping esMapping = config.getEsMapping();
-                        JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(config.getDataSourceKey());
+            Map<String, ESSyncConfig> configMap = adapter.getEsSyncConfigByIndex(esIndexName);
+            for (ESSyncConfig config : configMap.values()) {
+                CompletableFuture<Void> future = new CompletableFuture<>();
+                futureList.add(future);
+                executorService.execute(() -> {
+                    long hitListSize = 0;
+                    long deleteSize = 0;
+                    long updateSize = 0;
+                    List<String> deleteIdList = new ArrayList<>();
+                    List<String> updateIdList = new ArrayList<>();
+                    Timestamp timestamp = new Timestamp(System.currentTimeMillis());
+                    Map<String, AtomicInteger> allRowChangeMap = new LinkedHashMap<>();
+                    ESSyncConfig.ESMapping esMapping = config.getEsMapping();
+                    JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(config.getDataSourceKey());
+                    try {
                         String pkFieldName = config.getEsMapping().getSchemaItem().getIdField().getFieldName();
                         String pkFieldExpr = config.getEsMapping().getSchemaItem().getIdField().getOwnerAndColumnName();
                         String[] selectFields = esMapping.getSchemaItem().getSelectFields().keySet().toArray(new String[0]);
@@ -350,13 +361,15 @@ public class StringEsETLService {
                             log.info("updateEsDiff hits={}, searchAfter = {}", hitListSize, searchAfter);
                         } while (true);
                         sendDiffDone(messageService, timestamp, hitListSize, deleteSize, deleteIdList, updateSize, updateIdList, allRowChangeMap, diffFields, adapter, config);
+                        future.complete(null);
+                    } catch (Throwable e) {
+                        future.completeExceptionally(e);
+                        sendDiffError(messageService, e, timestamp, hitListSize, deleteSize, deleteIdList, updateSize, updateIdList, allRowChangeMap, diffFields, adapter, config);
                     }
-                } catch (Exception e) {
-                    sendDiffError(messageService, e, timestamp, hitListSize, deleteSize, deleteIdList, updateSize, updateIdList, lastAllRowChangeMap, diffFields, adapter, lastConfig);
-                }
-            });
+                });
+            }
         }
-        return r;
+        return futureList;
     }
 
     public List discard(String clientIdentity) throws InterruptedException {
@@ -407,30 +420,31 @@ public class StringEsETLService {
         return count;
     }
 
-    public int updateEsNestedDiff(String esIndexName) {
+    public List<CompletableFuture<Void>> updateEsNestedDiff(String esIndexName) {
         return updateEsNestedDiff(esIndexName, null, 500, null, 1000, null);
     }
 
-    public int updateEsNestedDiff(String esIndexName,
-                                  String startId,
-                                  int offsetAdd,
-                                  Set<String> diffFields,
-                                  int maxSendMessageSize,
-                                  List<String> adapterNames) {
+    public List<CompletableFuture<Void>> updateEsNestedDiff(String esIndexName,
+                                                            String startId,
+                                                            int offsetAdd,
+                                                            Set<String> diffFields,
+                                                            int maxSendMessageSize,
+                                                            List<String> adapterNames) {
         this.stop = false;
         List<ESAdapter> adapterList = getAdapterList(adapterNames);
         if (adapterList.isEmpty()) {
-            return 0;
+            return new ArrayList<>();
         }
         int r = 0;
         for (ESAdapter adapter : adapterList) {
             r += adapter.getEsSyncConfigByIndex(esIndexName).size();
         }
         if (r == 0) {
-            return r;
+            return new ArrayList<>();
         }
 
         int maxIdInCount = 1000;
+        List<CompletableFuture<Void>> futureList = new ArrayList<>();
         AbstractMessageService messageService = startupServer.getMessageService();
         for (ESAdapter adapter : adapterList) {
             DefaultESTemplate esTemplate = adapter.getEsTemplate();
@@ -450,31 +464,31 @@ public class StringEsETLService {
                     Thread.yield();
                 }
             });
-            executorService.execute(() -> {
-                String lastId = null;
-                long hitListSize = 0;
-                long updateSize = 0;
-                List<String> updateIdList = new ArrayList<>();
-                Timestamp timestamp = new Timestamp(System.currentTimeMillis());
 
-                ESSyncConfig lastConfig = null;
-                Map<String, AtomicInteger> lastAllRowChangeMap = Collections.emptyMap();
-                Set<String> diffFieldsFinal = diffFields;
-                try {
-                    Map<String, ESSyncConfig> configMap = adapter.getEsSyncConfigByIndex(esIndexName);
-                    for (ESSyncConfig config : configMap.values()) {
-                        Map<String, AtomicInteger> allRowChangeMap = new LinkedHashMap<>();
-                        lastConfig = config;
-                        ESSyncConfig.ESMapping esMapping = config.getEsMapping();
+            List<CompletableFuture<Void>> futureItemList = new ArrayList<>();
+            Map<String, ESSyncConfig> configMap = adapter.getEsSyncConfigByIndex(esIndexName);
+            for (ESSyncConfig config : configMap.values()) {
+                CompletableFuture<Void> future = new CompletableFuture<>();
+                futureList.add(future);
+                futureItemList.add(future);
+                executorService.execute(() -> {
+                    String lastId = null;
+                    long hitListSize = 0;
+                    long updateSize = 0;
+                    List<String> updateIdList = new ArrayList<>();
+                    Timestamp timestamp = new Timestamp(System.currentTimeMillis());
 
+                    Map<String, AtomicInteger> lastAllRowChangeMap = Collections.emptyMap();
+                    Set<String> diffFieldsFinal = diffFields;
+                    Map<String, AtomicInteger> allRowChangeMap = new LinkedHashMap<>();
+                    ESSyncConfig.ESMapping esMapping = config.getEsMapping();
+                    try {
                         String pkFieldName = esMapping.getSchemaItem().getIdField().getFieldName();
                         String pkFieldExpr = esMapping.getSchemaItem().getIdField().getOwnerAndColumnName();
                         JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(config.getDataSourceKey());
 
                         if (diffFields == null || diffFields.isEmpty()) {
                             diffFieldsFinal = esMapping.getObjFields().entrySet().stream().filter(e -> e.getValue().isSqlType()).map(Map.Entry::getKey).collect(Collectors.toCollection(LinkedHashSet::new));
-                        } else {
-                            diffFieldsFinal = diffFields;
                         }
                         int uncommit = 0;
                         Object[] searchAfter = startId == null ? null : new Object[]{startId};
@@ -569,17 +583,20 @@ public class StringEsETLService {
                             log.info("updateEsNestedDiff hits={}, searchAfter = {}", hitListSize, searchAfter);
                         } while (!Thread.currentThread().isInterrupted());
                         esTemplate.commit();
+                        future.complete(null);
                         sendNestedDiffDone(messageService, timestamp, hitListSize, updateSize, updateIdList, allRowChangeMap, diffFieldsFinal, adapter, config);
+                    } catch (Throwable e) {
+                        log.error("updateEsNestedDiff error {}", e.toString(), e);
+                        future.completeExceptionally(e);
+                        sendNestedDiffError(messageService, e, timestamp, hitListSize, updateSize, updateIdList, lastAllRowChangeMap, diffFieldsFinal, adapter, config, lastId);
                     }
-                } catch (Exception e) {
-                    log.error("updateEsNestedDiff error {}", e.toString(), e);
-                    sendNestedDiffError(messageService, e, timestamp, hitListSize, updateSize, updateIdList, lastAllRowChangeMap, diffFieldsFinal, adapter, lastConfig, lastId);
-                } finally {
-                    done.set(true);
-                }
-            });
+                });
+            }
+
+            CompletableFuture.allOf(futureItemList.toArray(new CompletableFuture[0]))
+                    .whenComplete((unused, throwable) -> done.set(true));
         }
-        return r;
+        return futureList;
     }
 
     protected void sendNestedDiffDone(AbstractMessageService messageService, Date startTime,

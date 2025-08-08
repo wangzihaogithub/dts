@@ -103,7 +103,7 @@ public abstract class AbstractEsETLStringController {
                                   @RequestParam(value = "maxSendMessageSize", required = false, defaultValue = "50") int maxSendMessageSize) {
         return stringEsETLService.updateEsNestedDiff(esIndexName, startId, offsetAdd,
                 diffFields == null ? null : new LinkedHashSet<>(Arrays.asList(diffFields)), maxSendMessageSize,
-                adapterNames == null ? null : Arrays.asList(adapterNames));
+                adapterNames == null ? null : Arrays.asList(adapterNames)).size();
     }
 
     @RequestMapping("/updateEsDiff")
@@ -115,7 +115,7 @@ public abstract class AbstractEsETLStringController {
                             @RequestParam(value = "maxSendMessageSize", required = false, defaultValue = "50") int maxSendMessageSize) {
         return stringEsETLService.updateEsDiff(esIndexName, offsetAdd,
                 diffFields == null ? null : new LinkedHashSet<>(Arrays.asList(diffFields)), maxSendMessageSize,
-                adapterNames == null ? null : Arrays.asList(adapterNames));
+                adapterNames == null ? null : Arrays.asList(adapterNames)).size();
     }
 
     @RequestMapping("/deleteEsTrim")
@@ -124,7 +124,7 @@ public abstract class AbstractEsETLStringController {
                             @RequestParam(value = "offsetAdd", required = false, defaultValue = "1000") int offsetAdd,
                             @RequestParam(value = "maxSendMessageDeleteIdSize", required = false, defaultValue = "1000") int maxSendMessageDeleteIdSize) {
         return stringEsETLService.deleteEsTrim(esIndexName, offsetAdd, maxSendMessageDeleteIdSize,
-                adapterNames == null ? null : Arrays.asList(adapterNames));
+                adapterNames == null ? null : Arrays.asList(adapterNames)).size();
     }
 
     @RequestMapping("/syncAll")
@@ -140,7 +140,7 @@ public abstract class AbstractEsETLStringController {
             @RequestParam(value = "insertIgnore", required = false, defaultValue = "false") boolean insertIgnore) {
         Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(Util::isNotBlank).collect(Collectors.toCollection(LinkedHashSet::new));
         return stringEsETLService.syncAll(esIndexName, offsetStart, offsetAdd, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet,
-                adapterNames == null ? null : Arrays.asList(adapterNames), sqlWhere, insertIgnore);
+                adapterNames == null ? null : Arrays.asList(adapterNames), sqlWhere, insertIgnore).size();
     }
 
     @RequestMapping("/syncById")
