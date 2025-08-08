@@ -74,14 +74,14 @@ public class StringEsETLService {
         List<CompletableFuture<?>> futureList = new ArrayList<>();
 
         futureList.addAll(updateEsNestedDiff(esIndexName, null, offsetAdd, null, 100, adapterNames));
-        futureList.addAll(syncAll(esIndexName, "0", offsetAdd, true, 100, null, adapterNames, null, true));
+        futureList.addAll(syncAll(esIndexName, "0", offsetAdd, true, 100, null, adapterNames, null, true, 100));
         futureList.addAll(updateEsDiff(esIndexName, offsetAdd, null, 100, adapterNames));
         return futureList;
     }
 
     public List<CompletableFuture<Void>> syncAll(
             String esIndexName) {
-        return syncAll(esIndexName, "0", 500, true, 100, null, null, null, false);
+        return syncAll(esIndexName, "0", 500, true, 100, null, null, null, false, 100);
     }
 
     public Object syncById(String[] id,
@@ -107,7 +107,8 @@ public class StringEsETLService {
             Set<String> onlyFieldNameSet,
             List<String> adapterNames,
             String sqlWhere,
-            boolean insertIgnore) {
+            boolean insertIgnore,
+            int maxSendMessageSize) {
         String trimWhere = ESSyncUtil.trimWhere(sqlWhere);
         this.stop = false;
         List<ESAdapter> adapterList = getAdapterList(adapterNames);
@@ -129,6 +130,7 @@ public class StringEsETLService {
                 CompletableFuture<Void> future = new CompletableFuture<>();
                 futureList.add(future);
                 executorService.execute(() -> {
+                    List<String> updateIdList = new ArrayList<>();
                     JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(config.getDataSourceKey());
                     String catalog = CanalConfig.DatasourceConfig.getCatalog(config.getDataSourceKey());
 
@@ -156,6 +158,9 @@ public class StringEsETLService {
 
                             dmlSize.addAndGet(dmlList.size());
                             updateSize.addAndGet(filterDmlList.size());
+                            if (sendMessage && updateIdList.size() < maxSendMessageSize) {
+                                dmlList.stream().map(StringEsETLService.this::getDmlId).flatMap(Collection::stream).forEach(updateIdList::add);
+                            }
                             if (log.isInfoEnabled()) {
                                 log.info("syncAll dmlSize = {}, minOffset = {} ", dmlSize.intValue(), minId);
                             }
@@ -163,7 +168,7 @@ public class StringEsETLService {
                         } while (minId != null);
                         future.complete(null);
                         if (sendMessage) {
-                            sendDone(messageService, timestamp, dmlSize.intValue(), updateSize.intValue(), onlyFieldNameSet, adapter, config, onlyCurrentIndex, sqlWhere, insertIgnore);
+                            sendDone(messageService, timestamp, dmlSize.intValue(), updateSize.intValue(), onlyFieldNameSet, adapter, config, onlyCurrentIndex, sqlWhere, insertIgnore, updateIdList.subList(0, Math.min(updateIdList.size(), maxSendMessageSize)));
                         }
                     } catch (Throwable e) {
                         future.completeExceptionally(e);
@@ -662,7 +667,7 @@ public class StringEsETLService {
 
     protected void sendDone(AbstractMessageService messageService, Date startTime, int dmlSize, int updateSize,
                             Set<String> onlyFieldNameSet, ESAdapter adapter, ESSyncConfig config, boolean onlyCurrentIndex,
-                            String sqlWhere, boolean insertIgnore) {
+                            String sqlWhere, boolean insertIgnore, List<String> updateIdList) {
         String title = "ES搜索全量刷数据-结束";
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
@@ -677,7 +682,8 @@ public class StringEsETLService {
                 + ",\n\n 开始时间 = " + startTime
                 + ",\n\n 结束时间 = " + new Timestamp(System.currentTimeMillis())
                 + ",\n\n 校验条数 = " + dmlSize
-                + ",\n\n 更新条数 = " + updateSize;
+                + ",\n\n 更新条数 = " + updateSize
+                + ",\n\n 更新ID = " + updateIdList;
         messageService.send(title, content);
     }
 

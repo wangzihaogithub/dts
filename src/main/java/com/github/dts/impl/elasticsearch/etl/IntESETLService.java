@@ -15,6 +15,7 @@ import java.io.StringWriter;
 import java.sql.Timestamp;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -55,7 +56,7 @@ public class IntESETLService {
 
     public List<CompletableFuture<?>> checkAll(String esIndexName, List<String> adapterNames, int offsetAdd, int threads) {
         List<SyncRunnable> l1 = syncAll(esIndexName, threads, null, null, offsetAdd,
-                true, 100, null, adapterNames, null, true);
+                true, 100, null, adapterNames, null, true, 100);
         List<CompletableFuture<Counter>> l2 = updateEsDiff(esIndexName, null, null, offsetAdd, threads, null, 100, adapterNames);
         List<CompletableFuture<Counter>> l3 = updateEsNestedDiff(esIndexName, null, null, offsetAdd, threads, null, 100, adapterNames);
 
@@ -69,7 +70,7 @@ public class IntESETLService {
     public List<SyncRunnable> syncAll(String esIndexName) {
         return syncAll(esIndexName,
                 10, null, null, 100,
-                true, 100, null, null, null, false);
+                true, 100, null, null, null, false, 100);
     }
 
     public Object syncById(Long[] id,
@@ -614,7 +615,8 @@ public class IntESETLService {
             Set<String> onlyFieldNameSet,
             List<String> adapterNames,
             String sqlWhere,
-            boolean insertIgnore) {
+            boolean insertIgnore,
+            int maxSendMessageSize) {
         String trimWhere = ESSyncUtil.trimWhere(sqlWhere);
         this.stop = false;
         List<ESAdapter> adapterList = getAdapterList(adapterNames);
@@ -664,6 +666,7 @@ public class IntESETLService {
                 AtomicLong updateSize = new AtomicLong(0);
                 List<Util.Range> rangeList = Util.splitRange(minId, maxId, threads);
                 AtomicInteger done = new AtomicInteger(rangeList.size());
+                List<Long> updateIdList = Collections.synchronizedList(new ArrayList<>());
                 for (Util.Range range : rangeList) {
                     runnableList.add(new SyncRunnable(runnableList, range, this,
                             onlyFieldNameSet, adapter, config, onlyCurrentIndex, sqlWhere, insertIgnore) {
@@ -681,6 +684,9 @@ public class IntESETLService {
                                 filterDmlList = dmlList;
                             }
                             if (!filterDmlList.isEmpty()) {
+                                if (sendMessage && updateIdList.size() < maxSendMessageSize) {
+                                    dmlList.stream().map(IntESETLService.this::getDmlId).flatMap(Collection::stream).forEach(updateIdList::add);
+                                }
                                 adapter.sync(filterDmlList, false, false, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet, null);
                             }
                             dmlSize.addAndGet(dmlList.size());
@@ -701,7 +707,7 @@ public class IntESETLService {
 //                                    setSuspendEs(false, clientIdentity);
 //                                }
                                 if (sendMessage) {
-                                    sendDone(messageService, runnableList, timestamp, dmlSize.longValue(), updateSize.longValue(), onlyFieldNameSet, adapter, config, onlyCurrentIndex, sqlWhere, insertIgnore);
+                                    sendDone(messageService, runnableList, timestamp, dmlSize.longValue(), updateSize.longValue(), onlyFieldNameSet, adapter, config, onlyCurrentIndex, sqlWhere, insertIgnore, updateIdList.subList(0, Math.min(updateIdList.size(), maxSendMessageSize)));
                                 }
                             }
                         }
@@ -752,7 +758,7 @@ public class IntESETLService {
 
         List<IntESETLService.SyncRunnable> l1 = syncAll(esIndexName, threads, null, null, offsetAdd,
                 true, 100, null, Collections.singletonList(esAdapter.getName()),
-                sqlWhere, false);
+                sqlWhere, false, 20);
         return new ArrayList<>(l1);
     }
 
@@ -808,7 +814,8 @@ public class IntESETLService {
                             Date startTime, long dmlSize, long updateSize,
                             Set<String> onlyFieldNameSet,
                             ESAdapter adapter, ESSyncConfig config, boolean onlyCurrentIndex, String sqlWhere,
-                            boolean insertIgnore) {
+                            boolean insertIgnore,
+                            List<Long> updateIdList) {
         String title = "ES搜索全量刷数据-结束";
         String content = "  时间 = " + new Timestamp(System.currentTimeMillis())
                 + " \n\n   ---  "
@@ -824,6 +831,7 @@ public class IntESETLService {
                 + ",\n\n 影响字段 = " + (onlyFieldNameSet == null ? "全部" : onlyFieldNameSet)
                 + ",\n\n 校验条数 = " + dmlSize
                 + ",\n\n 更新条数 = " + updateSize
+                + ",\n\n 更新ID = " + updateIdList
                 + ",\n\n 明细 = " + runnableList.stream().map(SyncRunnable::toString).collect(Collectors.joining("\r\n,"));
         messageService.send(title, content);
     }

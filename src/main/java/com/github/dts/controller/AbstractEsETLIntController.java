@@ -141,10 +141,11 @@ public abstract class AbstractEsETLIntController {
             @RequestParam(value = "onlyFieldName", required = false) String[] onlyFieldName,
             @RequestParam(value = "adapterNames", required = false) String[] adapterNames,
             @RequestParam(value = "sqlWhere", required = false) String sqlWhere,
-            @RequestParam(value = "insertIgnore", required = false, defaultValue = "false") boolean insertIgnore) {
+            @RequestParam(value = "insertIgnore", required = false, defaultValue = "false") boolean insertIgnore,
+            @RequestParam(value = "maxSendMessageSize", required = false, defaultValue = "50") int maxSendMessageSize) {
         Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(Util::isNotBlank).collect(Collectors.toCollection(LinkedHashSet::new));
         return intESETLService.syncAll(esIndexName, threads, offsetStart, offsetEnd, offsetAdd, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet,
-                adapterNames == null ? null : Arrays.asList(adapterNames), sqlWhere, insertIgnore);
+                adapterNames == null ? null : Arrays.asList(adapterNames), sqlWhere, insertIgnore, maxSendMessageSize);
     }
 
     @RequestMapping("/syncById")
