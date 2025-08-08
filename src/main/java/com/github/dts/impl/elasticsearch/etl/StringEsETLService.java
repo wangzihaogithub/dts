@@ -42,6 +42,7 @@ public class StringEsETLService {
     private final ExecutorService executorService;
     private final String name;
     private boolean stop = false;
+    private boolean sendMessage = true;
 
     public StringEsETLService(String name, StartupServer startupServer) {
         this(name, startupServer, 1000);
@@ -161,7 +162,9 @@ public class StringEsETLService {
                             minId = getDmlListMaxId(dmlList);
                         } while (minId != null);
                         future.complete(null);
-                        sendDone(messageService, timestamp, dmlSize.intValue(), updateSize.intValue(), onlyFieldNameSet, adapter, config, onlyCurrentIndex, sqlWhere, insertIgnore);
+                        if (sendMessage) {
+                            sendDone(messageService, timestamp, dmlSize.intValue(), updateSize.intValue(), onlyFieldNameSet, adapter, config, onlyCurrentIndex, sqlWhere, insertIgnore);
+                        }
                     } catch (Throwable e) {
                         future.completeExceptionally(e);
                         sendError(messageService, e, minId, timestamp, dmlSize.intValue(), updateSize.intValue(), onlyFieldNameSet, adapter, config, onlyCurrentIndex, sqlWhere, insertIgnore);
@@ -264,7 +267,9 @@ public class StringEsETLService {
                             log.info("deleteEsTrim hits={}, searchAfter = {}", hitListSize, searchAfter);
                         } while (true);
                         future.complete(null);
-                        sendTrimDone(messageService, timestamp, hitListSize, deleteSize, deleteIdList, config, adapter);
+                        if (sendMessage) {
+                            sendTrimDone(messageService, timestamp, hitListSize, deleteSize, deleteIdList, config, adapter);
+                        }
                     } catch (Throwable e) {
                         future.completeExceptionally(e);
                         sendTrimError(messageService, e, timestamp, hitListSize, deleteSize, deleteIdList, esIndexName, adapter);
@@ -360,8 +365,10 @@ public class StringEsETLService {
                             searchAfter = searchResponse.getLastSortValues();
                             log.info("updateEsDiff hits={}, searchAfter = {}", hitListSize, searchAfter);
                         } while (true);
-                        sendDiffDone(messageService, timestamp, hitListSize, deleteSize, deleteIdList, updateSize, updateIdList, allRowChangeMap, diffFields, adapter, config);
                         future.complete(null);
+                        if (sendMessage) {
+                            sendDiffDone(messageService, timestamp, hitListSize, deleteSize, deleteIdList, updateSize, updateIdList, allRowChangeMap, diffFields, adapter, config);
+                        }
                     } catch (Throwable e) {
                         future.completeExceptionally(e);
                         sendDiffError(messageService, e, timestamp, hitListSize, deleteSize, deleteIdList, updateSize, updateIdList, allRowChangeMap, diffFields, adapter, config);
@@ -584,7 +591,9 @@ public class StringEsETLService {
                         } while (!Thread.currentThread().isInterrupted());
                         esTemplate.commit();
                         future.complete(null);
-                        sendNestedDiffDone(messageService, timestamp, hitListSize, updateSize, updateIdList, allRowChangeMap, diffFieldsFinal, adapter, config);
+                        if (sendMessage) {
+                            sendNestedDiffDone(messageService, timestamp, hitListSize, updateSize, updateIdList, allRowChangeMap, diffFieldsFinal, adapter, config);
+                        }
                     } catch (Throwable e) {
                         log.error("updateEsNestedDiff error {}", e.toString(), e);
                         future.completeExceptionally(e);
@@ -846,4 +855,13 @@ public class StringEsETLService {
     public String getName() {
         return name;
     }
+
+    public void setSendMessage(boolean sendMessage) {
+        this.sendMessage = sendMessage;
+    }
+
+    public boolean isSendMessage() {
+        return sendMessage;
+    }
+
 }

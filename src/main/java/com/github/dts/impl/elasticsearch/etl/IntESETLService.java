@@ -167,11 +167,9 @@ public class IntESETLService {
                         }
                     }
                     future.complete(null);
-                } catch (Exception e) {
+                } catch (Throwable e) {
                     future.completeExceptionally(e);
-                    if (sendMessage) {
-                        sendTrimError(messageService, e, timestamp, hitListSize, deleteSize, deleteIdList, adapter, lastConfig, lastId);
-                    }
+                    sendTrimError(messageService, e, timestamp, hitListSize, deleteSize, deleteIdList, adapter, lastConfig, lastId);
                 }
             });
         }
@@ -238,10 +236,8 @@ public class IntESETLService {
                         })
                         .exceptionally(throwable -> {
                             log.error("updateEsDiff error {}", throwable.toString(), throwable);
-                            if (sendMessage) {
-                                Counter merge = Counter.merge(counterList, maxSendMessageSize);
-                                sendDiffError(messageService, throwable, timestamp, merge.hitListSize, merge.deleteSize, merge.deleteIdList, merge.updateSize, merge.updateIdList, merge.allRowChangeMap, diffFields, adapter, lastConfig[0], merge.lastId);
-                            }
+                            Counter merge = Counter.merge(counterList, maxSendMessageSize);
+                            sendDiffError(messageService, throwable, timestamp, merge.hitListSize, merge.deleteSize, merge.deleteIdList, merge.updateSize, merge.updateIdList, merge.allRowChangeMap, diffFields, adapter, lastConfig[0], merge.lastId);
                             return null;
                         });
             }
@@ -464,10 +460,8 @@ public class IntESETLService {
                         })
                         .exceptionally(throwable -> {
                             log.error("updateEsNestedDiff error {}", throwable.toString(), throwable);
-                            if (sendMessage) {
-                                Counter merge = Counter.merge(counterList, maxSendMessageSize);
-                                sendNestedDiffError(messageService, throwable, timestamp, merge.hitListSize, merge.updateSize, merge.updateIdList, merge.allRowChangeMap, diffFieldsFinal, adapter, lastConfig[0], merge.lastId);
-                            }
+                            Counter merge = Counter.merge(counterList, maxSendMessageSize);
+                            sendNestedDiffError(messageService, throwable, timestamp, merge.hitListSize, merge.updateSize, merge.updateIdList, merge.allRowChangeMap, diffFieldsFinal, adapter, lastConfig[0], merge.lastId);
                             return null;
                         });
             }
