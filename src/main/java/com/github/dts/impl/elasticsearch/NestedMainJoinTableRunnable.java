@@ -10,10 +10,42 @@ import org.slf4j.LoggerFactory;
 import java.sql.Timestamp;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+/**
+ * Nested字段的主表发生变化时，对应的处理逻辑
+ * 例如下配置：
+ * corp就是主表，它发生变化后会触发逻辑。
+ * <pre>
+ *     esMapping:
+ *      env: test
+ *      _index: cnwy_job_test_index_alias
+ *      sql: "SELECT
+ *              job.id as id,
+ *              job.`name` as name
+ *            FROM job job
+ *       "
+ *     corp:
+ *       type: object-sql
+ *       paramSql:
+ *         sql: "SELECT
+ *                 corp.id ,
+ *                 corp.`name`,
+ *                 GROUP_CONCAT(if(corpName.type = 2, corpName.`name`, null)) as aliasNames,
+ *                 GROUP_CONCAT(if(corpName.type = 3, corpName.`name`, null)) as historyNames
+ *               FROM corp corp
+ *               LEFT JOIN corp_name corpName on corpName.corp_id = corp.id
+ *         "
+ *         onMainTableChangeWhereSql: 'WHERE corp.id = #{corp_id} '
+ *         onSlaveTableChangeWhereSql: 'WHERE corp.id = #{id} '
+ *
+ * </pre>
+ *
+ * @see NestedFieldWriter#convertToSqlDependentGroup(List, boolean, boolean)
+ */
 class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Runnable {
     private static final Logger log = LoggerFactory.getLogger(NestedMainJoinTableRunnable.class);
     private final List<SqlDependent> dmlList;
@@ -23,6 +55,7 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
     private final Timestamp maxTimestamp;
     private final NestedMainJoinTableRunnable oldRun;
     private final NestedMainJoinTableRunnable newRun;
+    private final ESTemplate.BulkRequestList parentBulkRequestList;
     private final ESTemplate.BulkRequestList bulkRequestList;
     private final ESTemplate.CommitListener commitListener;
 
@@ -43,11 +76,46 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
         this.esTemplate = esTemplate;
         this.commitListener = commitListener;
         this.maxIdInCount = maxIdInCount;
-        this.bulkRequestList = bulkRequestList;
+        this.parentBulkRequestList = bulkRequestList;
+        this.bulkRequestList = bulkRequestList.fork(BulkPriorityEnum.LOW);
         this.streamChunkSize = streamChunkSize;
         this.maxTimestamp = maxTimestamp;
         this.oldRun = oldRun;
         this.newRun = newRun;
+    }
+
+    static class Executor {
+        private final AtomicInteger idIncr = new AtomicInteger();
+        private final java.util.concurrent.Executor executor;
+        private final Map<Integer, NestedMainJoinTableRunnable> runnableMap = new ConcurrentHashMap<>();
+
+        Executor(java.util.concurrent.Executor executor) {
+            this.executor = executor;
+        }
+
+        void execute(NestedMainJoinTableRunnable runnable) {
+            trace(runnable);
+            executor.execute(runnable);
+        }
+
+        void trace(NestedMainJoinTableRunnable runnable) {
+            int id = idIncr.incrementAndGet();
+            runnableMap.put(id, runnable);
+            runnable.whenComplete((unused, throwable) -> runnableMap.remove(id));
+        }
+
+        EsSyncRunnableStatus status() {
+            EsSyncRunnableStatus status = new EsSyncRunnableStatus();
+            for (NestedMainJoinTableRunnable value : runnableMap.values()) {
+                EsSyncRunnableStatus.Row row = new EsSyncRunnableStatus.Row();
+                row.setTotal(value.dmlList.size());
+                row.setCurr(value.bulkRequestList.commitRequests());
+                row.setBinlogTimestamp(value.maxTimestamp);
+                row.setInfo("dmlList=" + value.dmlList);
+                status.getRows().add(row);
+            }
+            return status;
+        }
     }
 
     static NestedMainJoinTableRunnable merge(NestedMainJoinTableRunnable oldRun, NestedMainJoinTableRunnable newRun) {
@@ -55,7 +123,7 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
         dmlList.addAll(oldRun.dmlList);
         dmlList.addAll(newRun.dmlList);
         return new NestedMainJoinTableRunnable(dmlList, oldRun.esTemplate,
-                oldRun.bulkRequestList.fork(newRun.bulkRequestList),
+                oldRun.parentBulkRequestList.fork(newRun.parentBulkRequestList),
                 ESTemplate.merge(oldRun.commitListener, newRun.commitListener),
                 oldRun.maxIdInCount, oldRun.streamChunkSize, oldRun.maxTimestamp,
                 oldRun, newRun);
@@ -102,7 +170,6 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
             return;
         }
         AtomicInteger childrenCounter = new AtomicInteger();
-        ESTemplate.BulkRequestList bulkRequestList = this.bulkRequestList.fork(BulkPriorityEnum.LOW);
         try {
             // 这种一条sql：update corp_region set corp_id = 2 where id = xx and corp_id=1
             // 更新 corp_id = 2 影响的数据，或insert语句，delete语句

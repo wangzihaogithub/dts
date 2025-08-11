@@ -49,7 +49,7 @@ public class SQL {
 
     public static String removeWrapPlaceholder(String key) {
         String remove = key.substring(PLACEHOLDER_BEGIN.length());
-        remove = remove.substring(0, PLACEHOLDER_END.length());
+        remove = remove.substring(0, remove.length() - PLACEHOLDER_END.length());
         return remove;
     }
 

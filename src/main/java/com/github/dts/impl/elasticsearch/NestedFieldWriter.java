@@ -15,6 +15,7 @@ import java.util.stream.Collectors;
  * 对象字段监听
  *
  * @author acer01
+ * @see NestedFieldWriter#convertToSqlDependentGroup(List, boolean, boolean)
  */
 public class NestedFieldWriter {
     private final Map<String, List<SchemaItem>> schemaItemMap;

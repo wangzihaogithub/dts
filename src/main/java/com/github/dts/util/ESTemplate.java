@@ -117,6 +117,8 @@ public interface ESTemplate extends AutoCloseable {
 
         boolean isEmpty();
 
+        int commitRequests();
+
         int size();
 
         default ESBulkRequest.ESBulkResponse commit(ESTemplate esTemplate) {

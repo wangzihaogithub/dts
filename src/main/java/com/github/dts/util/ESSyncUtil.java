@@ -406,26 +406,28 @@ public class ESSyncUtil {
                 return equalsRowDataValue(mysqlParse, es);
             }
             case LLM_VECTOR: {
-                boolean mysqlEmpty = mysql == null || "".equals(mysql);
-                boolean esEmpty = es == null || "".equals(es);
-                if (esEmpty) {
-                    return mysqlEmpty;
-                } else if (mysqlEmpty) {
-                    return false;
-                } else {
-                    String refTextFieldName = objectField.getParamLlmVector().getEtlEqualsFieldName();
-                    if (refTextFieldName == null || refTextFieldName.isEmpty()) {
-                        return true;
-                    }
-                    Object refEs = esRowData.get(refTextFieldName);
-                    Object refMysql = mysqlRowData.get(refTextFieldName);
-                    ESSyncConfig.ObjectField refObjectField = objectField.getEsMapping().getObjectField(null, refTextFieldName);
-                    if (refObjectField == null) {
-                        return equalsRowDataValue(refMysql, refEs);
-                    } else {
-                        return equalsObjectFieldRowDataValue(refMysql, refEs, refObjectField, mysqlRowData, esRowData, requireSequential);
-                    }
+//                boolean mysqlEmpty = mysql == null || "".equals(mysql);
+//                boolean esEmpty = es == null || "".equals(es);
+//                if (esEmpty) {
+//                    return mysqlEmpty;
+//                } else if (mysqlEmpty) {
+//                    return false;
+//                } else {
+                String refTextFieldName = objectField.getParamLlmVector().getEtlEqualsFieldName();
+                if (refTextFieldName == null || refTextFieldName.isEmpty()) {
+                    throw new IllegalStateException(String.format("ParamLlmVector field '%s', fieldName must in select fields !",
+                            objectField
+                    ));
                 }
+                Object refEs = esRowData.get(refTextFieldName);
+                Object refMysql = mysqlRowData.get(refTextFieldName);
+                ESSyncConfig.ObjectField refObjectField = objectField.getEsMapping().getObjectField(null, refTextFieldName);
+                if (refObjectField == null) {
+                    return equalsRowDataValue(refMysql, refEs);
+                } else {
+                    return equalsObjectFieldRowDataValue(refMysql, refEs, refObjectField, mysqlRowData, esRowData, requireSequential);
+                }
+//                }
             }
             case ARRAY: {
                 if (es == null && mysql == null) {

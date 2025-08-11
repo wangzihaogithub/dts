@@ -321,9 +321,9 @@ public class StringEsETLService {
                     ESSyncConfig.ESMapping esMapping = config.getEsMapping();
                     JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(config.getDataSourceKey());
                     try {
-                        String pkFieldName = config.getEsMapping().getSchemaItem().getIdField().getFieldName();
-                        String pkFieldExpr = config.getEsMapping().getSchemaItem().getIdField().getOwnerAndColumnName();
-                        String[] selectFields = esMapping.getSchemaItem().getSelectFields().keySet().toArray(new String[0]);
+                        String pkFieldName = esMapping.getSchemaItem().getIdField().getFieldName();
+                        String pkFieldExpr = esMapping.getSchemaItem().getIdField().getOwnerAndColumnName();
+                        String[] selectFields = esMapping.getSchemaItem().getSelectFields().keySet().stream().filter(e -> !esMapping.isLlmVector(e)).toArray(String[]::new);
 
                         DefaultESTemplate esTemplate = adapter.getEsTemplate();
 

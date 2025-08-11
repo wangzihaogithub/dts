@@ -4,9 +4,27 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 public class SqlDependentGroup {
+    /**
+     * 是否受到依赖影响
+     */
     private final boolean onlyEffect;
+    /**
+     * 处理逻辑分类
+     *
+     * @see com.github.dts.impl.elasticsearch.NestedFieldWriter
+     */
     private final List<SqlDependent> mainTableSqlDependentList;
+    /**
+     * 处理逻辑分类
+     *
+     * @see com.github.dts.impl.elasticsearch.NestedMainJoinTableRunnable
+     */
     private final List<SqlDependent> mainTableJoinSqlDependentList;
+    /**
+     * 处理逻辑分类
+     *
+     * @see com.github.dts.impl.elasticsearch.NestedSlaveTableRunnable
+     */
     private final List<SqlDependent> slaveTableSqlDependentList;
 
     public SqlDependentGroup() {

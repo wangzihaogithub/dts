@@ -718,6 +718,7 @@ public class DefaultESTemplate implements ESTemplate {
         private final Map<String, Set<String>> indexPkUpdateMap;
         private final Function<BulkRequestListImpl, ESBulkRequest.ESBulkResponse> addAfter;
         private int size = 0;
+        private int commitRequests = 0;
 
         public BulkRequestListImpl(Function<BulkRequestListImpl, ESBulkRequest.ESBulkResponse> addAfter, BulkPriorityEnum priorityEnum, Map<String, Set<String>> indexPkUpdateMap) {
             this.addAfter = addAfter;
@@ -767,6 +768,11 @@ public class DefaultESTemplate implements ESTemplate {
         }
 
         @Override
+        public int commitRequests() {
+            return commitRequests;
+        }
+
+        @Override
         public int size() {
             return size;
         }
@@ -776,6 +782,7 @@ public class DefaultESTemplate implements ESTemplate {
             ESBulkRequest.ESBulkResponse commit = esTemplate.commit();
             if (listener != null && !commit.isEmpty()) {
                 listener.done(commit);
+                commitRequests += commit.size();
             }
             ESBulkRequest.ESBulkResponse commit1 = null;
             if (!requests.isEmpty()) {
@@ -783,6 +790,7 @@ public class DefaultESTemplate implements ESTemplate {
                 commit1 = esTemplate.commit();
                 if (listener != null && !commit1.isEmpty()) {
                     listener.done(commit1);
+                    commitRequests += commit1.size();
                 }
             }
             return ESConnection.ESBulkResponseImpl.merge(commit, commit1);

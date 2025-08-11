@@ -9,14 +9,12 @@ import com.github.dts.util.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.annotation.AnnotationAwareOrderComparator;
 
 import java.sql.Timestamp;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.BiPredicate;
-import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -34,8 +32,8 @@ public class ESAdapter implements Adapter {
     private CanalConfig.OuterAdapterConfig configuration;
     private DefaultESTemplate esTemplate;
     private ExecutorService listenerExecutor;
-    private Executor slaveTableExecutor;
-    private Executor mainJoinTableExecutor;
+    private NestedSlaveTableRunnable.Executor slaveTableExecutor;
+    private NestedMainJoinTableRunnable.Executor mainJoinTableExecutor;
     private BasicFieldWriter basicFieldWriter;
     private NestedFieldWriter nestedFieldWriter;
     private boolean refresh = true;
@@ -45,6 +43,7 @@ public class ESAdapter implements Adapter {
     private int streamChunkSize = 10000;
     private int maxIdIn = 1000;
     private RealtimeListener connectorCommitListener;
+    private Timestamp lastSqlTimestamp = null;
 
     @Override
     public void init(CanalConfig.CanalAdapter canalAdapter,
@@ -67,16 +66,16 @@ public class ESAdapter implements Adapter {
                 configuration.getEs().getListenerThreads(),
                 60_000L, "ESListener-" + clientIdentity, false);
         CanalConfig.OuterAdapterConfig.Es.SlaveNestedField slaveNestedField = configuration.getEs().getSlaveNestedField();
-        this.slaveTableExecutor = slaveNestedField.isBlock() ?
+        this.slaveTableExecutor = new NestedSlaveTableRunnable.Executor(slaveNestedField.isBlock() ?
                 Runnable::run :
                 Util.newFixedThreadPool(1, slaveNestedField.getThreads(),
-                        60_000L, "ESNestJoinS-" + clientIdentity, true, false, slaveNestedField.getQueues(), NestedSlaveTableRunnable::merge);
+                        60_000L, "ESNestJoinS-" + clientIdentity, true, false, slaveNestedField.getQueues(), NestedSlaveTableRunnable::merge));
         CanalConfig.OuterAdapterConfig.Es.MainJoinNestedField mainJoinNestedField = configuration.getEs().getMainJoinNestedField();
 
-        this.mainJoinTableExecutor = mainJoinNestedField.isBlock() ?
+        this.mainJoinTableExecutor = new NestedMainJoinTableRunnable.Executor(mainJoinNestedField.isBlock() ?
                 Runnable::run :
                 Util.newFixedThreadPool(1, mainJoinNestedField.getThreads(),
-                        60_000L, "ESJoin-" + clientIdentity, true, false, mainJoinNestedField.getQueues(), NestedMainJoinTableRunnable::merge);
+                        60_000L, "ESJoin-" + clientIdentity, true, false, mainJoinNestedField.getQueues(), NestedMainJoinTableRunnable::merge));
         ESSyncConfig.loadESSyncConfig(dbTableEsSyncConfig, esSyncConfig, envProperties, canalAdapter, configuration.getName(), configuration.getEs().resourcesDir(), env);
 
         this.listenerList.sort(AnnotationAwareOrderComparator.INSTANCE);
@@ -189,8 +188,10 @@ public class ESAdapter implements Adapter {
             List<Dml> syncDmlList = dmls.stream().filter(e -> !Boolean.TRUE.equals(e.getIsDdl())).collect(Collectors.toList());
             String tables = syncDmlList.stream().map(Dml::getTable).distinct().collect(Collectors.joining(","));
             Dml max = syncDmlList.stream().filter(e -> e.getEs() != null).max(Comparator.comparing(Dml::getEs)).orElse(null);
-            Timestamp maxSqlEsTimestamp = max == null ? null : new Timestamp(max.getEs());
-
+            Timestamp lastSqlTimestamp = max == null ? null : new Timestamp(max.getEs());
+            if (!etl && lastSqlTimestamp != null) {
+                this.lastSqlTimestamp = lastSqlTimestamp;
+            }
             // basic field change
             BasicFieldWriter.WriteResult writeResult = new BasicFieldWriter.WriteResult();
             Timestamp startTimestamp = new Timestamp(System.currentTimeMillis());
@@ -225,7 +226,7 @@ public class ESAdapter implements Adapter {
             SqlDependentGroup sqlDependentGroup = nestedFieldWriter.convertToSqlDependentGroup(syncDmlList, onlyCurrentIndex, onlyEffect);
 
             // join async change
-            List<CompletableFuture<?>> futures = asyncRunSqlDependent(maxSqlEsTimestamp, joinUpdateSize,
+            List<CompletableFuture<?>> futures = asyncRunSqlDependent(lastSqlTimestamp, joinUpdateSize,
                     bulkRequestList, sqlDependentGroup.selectMainTableJoinDependentList(), sqlDependentGroup.selectSlaveTableDependentList(), cacheMap);
 
             // nested type ： main table change
@@ -239,7 +240,7 @@ public class ESAdapter implements Adapter {
                             syncDmlList.size(),
                             basicFieldWriterCost,
                             System.currentTimeMillis() - timestamp,
-                            maxSqlEsTimestamp, tables);
+                            lastSqlTimestamp, tables);
                     bulkRequestList.commit(esTemplate, null);
                 }
             }
@@ -257,7 +258,7 @@ public class ESAdapter implements Adapter {
             }
 
             // future
-            CompletableFuture<Void> future = allOfCompleted(futures, commitListener, sqlDependentGroup, writeResult, startTimestamp, maxSqlEsTimestamp, refresh);
+            CompletableFuture<Void> future = allOfCompleted(futures, commitListener, sqlDependentGroup, writeResult, startTimestamp, lastSqlTimestamp, refresh);
             // refresh
             if (refresh && dmls.size() < refreshThreshold) {
                 if (changeListenerList || changeNestedFieldMainTable) {
@@ -438,6 +439,33 @@ public class ESAdapter implements Adapter {
             }
         }
         return list;
+    }
+
+    /**
+     * 获取最后一次增量事件的SQL时间
+     *
+     * @return 最后一次增量的SQL时间
+     */
+    public Timestamp getLastSqlTimestamp() {
+        return lastSqlTimestamp;
+    }
+
+    /**
+     * 获取Nested对象的从表状态
+     *
+     * @return Nested对象的从表状态
+     */
+    public EsSyncRunnableStatus getNestedSlaveTableStatus() {
+        return slaveTableExecutor.status();
+    }
+
+    /**
+     * 获取Nested对象的主表状态
+     *
+     * @return Nested对象的主表状态
+     */
+    public EsSyncRunnableStatus getNestedMainJoinTableStatus() {
+        return mainJoinTableExecutor.status();
     }
 
     @Override

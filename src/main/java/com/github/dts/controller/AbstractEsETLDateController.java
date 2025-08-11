@@ -135,6 +135,23 @@ public abstract class AbstractEsETLDateController {
         return runnableList;
     }
 
+    @RequestMapping("/status")
+    public Map<String, Map<String, Object>> status() {
+        Map<String, Map<String, Object>> statusMap = new LinkedHashMap<>();
+        for (ESAdapter esAdapter : startupServer.getAdapter(ESAdapter.class)) {
+            Timestamp lastSqlTimestamp = esAdapter.getLastSqlTimestamp();
+            Map<String, Object> status = new LinkedHashMap<>();
+            status.put("name", esAdapter.getName());
+            status.put("clientIdentity", esAdapter.getClientIdentity());
+            status.put("lastSqlTimestamp", String.valueOf(lastSqlTimestamp));
+            status.put("nestedMainJoinTableStatus", esAdapter.getNestedMainJoinTableStatus());
+            status.put("nestedSlaveTableStatus", esAdapter.getNestedSlaveTableStatus());
+
+            statusMap.put(esAdapter.getName(), status);
+        }
+        return statusMap;
+    }
+
     @RequestMapping("/stop")
     public boolean stop() {
         stop = true;

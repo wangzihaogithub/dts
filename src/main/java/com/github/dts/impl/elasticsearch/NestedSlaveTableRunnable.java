@@ -10,8 +10,13 @@ import org.slf4j.LoggerFactory;
 import java.sql.Timestamp;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
+ * Nested字段的从表发生变化时，对应的处理逻辑
+ * 例如下配置：
+ * corp_name就是从表，它发生变化后会触发逻辑。
  * <pre>
  *     esMapping:
  *      env: test
@@ -36,6 +41,8 @@ import java.util.concurrent.CompletableFuture;
  *         onSlaveTableChangeWhereSql: 'WHERE corp.id = #{id} '
  *
  * </pre>
+ *
+ * @see NestedFieldWriter#convertToSqlDependentGroup(List, boolean, boolean)
  */
 class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnable {
     private static final Logger log = LoggerFactory.getLogger(NestedSlaveTableRunnable.class);
@@ -44,6 +51,7 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
     private final Timestamp timestamp;
     private final JoinByParentSlaveTableForeignKey joinForeignKey = new JoinByParentSlaveTableForeignKey();
     private final JoinBySlaveTable joinBySlaveTable = new JoinBySlaveTable();
+    private final ESTemplate.BulkRequestList parentBulkRequestList;
     private final ESTemplate.BulkRequestList bulkRequestList;
     private final ESTemplate.CommitListener commitListener;
     private final CacheMap cacheMap;
@@ -51,6 +59,8 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
     private final int streamChunkSize;
     private final NestedSlaveTableRunnable oldRun;
     private final NestedSlaveTableRunnable newRun;
+    private List<MergeJdbcTemplateSQL<DependentSQL>> nestedMainSqlListMerge;
+    private List<MergeJdbcTemplateSQL<DependentSQL>> joinForeignKeyMerge;
 
     NestedSlaveTableRunnable(List<SqlDependent> updateDmlList,
                              DefaultESTemplate esTemplate,
@@ -70,7 +80,8 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
         this.updateDmlList = updateDmlList;
         this.esTemplate = esTemplate;
         this.chunkSize = chunkSize;
-        this.bulkRequestList = bulkRequestList;
+        this.parentBulkRequestList = bulkRequestList;
+        this.bulkRequestList = bulkRequestList.fork(BulkPriorityEnum.LOW);
         this.commitListener = commitListener;
         this.streamChunkSize = streamChunkSize;
         this.cacheMap = cacheMap;
@@ -83,7 +94,7 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
         dmlList.addAll(oldRun.updateDmlList);
         dmlList.addAll(newRun.updateDmlList);
         return new NestedSlaveTableRunnable(dmlList, oldRun.esTemplate,
-                oldRun.bulkRequestList.fork(newRun.bulkRequestList),
+                oldRun.parentBulkRequestList.fork(newRun.parentBulkRequestList),
                 ESTemplate.merge(oldRun.commitListener, newRun.commitListener),
                 oldRun.cacheMap, oldRun.timestamp, oldRun.chunkSize, oldRun.streamChunkSize,
                 oldRun, newRun);
@@ -93,19 +104,54 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
         return id.dmlKey() + "_" + key;
     }
 
+    static class Executor {
+        private final AtomicInteger idIncr = new AtomicInteger();
+        private final java.util.concurrent.Executor executor;
+        private final Map<Integer, NestedSlaveTableRunnable> runnableMap = new ConcurrentHashMap<>();
+
+        Executor(java.util.concurrent.Executor executor) {
+            this.executor = executor;
+        }
+
+        void execute(NestedSlaveTableRunnable runnable) {
+            trace(runnable);
+            executor.execute(runnable);
+        }
+
+        void trace(NestedSlaveTableRunnable runnable) {
+            int id = idIncr.incrementAndGet();
+            runnableMap.put(id, runnable);
+            runnable.whenComplete((unused, throwable) -> runnableMap.remove(id));
+        }
+
+        EsSyncRunnableStatus status() {
+            EsSyncRunnableStatus status = new EsSyncRunnableStatus();
+            for (NestedSlaveTableRunnable value : runnableMap.values()) {
+                EsSyncRunnableStatus.Row row = new EsSyncRunnableStatus.Row();
+                row.setTotal(value.joinBySlaveTable.nestedMainSqlList.size() + value.joinForeignKey.childSqlSet.size());
+                row.setCurr(value.bulkRequestList.commitRequests());
+                row.setBinlogTimestamp(value.timestamp);
+                row.setInfo("nestedMainSqlListMerge=" + value.nestedMainSqlListMerge + ", joinForeignKeyMerge=" + value.joinForeignKeyMerge);
+                status.getRows().add(row);
+            }
+            return status;
+        }
+    }
+
     @Override
     public void run() {
         parseSql(chunkSize, cacheMap);
         try {
-            ESTemplate.BulkRequestList bulkRequestList = this.bulkRequestList.fork(BulkPriorityEnum.LOW);
-            if (!joinBySlaveTable.nestedMainSqlList.isEmpty()) {
-                List<MergeJdbcTemplateSQL<DependentSQL>> merge = MergeJdbcTemplateSQL.merge(joinBySlaveTable.nestedMainSqlList, chunkSize);
-                MergeJdbcTemplateSQL.executeQueryList(merge, cacheMap, (sql, list) -> NestedFieldWriter.executeEsTemplateUpdate(bulkRequestList, esTemplate, sql, list));
+            List<MergeJdbcTemplateSQL<DependentSQL>> nestedMainSqlListMerge = this.nestedMainSqlListMerge = joinBySlaveTable.nestedMainSqlList.isEmpty() ?
+                    Collections.emptyList() : MergeJdbcTemplateSQL.merge(joinBySlaveTable.nestedMainSqlList, chunkSize);
+            if (!nestedMainSqlListMerge.isEmpty()) {
+                MergeJdbcTemplateSQL.executeQueryList(nestedMainSqlListMerge, cacheMap, (sql, list) -> NestedFieldWriter.executeEsTemplateUpdate(bulkRequestList, esTemplate, sql, list));
             }
 
-            if (!joinForeignKey.parentSqlList.isEmpty()) {
-                List<MergeJdbcTemplateSQL<DependentSQL>> merge = MergeJdbcTemplateSQL.merge(joinForeignKey.parentSqlList, chunkSize);
-                Map<String, List<Map<String, Object>>> parentGetterMap = MergeJdbcTemplateSQL.toMap(merge, e -> id(e.getDependent(), MergeJdbcTemplateSQL.argsToString(e.getArgs())), cacheMap);
+            List<MergeJdbcTemplateSQL<DependentSQL>> joinForeignKeyMerge = this.joinForeignKeyMerge = joinForeignKey.parentSqlList.isEmpty() ?
+                    Collections.emptyList() : MergeJdbcTemplateSQL.merge(joinForeignKey.parentSqlList, chunkSize);
+            if (!joinForeignKeyMerge.isEmpty()) {
+                Map<String, List<Map<String, Object>>> parentGetterMap = MergeJdbcTemplateSQL.toMap(joinForeignKeyMerge, e -> id(e.getDependent(), MergeJdbcTemplateSQL.argsToString(e.getArgs())), cacheMap);
                 List<MergeJdbcTemplateSQL<DependentSQL>> childMergeSqlList = MergeJdbcTemplateSQL.merge(joinForeignKey.childSqlSet, chunkSize, false);
                 Set<String> visited = new HashSet<>(parentGetterMap.size());
                 for (MergeJdbcTemplateSQL<DependentSQL> templateSQL : childMergeSqlList) {

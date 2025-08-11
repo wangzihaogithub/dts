@@ -282,6 +282,11 @@ public class ESSyncConfig {
         private SchemaItem schemaItem;                             // sql解析结果模型
         private ESSyncConfig config;
 
+        public boolean isLlmVector(String fieldName) {
+            ObjectField objectField = objFields.get(fieldName);
+            return objectField != null && objectField.paramLlmVector != null;
+        }
+
         @Override
         public String toString() {
             return env + "[" + _index + "]";
