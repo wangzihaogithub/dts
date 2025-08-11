@@ -6,6 +6,7 @@ import com.github.dts.util.ESTemplate;
 
 import java.util.Collection;
 import java.util.Map;
+import java.util.Objects;
 
 public class EsJdbcTemplateSQL extends JdbcTemplateSQL {
     private final ESTemplate.Hit hit;
@@ -17,5 +18,18 @@ public class EsJdbcTemplateSQL extends JdbcTemplateSQL {
 
     public ESTemplate.Hit getHit() {
         return hit;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (o == null || getClass() != o.getClass()) return false;
+        if (!super.equals(o)) return false;
+        EsJdbcTemplateSQL that = (EsJdbcTemplateSQL) o;
+        return Objects.equals(hit, that.hit);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(super.hashCode(), hit);
     }
 }

@@ -11,6 +11,32 @@ import java.sql.Timestamp;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 
+/**
+ * <pre>
+ *     esMapping:
+ *      env: test
+ *      _index: cnwy_job_test_index_alias
+ *      sql: "SELECT
+ *              job.id as id,
+ *              job.`name` as name
+ *            FROM job job
+ *       "
+ *     corp:
+ *       type: object-sql
+ *       paramSql:
+ *         sql: "SELECT
+ *                 corp.id ,
+ *                 corp.`name`,
+ *                 GROUP_CONCAT(if(corpName.type = 2, corpName.`name`, null)) as aliasNames,
+ *                 GROUP_CONCAT(if(corpName.type = 3, corpName.`name`, null)) as historyNames
+ *               FROM corp corp
+ *               LEFT JOIN corp_name corpName on corpName.corp_id = corp.id
+ *         "
+ *         onMainTableChangeWhereSql: 'WHERE corp.id = #{corp_id} '
+ *         onSlaveTableChangeWhereSql: 'WHERE corp.id = #{id} '
+ *
+ * </pre>
+ */
 class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnable {
     private static final Logger log = LoggerFactory.getLogger(NestedSlaveTableRunnable.class);
     private final List<SqlDependent> updateDmlList;
@@ -183,10 +209,10 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
         StringBuilder condition = new StringBuilder();
         String and = " AND ";
 
-        Map<String, List<String>> joinColumnList = sqlDependent.getSchemaItem().getOnSlaveTableChangeWhereSqlColumnList();
-        for (List<String> columnItem : joinColumnList.values()) {
-            for (String column : columnItem) {
-                ESSyncUtil.appendConditionByExpr(condition, SQL.wrapPlaceholder(column), sqlDependent.getIndexMainTable().getAlias(), column, and);
+        List<SqlParser.BinaryOpExpr> joinVarColumnList = sqlDependent.getSchemaItem().getOnMainTableChangeWhereSqlVarColumnList();
+        for (SqlParser.BinaryOpExpr varColumn : joinVarColumnList) {
+            if (varColumn.isPlaceholder()) {
+                ESSyncUtil.appendConditionByExpr(condition, SQL.wrapPlaceholder(varColumn.getName()), sqlDependent.getIndexMainTable().getAlias(), SQL.removeWrapPlaceholder(varColumn.getValue()), and);
             }
         }
         int len = condition.length();

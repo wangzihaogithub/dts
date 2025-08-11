@@ -34,6 +34,18 @@ public class ESSyncConfig {
         return destination + "_" + database + "_" + table;
     }
 
+    @Override
+    public boolean equals(Object o) {
+        if (o == null || getClass() != o.getClass()) return false;
+        ESSyncConfig config = (ESSyncConfig) o;
+        return Objects.equals(md5, config.md5) ;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(md5);
+    }
+
     public static void loadESSyncConfig(Map<String, Map<String, ESSyncConfig>> map,
                                         Map<String, ESSyncConfig> configMap,
                                         Properties envProperties, CanalConfig.CanalAdapter canalAdapter,

@@ -9,6 +9,7 @@ import com.github.dts.util.ESTemplate;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 public abstract class ESSyncConfigSQL extends JdbcTemplateSQL {
     private final ESSyncConfig config;
@@ -61,4 +62,18 @@ public abstract class ESSyncConfigSQL extends JdbcTemplateSQL {
     }
 
     public abstract void run(List<Map<String, Object>> rowList);
+
+    @Override
+    public boolean equals(Object o) {
+        if (o == null || getClass() != o.getClass()) return false;
+        if (!super.equals(o)) return false;
+        ESSyncConfigSQL that = (ESSyncConfigSQL) o;
+        return Objects.equals(config, that.config) && dml == that.dml && data == that.data
+                && old == that.old && Objects.equals(sqlDependent, that.sqlDependent);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(super.hashCode(), config, dml, data, old, sqlDependent);
+    }
 }

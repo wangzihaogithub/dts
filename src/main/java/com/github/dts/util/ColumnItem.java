@@ -24,6 +24,18 @@ public class ColumnItem {
     }
 
     @Override
+    public boolean equals(Object o) {
+        if (o == null || getClass() != o.getClass()) return false;
+        ColumnItem that = (ColumnItem) o;
+        return Objects.equals(owner, that.owner) && Objects.equals(columnName, that.columnName);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(owner, columnName);
+    }
+
+    @Override
     public String toString() {
         return Objects.toString(owner, "") + "." + columnName;
     }

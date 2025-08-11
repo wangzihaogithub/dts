@@ -30,6 +30,7 @@ public class SchemaItem {
     private Boolean joinByMainTablePrimaryKey;
     private Map<String, List<String>> onSlaveTableChangeWhereSqlColumnList;
     private Map<String, List<String>> onMainTableChangeWhereSqlColumnList;
+    private List<SqlParser.BinaryOpExpr> onMainTableChangeWhereSqlVarColumnList;
     private Set<String> onSlaveTableChangeWhereSqlVarList;
     private Set<String> onMainTableChangeWhereSqlVarList;
     /**
@@ -106,6 +107,7 @@ public class SchemaItem {
         getOnSlaveTableChangeWhereSqlVarList();
         getOnMainTableChangeOrderBySqlColumnList();
         getOnSlaveTableChangeOrderBySqlColumnList();
+        getOnMainTableChangeWhereSqlVarColumnList();
     }
 
     public boolean isIndexMainTable(String tableName) {
@@ -205,6 +207,13 @@ public class SchemaItem {
             this.onMainTableChangeWhereSqlColumnList = SqlParser.getColumnList(objectField.getParamSql().getOnMainTableChangeWhereSql());
         }
         return onMainTableChangeWhereSqlColumnList;
+    }
+
+    public List<SqlParser.BinaryOpExpr> getOnMainTableChangeWhereSqlVarColumnList() {
+        if (onMainTableChangeWhereSqlVarColumnList == null && objectField != null && objectField.isSqlType()) {
+            this.onMainTableChangeWhereSqlVarColumnList = SqlParser.getVarColumnList(objectField.getParamSql().getOnMainTableChangeWhereSql());
+        }
+        return onMainTableChangeWhereSqlVarColumnList;
     }
 
     public Map<String, List<String>> getOnSlaveTableChangeWhereSqlColumnList() {

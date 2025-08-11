@@ -10,6 +10,7 @@ import com.alibaba.druid.sql.parser.ParserException;
 import com.alibaba.druid.sql.parser.SQLStatementParser;
 import com.alibaba.druid.sql.visitor.SQLASTVisitorAdapter;
 import com.alibaba.druid.sql.visitor.VisitorFeature;
+import com.github.dts.impl.elasticsearch.nested.SQL;
 import com.github.dts.util.SchemaItem.FieldItem;
 import com.github.dts.util.SchemaItem.RelationFieldsPair;
 import com.github.dts.util.SchemaItem.TableItem;
@@ -886,11 +887,17 @@ public class SqlParser {
         private final String owner;
         private final String name;
         private final String value;
+        private final boolean placeholder;
 
         public BinaryOpExpr(String owner, String name, String value) {
             this.owner = owner;
             this.name = name;
             this.value = value;
+            this.placeholder = SQL.isPlaceholder(value);
+        }
+
+        public boolean isPlaceholder() {
+            return placeholder;
         }
 
         @Override

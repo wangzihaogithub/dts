@@ -126,6 +126,6 @@ public class JdbcTemplateSQL extends SQL {
 
     @Override
     public int hashCode() {
-        return System.identityHashCode(this);
+        return Objects.hash(super.hashCode(), dataSourceKey, needGroupBy);
     }
 }

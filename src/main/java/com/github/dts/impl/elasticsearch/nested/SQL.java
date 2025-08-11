@@ -47,6 +47,16 @@ public class SQL {
         return PLACEHOLDER_BEGIN + key + PLACEHOLDER_END;
     }
 
+    public static String removeWrapPlaceholder(String key) {
+        String remove = key.substring(PLACEHOLDER_BEGIN.length());
+        remove = remove.substring(0, PLACEHOLDER_END.length());
+        return remove;
+    }
+
+    public static boolean isPlaceholder(String key) {
+        return key.startsWith(PLACEHOLDER_BEGIN) && key.endsWith(PLACEHOLDER_END);
+    }
+
     /**
      * 将sql表达式与参数 转换为JDBC所需的sql对象
      *

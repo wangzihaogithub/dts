@@ -33,6 +33,19 @@ public class MergeJdbcTemplateSQL<T extends JdbcTemplateSQL> extends JdbcTemplat
         this.mergeList = mergeList;
     }
 
+    @Override
+    public boolean equals(Object o) {
+        if (o == null || getClass() != o.getClass()) return false;
+        if (!super.equals(o)) return false;
+        MergeJdbcTemplateSQL<?> that = (MergeJdbcTemplateSQL<?>) o;
+        return Objects.equals(mergeList, that.mergeList) && Objects.deepEquals(uniqueColumnNames, that.uniqueColumnNames) && Objects.equals(addColumnNameList, that.addColumnNameList);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(super.hashCode(), mergeList, Arrays.hashCode(uniqueColumnNames), addColumnNameList);
+    }
+
     public static <T extends JdbcTemplateSQL> void executeQueryList(
             List<MergeJdbcTemplateSQL<T>> sqlList,
             CacheMap cacheMap,

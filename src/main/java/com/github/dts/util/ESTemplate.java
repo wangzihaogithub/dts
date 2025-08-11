@@ -173,6 +173,21 @@ public interface ESTemplate extends AutoCloseable {
         }
 
         @Override
+        public boolean equals(Object o) {
+            if (o == null || getClass() != o.getClass()) return false;
+
+            Hit hit = (Hit) o;
+            if (!Objects.equals(id, hit.id) || !Objects.deepEquals(sortValues, hit.sortValues))
+                return false;
+            return super.equals(o);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(super.hashCode(), id, Arrays.hashCode(sortValues));
+        }
+
+        @Override
         public String toString() {
             return id;
         }

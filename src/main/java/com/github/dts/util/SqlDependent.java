@@ -184,12 +184,12 @@ public class SqlDependent {
         if (this == o) return true;
         if (!(o instanceof SqlDependent)) return false;
         SqlDependent sqlDependent = (SqlDependent) o;
-        return index == sqlDependent.index && Objects.equals(dml, sqlDependent.dml) && Objects.equals(schemaItem, sqlDependent.schemaItem);
+        return index == sqlDependent.index && dml == sqlDependent.dml && schemaItem == sqlDependent.schemaItem;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(dml, schemaItem, index);
+        return Objects.hash(System.identityHashCode(dml), System.identityHashCode(schemaItem), index);
     }
 
     public String dmlKey() {
