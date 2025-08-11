@@ -154,13 +154,13 @@ public class StringEsETLService {
                             }
                             if (!filterDmlList.isEmpty()) {
                                 adapter.sync(filterDmlList, false, false, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet, null);
+                                updateSize.addAndGet(filterDmlList.size());
+                                if (sendMessage && updateIdList.size() < maxSendMessageSize) {
+                                    filterDmlList.stream().map(StringEsETLService.this::getDmlId).flatMap(Collection::stream).forEach(updateIdList::add);
+                                }
                             }
 
                             dmlSize.addAndGet(dmlList.size());
-                            updateSize.addAndGet(filterDmlList.size());
-                            if (sendMessage && updateIdList.size() < maxSendMessageSize) {
-                                dmlList.stream().map(StringEsETLService.this::getDmlId).flatMap(Collection::stream).forEach(updateIdList::add);
-                            }
                             if (log.isInfoEnabled()) {
                                 log.info("syncAll dmlSize = {}, minOffset = {} ", dmlSize.intValue(), minId);
                             }

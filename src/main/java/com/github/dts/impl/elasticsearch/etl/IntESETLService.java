@@ -684,13 +684,13 @@ public class IntESETLService {
                                 filterDmlList = dmlList;
                             }
                             if (!filterDmlList.isEmpty()) {
-                                if (sendMessage && updateIdList.size() < maxSendMessageSize) {
-                                    dmlList.stream().map(IntESETLService.this::getDmlId).flatMap(Collection::stream).forEach(updateIdList::add);
-                                }
                                 adapter.sync(filterDmlList, false, false, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet, null);
+                                updateSize.addAndGet(filterDmlList.size());
+                                if (sendMessage && updateIdList.size() < maxSendMessageSize) {
+                                    filterDmlList.stream().map(IntESETLService.this::getDmlId).flatMap(Collection::stream).forEach(updateIdList::add);
+                                }
                             }
                             dmlSize.addAndGet(dmlList.size());
-                            updateSize.addAndGet(filterDmlList.size());
                             if (log.isInfoEnabled()) {
                                 log.info("syncAll dmlSize = {}, minOffset = {} ", dmlSize.longValue(), SyncRunnable.minOffset(runnableList));
                             }
