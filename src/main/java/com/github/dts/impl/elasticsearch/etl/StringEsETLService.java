@@ -70,12 +70,12 @@ public class StringEsETLService {
         }
     }
 
-    public List<CompletableFuture<?>> checkAll(String esIndexName, List<String> adapterNames, int offsetAdd) {
+    public List<CompletableFuture<?>> checkAll(String esIndexName, List<String> adapterNames, int offsetAdd, String sqlWhere, String esQueryBodyJson) {
         List<CompletableFuture<?>> futureList = new ArrayList<>();
 
-        futureList.addAll(updateEsNestedDiff(esIndexName, null, offsetAdd, null, 100, adapterNames));
-        futureList.addAll(syncAll(esIndexName, "0", offsetAdd, true, 100, null, adapterNames, null, true, 100));
-        futureList.addAll(updateEsDiff(esIndexName, offsetAdd, null, 100, adapterNames));
+        futureList.addAll(updateEsNestedDiff(esIndexName, null, offsetAdd, null, 100, adapterNames, esQueryBodyJson));
+        futureList.addAll(syncAll(esIndexName, "0", offsetAdd, true, 100, null, adapterNames, sqlWhere, true, 100));
+        futureList.addAll(updateEsDiff(esIndexName, offsetAdd, null, 100, adapterNames, esQueryBodyJson));
         return futureList;
     }
 
@@ -90,7 +90,7 @@ public class StringEsETLService {
     }
 
     public Collection<CompletableFuture<Void>> updateEsDiff(String esIndexName) {
-        return updateEsDiff(esIndexName, 1000, null, 100, null);
+        return updateEsDiff(esIndexName, 1000, null, 100, null, null);
     }
 
     public List<CompletableFuture<Void>> deleteEsTrim(String esIndexName) {
@@ -289,7 +289,8 @@ public class StringEsETLService {
                                                       int offsetAdd,
                                                       Set<String> diffFields,
                                                       int maxSendMessageSize,
-                                                      List<String> adapterNames) {
+                                                      List<String> adapterNames,
+                                                      String esQueryBodyJson) {
         this.stop = false;
         List<ESAdapter> adapterList = getAdapterList(adapterNames);
         if (adapterList.isEmpty()) {
@@ -332,7 +333,7 @@ public class StringEsETLService {
                             if (stop) {
                                 break;
                             }
-                            ESTemplate.ESSearchResponse searchResponse = esTemplate.searchAfter(esMapping, selectFields, null, searchAfter, offsetAdd);
+                            ESTemplate.ESSearchResponse searchResponse = esTemplate.searchAfter(esMapping, selectFields, null, searchAfter, offsetAdd, esQueryBodyJson);
                             List<ESTemplate.Hit> hitList = searchResponse.getHitList();
                             if (hitList.isEmpty()) {
                                 break;
@@ -433,7 +434,7 @@ public class StringEsETLService {
     }
 
     public List<CompletableFuture<Void>> updateEsNestedDiff(String esIndexName) {
-        return updateEsNestedDiff(esIndexName, null, 500, null, 1000, null);
+        return updateEsNestedDiff(esIndexName, null, 500, null, 1000, null, null);
     }
 
     public List<CompletableFuture<Void>> updateEsNestedDiff(String esIndexName,
@@ -441,7 +442,8 @@ public class StringEsETLService {
                                                             int offsetAdd,
                                                             Set<String> diffFields,
                                                             int maxSendMessageSize,
-                                                            List<String> adapterNames) {
+                                                            List<String> adapterNames,
+                                                            String esQueryBodyJson) {
         this.stop = false;
         List<ESAdapter> adapterList = getAdapterList(adapterNames);
         if (adapterList.isEmpty()) {
@@ -508,7 +510,7 @@ public class StringEsETLService {
                             if (stop) {
                                 break;
                             }
-                            ESTemplate.ESSearchResponse searchResponse = esTemplate.searchAfter(esMapping, diffFieldsFinal.toArray(new String[0]), null, searchAfter, offsetAdd);
+                            ESTemplate.ESSearchResponse searchResponse = esTemplate.searchAfter(esMapping, diffFieldsFinal.toArray(new String[0]), null, searchAfter, offsetAdd, esQueryBodyJson);
                             List<ESTemplate.Hit> hitList = searchResponse.getHitList();
                             if (hitList.isEmpty()) {
                                 break;

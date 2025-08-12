@@ -54,11 +54,11 @@ public class IntESETLService {
         stop = true;
     }
 
-    public List<CompletableFuture<?>> checkAll(String esIndexName, List<String> adapterNames, int offsetAdd, int threads) {
+    public List<CompletableFuture<?>> checkAll(String esIndexName, List<String> adapterNames, int offsetAdd, int threads, String sqlWhere, String esQueryBodyJson) {
         List<SyncRunnable> l1 = syncAll(esIndexName, threads, null, null, offsetAdd,
-                true, 100, null, adapterNames, null, true, 100);
-        List<CompletableFuture<Counter>> l2 = updateEsDiff(esIndexName, null, null, offsetAdd, threads, null, 100, adapterNames);
-        List<CompletableFuture<Counter>> l3 = updateEsNestedDiff(esIndexName, null, null, offsetAdd, threads, null, 100, adapterNames);
+                true, 100, null, adapterNames, sqlWhere, true, 100);
+        List<CompletableFuture<Counter>> l2 = updateEsDiff(esIndexName, null, null, offsetAdd, threads, null, 100, adapterNames, esQueryBodyJson);
+        List<CompletableFuture<Counter>> l3 = updateEsNestedDiff(esIndexName, null, null, offsetAdd, threads, null, 100, adapterNames, esQueryBodyJson);
 
         List<CompletableFuture<?>> futureList = new ArrayList<>();
         futureList.addAll(l1);
@@ -79,7 +79,7 @@ public class IntESETLService {
     }
 
     public List<CompletableFuture<Counter>> updateEsDiff(String esIndexName) {
-        return updateEsDiff(esIndexName, null, null, 1000, 0, null, 100, null);
+        return updateEsDiff(esIndexName, null, null, 1000, 0, null, 100, null, null);
     }
 
     public List<CompletableFuture<Void>> deleteEsTrim(String esIndexName) {
@@ -184,7 +184,8 @@ public class IntESETLService {
                                                          int threads,
                                                          Set<String> diffFields,
                                                          int maxSendMessageSize,
-                                                         List<String> adapterNames) {
+                                                         List<String> adapterNames,
+                                                         String esQueryBodyJson) {
         this.stop = false;
         List<ESAdapter> adapterList = getAdapterList(adapterNames);
         if (adapterList.isEmpty()) {
@@ -226,7 +227,7 @@ public class IntESETLService {
                     Util.Range range = rangeList.get(i);
                     Counter counter = new Counter();
                     counterList[i] = counter;
-                    futureList[i] = newUpdateEsDiffRunnable(counter, esTemplate, config, range.getStart(), range.isLast() ? null : range.getEnd(), offsetAdd, diffFields, maxSendMessageSize);
+                    futureList[i] = newUpdateEsDiffRunnable(counter, esTemplate, config, range.getStart(), range.isLast() ? null : range.getEnd(), offsetAdd, diffFields, maxSendMessageSize, esQueryBodyJson);
                 }
                 CompletableFuture<Counter> future = CompletableFuture.allOf(futureList).thenApply(unused -> Counter.merge(counterList, maxSendMessageSize));
                 resultFutureList.add(future);
@@ -322,7 +323,7 @@ public class IntESETLService {
 
     private CompletableFuture<Void> newUpdateEsDiffRunnable(Counter counter, DefaultESTemplate esTemplate, ESSyncConfig config,
                                                             Long startId, Long endId, int offsetAdd,
-                                                            Set<String> diffFields, int maxSendMessageSize) {
+                                                            Set<String> diffFields, int maxSendMessageSize, String esQueryBodyJson) {
         CompletableFuture<Void> future = new CompletableFuture<>();
         executorService.execute(() -> {
             try {
@@ -343,7 +344,7 @@ public class IntESETLService {
                             && Long.parseLong(searchAfter[0].toString()) >= endId) {
                         break;
                     }
-                    ESTemplate.ESSearchResponse searchResponse = esTemplate.searchAfter(esMapping, selectFields, null, searchAfter, offsetAdd);
+                    ESTemplate.ESSearchResponse searchResponse = esTemplate.searchAfter(esMapping, selectFields, null, searchAfter, offsetAdd, esQueryBodyJson);
                     List<ESTemplate.Hit> hitList = searchResponse.getHitList();
                     if (hitList.isEmpty()) {
                         break;
@@ -390,7 +391,7 @@ public class IntESETLService {
     }
 
     public List<CompletableFuture<Counter>> updateEsNestedDiff(String esIndexName) {
-        return updateEsNestedDiff(esIndexName, null, null, 1000, 0, null, 1000, null);
+        return updateEsNestedDiff(esIndexName, null, null, 1000, 0, null, 1000, null, null);
     }
 
     public List<CompletableFuture<Counter>> updateEsNestedDiff(String esIndexName,
@@ -400,7 +401,8 @@ public class IntESETLService {
                                                                int threads,
                                                                Set<String> diffFields,
                                                                int maxSendMessageSize,
-                                                               List<String> adapterNames) {
+                                                               List<String> adapterNames,
+                                                               String esQueryBodyJson) {
         this.stop = false;
         List<ESAdapter> adapterList = getAdapterList(adapterNames);
         if (adapterList.isEmpty()) {
@@ -450,7 +452,7 @@ public class IntESETLService {
                     Util.Range range = rangeList.get(i);
                     Counter counter = new Counter();
                     counterList[i] = counter;
-                    futureList[i] = newUpdateEsNestedDiffRunnable(counter, esTemplate, config, range.getStart(), range.isLast() ? null : range.getEnd(), offsetAdd, diffFieldsFinal, maxSendMessageSize, maxIdInCount);
+                    futureList[i] = newUpdateEsNestedDiffRunnable(counter, esTemplate, config, range.getStart(), range.isLast() ? null : range.getEnd(), offsetAdd, diffFieldsFinal, maxSendMessageSize, maxIdInCount, esQueryBodyJson);
                 }
                 CompletableFuture<Counter> future = CompletableFuture.allOf(futureList).thenApply(unused -> Counter.merge(counterList, maxSendMessageSize));
                 resultFutureList.add(future);
@@ -473,7 +475,8 @@ public class IntESETLService {
     private CompletableFuture<Void> newUpdateEsNestedDiffRunnable(Counter counter, DefaultESTemplate esTemplate, ESSyncConfig config,
                                                                   Long startId, Long endId, int offsetAdd,
                                                                   Set<String> diffFieldsFinal, int maxSendMessageSize,
-                                                                  int maxIdInCount) {
+                                                                  int maxIdInCount,
+                                                                  String esQueryBodyJson) {
         CompletableFuture<Void> future = new CompletableFuture<>();
         executorService.execute(() -> {
             try {
@@ -495,7 +498,7 @@ public class IntESETLService {
                             && Long.parseLong(searchAfter[0].toString()) >= endId) {
                         break;
                     }
-                    ESTemplate.ESSearchResponse searchResponse = esTemplate.searchAfter(esMapping, diffFieldsFinal.toArray(new String[0]), null, searchAfter, offsetAdd);
+                    ESTemplate.ESSearchResponse searchResponse = esTemplate.searchAfter(esMapping, diffFieldsFinal.toArray(new String[0]), null, searchAfter, offsetAdd, esQueryBodyJson);
                     List<ESTemplate.Hit> hitList = searchResponse.getHitList();
                     if (hitList.isEmpty()) {
                         break;

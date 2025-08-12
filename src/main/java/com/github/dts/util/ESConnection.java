@@ -37,7 +37,12 @@ import org.elasticsearch.rest.RestStatus;
 import org.elasticsearch.script.Script;
 import org.elasticsearch.script.ScriptType;
 import org.elasticsearch.search.aggregations.AggregationBuilder;
+import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.elasticsearch.search.sort.SortOrder;
+import org.elasticsearch.xcontent.DeprecationHandler;
+import org.elasticsearch.xcontent.NamedXContentRegistry;
+import org.elasticsearch.xcontent.XContentParser;
+import org.elasticsearch.xcontent.json.JsonXContent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -1025,6 +1030,17 @@ public class ESConnection {
 
         public ESSearchRequest searchAfter(Object[] values) {
             searchRequest.source().searchAfter(values);
+            return this;
+        }
+
+        public ESSearchRequest source(String queryJson) throws IOException {
+            XContentParser parser = JsonXContent.jsonXContent.createParser(
+                    new NamedXContentRegistry(Collections.emptyList()), // 通常为空即可
+                    DeprecationHandler.IGNORE_DEPRECATIONS,            // 忽略过时字段警告
+                    queryJson
+            );
+            SearchSourceBuilder sourceBuilder = SearchSourceBuilder.fromXContent(parser);
+            searchRequest.source(sourceBuilder);
             return this;
         }
 

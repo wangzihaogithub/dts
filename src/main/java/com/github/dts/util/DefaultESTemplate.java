@@ -259,12 +259,19 @@ public class DefaultESTemplate implements ESTemplate {
 
     @Override
     public ESSearchResponse searchAfterId(ESMapping mapping, Object[] searchAfter, Integer limit) {
-        return searchAfter(mapping, new String[]{mapping.get_id()}, null, searchAfter, limit);
+        return searchAfter(mapping, new String[]{mapping.get_id()}, null, searchAfter, limit, null);
     }
 
     @Override
-    public ESSearchResponse searchAfter(ESMapping mapping, String[] includes, String[] excludes, Object[] searchAfter, Integer limit) {
+    public ESSearchResponse searchAfter(ESMapping mapping, String[] includes, String[] excludes, Object[] searchAfter, Integer limit, String queryBodyJson) {
         ESConnection.ESSearchRequest esSearchRequest = new ESConnection.ESSearchRequest(mapping.get_index());
+        if (!Util.isBlank(queryBodyJson)) {
+            try {
+                esSearchRequest.source(queryBodyJson);
+            } catch (IOException e) {
+                Util.sneakyThrows(e);
+            }
+        }
         if (searchAfter != null) {
             esSearchRequest.searchAfter(searchAfter);
         }

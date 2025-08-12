@@ -77,7 +77,7 @@ public abstract class AbstractEsETLIntController {
             if (afterAliasRemoveAndAdd && afterReindexCheckDiff) {
                 reindex.thenAccept(esActionResponse -> {
                     if (esActionResponse.isSuccess()) {
-                        intESETLService.checkAll(esIndexName, Collections.singletonList(adapter.getName()), afterReindexCheckDiffOffsetAdd, afterReindexCheckDiffThreads);
+                        intESETLService.checkAll(esIndexName, Collections.singletonList(adapter.getName()), afterReindexCheckDiffOffsetAdd, afterReindexCheckDiffThreads, null, null);
                     }
                 });
             }
@@ -98,10 +98,11 @@ public abstract class AbstractEsETLIntController {
                                   @RequestParam(value = "endId", required = false) Long endId,
                                   @RequestParam(value = "diffFields", required = false) String[] diffFields,
                                   @RequestParam(value = "adapterNames", required = false) String[] adapterNames,
-                                  @RequestParam(value = "maxSendMessageSize", required = false, defaultValue = "50") int maxSendMessageSize) {
+                                  @RequestParam(value = "maxSendMessageSize", required = false, defaultValue = "50") int maxSendMessageSize,
+                                  @RequestParam(value = "esQueryBodyJson", required = false, defaultValue = "") String esQueryBodyJson) {
         return intESETLService.updateEsNestedDiff(esIndexName, startId, endId, offsetAdd, threads,
                 diffFields == null ? null : new LinkedHashSet<>(Arrays.asList(diffFields)), maxSendMessageSize,
-                adapterNames == null ? null : Arrays.asList(adapterNames)).size();
+                adapterNames == null ? null : Arrays.asList(adapterNames), esQueryBodyJson).size();
     }
 
     @RequestMapping("/updateEsDiff")
@@ -113,10 +114,11 @@ public abstract class AbstractEsETLIntController {
                             // 比较字段：不含嵌套字段：空=全部，
                             @RequestParam(value = "diffFields", required = false) String[] diffFields,
                             @RequestParam(value = "adapterNames", required = false) String[] adapterNames,
-                            @RequestParam(value = "maxSendMessageSize", required = false, defaultValue = "50") int maxSendMessageSize) {
+                            @RequestParam(value = "maxSendMessageSize", required = false, defaultValue = "50") int maxSendMessageSize,
+                            @RequestParam(value = "esQueryBodyJson", required = false, defaultValue = "") String esQueryBodyJson) {
         return intESETLService.updateEsDiff(esIndexName, startId, endId, offsetAdd, threads,
                 diffFields == null ? null : new LinkedHashSet<>(Arrays.asList(diffFields)), maxSendMessageSize,
-                adapterNames == null ? null : Arrays.asList(adapterNames)).size();
+                adapterNames == null ? null : Arrays.asList(adapterNames), esQueryBodyJson).size();
     }
 
     @RequestMapping("/deleteEsTrim")
@@ -131,7 +133,7 @@ public abstract class AbstractEsETLIntController {
     }
 
     @RequestMapping("/syncAll")
-    public List<IntESETLService.SyncRunnable> syncAll(
+    public List<String> syncAll(
             @RequestParam(value = "esIndexName", required = true) String esIndexName,
             @RequestParam(value = "threads", required = false, defaultValue = "50") int threads,
             @RequestParam(value = "offsetStart", required = false) Long offsetStart,
@@ -146,7 +148,8 @@ public abstract class AbstractEsETLIntController {
             @RequestParam(value = "maxSendMessageSize", required = false, defaultValue = "50") int maxSendMessageSize) {
         Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(Util::isNotBlank).collect(Collectors.toCollection(LinkedHashSet::new));
         return intESETLService.syncAll(esIndexName, threads, offsetStart, offsetEnd, offsetAdd, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet,
-                adapterNames == null ? null : Arrays.asList(adapterNames), sqlWhere, insertIgnore, maxSendMessageSize);
+                        adapterNames == null ? null : Arrays.asList(adapterNames), sqlWhere, insertIgnore, maxSendMessageSize)
+                .stream().map(IntESETLService.SyncRunnable::getRange).map(Util.Range::toString).collect(Collectors.toList());
     }
 
     @RequestMapping("/syncById")

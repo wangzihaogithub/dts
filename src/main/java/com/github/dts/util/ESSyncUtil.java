@@ -520,7 +520,12 @@ public class ESSyncUtil {
                 for (String field : mysql.keySet()) {
                     Object mysqlValue = mysql.get(field);
                     Object esValue = es.get(field);
-                    if (!equalsRowDataValue(mysqlValue, esValue)) {
+                    ESSyncConfig.ObjectField childObjectField = objectField.getEsMapping().getObjectField(objectField.getFieldName(), field);
+                    if (childObjectField != null) {
+                        if (!equalsObjectFieldRowDataValue(mysqlValue, esValue, childObjectField, mysql, es, true)) {
+                            return false;
+                        }
+                    } else if (!equalsRowDataValue(mysqlValue, esValue)) {
                         return false;
                     }
                 }
@@ -618,7 +623,10 @@ public class ESSyncUtil {
             } catch (Exception e) {
                 equals = false;
             }
+        } else if (mysql instanceof Date || es instanceof Date) {
+            equals = equalsEsDate(mysql, es);
         } else if (es instanceof Collection) {
+            // 这里应该进不来，进来就是bug（需要外层调用换成 equalsObjectFieldRowDataValue）
             String mysqlString = mysql.toString();
             for (Object esItem : (Collection) es) {
                 if (esItem == null || !mysqlString.contains(esItem.toString())) {
@@ -626,9 +634,8 @@ public class ESSyncUtil {
                 }
             }
             return true;
-        } else if (mysql instanceof Date || es instanceof Date) {
-            equals = equalsEsDate(mysql, es);
         } else if (es instanceof Map) {
+            // 这里除了经纬度，其他的应该进不来，其他的进来就是bug（需要外层调用换成 equalsObjectFieldRowDataValue）
             Map<String, Double> mysqlGeo = ESSyncUtil.parseGeoPointToMap(mysql.toString());
             equals = ESSyncUtil.equalsGeoPoint(mysqlGeo, (Map) es);
         } else if (es instanceof Integer || es instanceof Long) {

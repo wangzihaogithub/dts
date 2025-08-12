@@ -82,7 +82,7 @@ public abstract class AbstractEsETLStringController {
             if (afterAliasRemoveAndAdd && afterReindexCheckDiff) {
                 reindex.thenAccept(esActionResponse -> {
                     if (esActionResponse.isSuccess()) {
-                        stringEsETLService.checkAll(esIndexName, Collections.singletonList(adapter.getName()), afterReindexCheckDiffOffsetAdd);
+                        stringEsETLService.checkAll(esIndexName, Collections.singletonList(adapter.getName()), afterReindexCheckDiffOffsetAdd, null, null);
                     }
                 });
             }
@@ -101,10 +101,11 @@ public abstract class AbstractEsETLStringController {
                                   // 比较字段：必须是嵌套字段：空=全部，
                                   @RequestParam(value = "diffFields", required = false) String[] diffFields,
                                   @RequestParam(value = "adapterNames", required = false) String[] adapterNames,
-                                  @RequestParam(value = "maxSendMessageSize", required = false, defaultValue = "50") int maxSendMessageSize) {
+                                  @RequestParam(value = "maxSendMessageSize", required = false, defaultValue = "50") int maxSendMessageSize,
+                                  @RequestParam(value = "esQueryBodyJson", required = false, defaultValue = "") String esQueryBodyJson) {
         return stringEsETLService.updateEsNestedDiff(esIndexName, startId, offsetAdd,
                 diffFields == null ? null : new LinkedHashSet<>(Arrays.asList(diffFields)), maxSendMessageSize,
-                adapterNames == null ? null : Arrays.asList(adapterNames)).size();
+                adapterNames == null ? null : Arrays.asList(adapterNames), esQueryBodyJson).size();
     }
 
     @RequestMapping("/updateEsDiff")
@@ -113,10 +114,11 @@ public abstract class AbstractEsETLStringController {
                             // 比较字段：不含嵌套字段：空=全部，
                             @RequestParam(value = "diffFields", required = false) String[] diffFields,
                             @RequestParam(value = "adapterNames", required = false) String[] adapterNames,
-                            @RequestParam(value = "maxSendMessageSize", required = false, defaultValue = "50") int maxSendMessageSize) {
+                            @RequestParam(value = "maxSendMessageSize", required = false, defaultValue = "50") int maxSendMessageSize,
+                            @RequestParam(value = "esQueryBodyJson", required = false, defaultValue = "") String esQueryBodyJson) {
         return stringEsETLService.updateEsDiff(esIndexName, offsetAdd,
                 diffFields == null ? null : new LinkedHashSet<>(Arrays.asList(diffFields)), maxSendMessageSize,
-                adapterNames == null ? null : Arrays.asList(adapterNames)).size();
+                adapterNames == null ? null : Arrays.asList(adapterNames), esQueryBodyJson).size();
     }
 
     @RequestMapping("/deleteEsTrim")
