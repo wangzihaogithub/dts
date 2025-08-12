@@ -48,6 +48,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.locks.ReentrantLock;
@@ -387,6 +388,54 @@ public class ESConnection {
         Response response = restClient.performRequest(request);
         Map responseBody = JsonUtil.objectReader().readValue(response.getEntity().getContent(), Map.class);
         return new EsActionResponse("PUT " + endpoint, responseBody);
+    }
+
+    public CompletableFuture<Map<String, Object>> search(String indexName, Object body) throws IOException {
+        // request
+        Request request = new Request("POST", "/" + indexName + "/_search");
+        byte[] requestBody;
+        if (body instanceof CharSequence) {
+            requestBody = body.toString().getBytes(StandardCharsets.UTF_8);
+        } else if (body instanceof byte[]) {
+            requestBody = (byte[]) body;
+        } else {
+            requestBody = JsonUtil.objectWriter().writeValueAsBytes(body);
+        }
+        request.setEntity(EntityBuilder.create()
+                .setContentType(ContentType.APPLICATION_JSON)
+                .setBinary(requestBody)
+                .build());
+        class Future extends CompletableFuture<Map<String, Object>> {
+            volatile Cancellable cancellable;
+
+            @Override
+            public boolean cancel(boolean mayInterruptIfRunning) {
+                boolean cancel = super.cancel(mayInterruptIfRunning);
+                Cancellable cancellable = this.cancellable;
+                if (cancel && mayInterruptIfRunning && cancellable != null) {
+                    cancellable.cancel();
+                }
+                return cancel;
+            }
+        }
+        Future future = new Future();
+        future.cancellable = restClient.performRequestAsync(request, new ResponseListener() {
+            @Override
+            public void onSuccess(Response response) {
+                try {
+                    Map responseBody = JsonUtil.objectReader().readValue(response.getEntity().getContent(), Map.class);
+                    future.complete(responseBody);
+                } catch (Throwable e) {
+                    future.completeExceptionally(e);
+                }
+            }
+
+            @Override
+            public void onFailure(Exception exception) {
+                future.completeExceptionally(exception);
+            }
+        });
+        return future;
     }
 
     public static class ConnectionEsTask extends EsTask {
@@ -1030,17 +1079,6 @@ public class ESConnection {
 
         public ESSearchRequest searchAfter(Object[] values) {
             searchRequest.source().searchAfter(values);
-            return this;
-        }
-
-        public ESSearchRequest source(String queryJson) throws IOException {
-            XContentParser parser = JsonXContent.jsonXContent.createParser(
-                    new NamedXContentRegistry(Collections.emptyList()), // 通常为空即可
-                    DeprecationHandler.IGNORE_DEPRECATIONS,            // 忽略过时字段警告
-                    queryJson
-            );
-            SearchSourceBuilder sourceBuilder = SearchSourceBuilder.fromXContent(parser);
-            searchRequest.source(sourceBuilder);
             return this;
         }
 

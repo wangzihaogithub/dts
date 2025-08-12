@@ -56,9 +56,9 @@ public class IntESETLService {
 
     public List<CompletableFuture<?>> checkAll(String esIndexName, List<String> adapterNames, int offsetAdd, int threads, String sqlWhere, String esQueryBodyJson) {
         List<SyncRunnable> l1 = syncAll(esIndexName, threads, null, null, offsetAdd,
-                true, 100, null, adapterNames, sqlWhere, true, 100);
-        List<CompletableFuture<Counter>> l2 = updateEsDiff(esIndexName, null, null, offsetAdd, threads, null, 100, adapterNames, esQueryBodyJson);
-        List<CompletableFuture<Counter>> l3 = updateEsNestedDiff(esIndexName, null, null, offsetAdd, threads, null, 100, adapterNames, esQueryBodyJson);
+                true, 100, null, adapterNames, sqlWhere, true, 50);
+        List<CompletableFuture<Counter>> l2 = updateEsDiff(esIndexName, null, null, offsetAdd, threads, null, 50, adapterNames, esQueryBodyJson);
+        List<CompletableFuture<Counter>> l3 = updateEsNestedDiff(esIndexName, null, null, offsetAdd, threads, null, 50, adapterNames, esQueryBodyJson);
 
         List<CompletableFuture<?>> futureList = new ArrayList<>();
         futureList.addAll(l1);
@@ -70,7 +70,7 @@ public class IntESETLService {
     public List<SyncRunnable> syncAll(String esIndexName) {
         return syncAll(esIndexName,
                 10, null, null, 100,
-                true, 100, null, null, null, false, 100);
+                true, 100, null, null, null, false, 50);
     }
 
     public Object syncById(Long[] id,
@@ -79,11 +79,11 @@ public class IntESETLService {
     }
 
     public List<CompletableFuture<Counter>> updateEsDiff(String esIndexName) {
-        return updateEsDiff(esIndexName, null, null, 1000, 0, null, 100, null, null);
+        return updateEsDiff(esIndexName, null, null, 1000, 0, null, 50, null, null);
     }
 
     public List<CompletableFuture<Void>> deleteEsTrim(String esIndexName) {
-        return deleteEsTrim(esIndexName, null, null, 1000, 100, null);
+        return deleteEsTrim(esIndexName, null, null, 1000, 50, null);
     }
 
     public List<CompletableFuture<Void>> deleteEsTrim(String esIndexName,
@@ -136,7 +136,7 @@ public class IntESETLService {
                             if (endId != null
                                     && searchAfter != null && searchAfter.length > 0
                                     && searchAfter[0] != null
-                                    && Long.parseLong(searchAfter[0].toString()) >= endId) {
+                                    && isEndSearchAfter(searchAfter[0], endId)) {
                                 break;
                             }
                             ESTemplate.ESSearchResponse searchResponse = esTemplate.searchAfterId(esMapping, searchAfter, offsetAdd);
@@ -175,6 +175,23 @@ public class IntESETLService {
             });
         }
         return futureList;
+    }
+
+    /**
+     * 避免id字段的es类型为keyword，数据库为int
+     *
+     * @param searchAfter id字段值
+     * @param endId       最大范围
+     * @return true=结束遍历searchAfter
+     */
+    private static boolean isEndSearchAfter(Object searchAfter, Long endId) {
+        if (searchAfter instanceof String) {
+            return ((String) searchAfter).compareTo(endId.toString()) >= 0;
+        } else if (searchAfter instanceof Number) {
+            return ((Number) searchAfter).longValue() >= endId;
+        } else {
+            return Long.parseLong(searchAfter.toString()) >= endId;
+        }
     }
 
     public List<CompletableFuture<Counter>> updateEsDiff(String esIndexName,
@@ -341,7 +358,7 @@ public class IntESETLService {
                     if (endId != null
                             && searchAfter != null && searchAfter.length > 0
                             && searchAfter[0] != null
-                            && Long.parseLong(searchAfter[0].toString()) >= endId) {
+                            && isEndSearchAfter(searchAfter[0], endId)) {
                         break;
                     }
                     ESTemplate.ESSearchResponse searchResponse = esTemplate.searchAfter(esMapping, selectFields, null, searchAfter, offsetAdd, esQueryBodyJson);
@@ -391,7 +408,7 @@ public class IntESETLService {
     }
 
     public List<CompletableFuture<Counter>> updateEsNestedDiff(String esIndexName) {
-        return updateEsNestedDiff(esIndexName, null, null, 1000, 0, null, 1000, null, null);
+        return updateEsNestedDiff(esIndexName, null, null, 1000, 0, null, 50, null, null);
     }
 
     public List<CompletableFuture<Counter>> updateEsNestedDiff(String esIndexName,
@@ -495,7 +512,7 @@ public class IntESETLService {
                     if (endId != null
                             && searchAfter != null && searchAfter.length > 0
                             && searchAfter[0] != null
-                            && Long.parseLong(searchAfter[0].toString()) >= endId) {
+                            && isEndSearchAfter(searchAfter[0], endId)) {
                         break;
                     }
                     ESTemplate.ESSearchResponse searchResponse = esTemplate.searchAfter(esMapping, diffFieldsFinal.toArray(new String[0]), null, searchAfter, offsetAdd, esQueryBodyJson);

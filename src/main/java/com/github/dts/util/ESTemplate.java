@@ -77,7 +77,7 @@ public interface ESTemplate extends AutoCloseable {
 
     ESBulkRequest.ESBulkResponse deleteByRange(ESMapping mapping, String fieldName, Object minValue, Object maxValue, Integer limit);
 
-    ESSearchResponse searchAfter(ESMapping mapping, String[] includes, String[] excludes, Object[] searchAfter, Integer limit, String queryBodyJson);
+    ESSearchResponse searchAfter(ESMapping mapping, String[] includes, String[] excludes, Object[] searchAfter, Integer limit, Object queryBodyJson);
 
     ESSearchResponse searchAfterId(ESMapping mapping, Object[] searchAfter, Integer limit);
 

@@ -125,7 +125,7 @@ public abstract class AbstractEsETLStringController {
     public int deleteEsTrim(@RequestParam(value = "esIndexName", required = true) String esIndexName,
                             @RequestParam(value = "adapterNames", required = false) String[] adapterNames,
                             @RequestParam(value = "offsetAdd", required = false, defaultValue = "1000") int offsetAdd,
-                            @RequestParam(value = "maxSendMessageDeleteIdSize", required = false, defaultValue = "1000") int maxSendMessageDeleteIdSize) {
+                            @RequestParam(value = "maxSendMessageDeleteIdSize", required = false, defaultValue = "50") int maxSendMessageDeleteIdSize) {
         return stringEsETLService.deleteEsTrim(esIndexName, offsetAdd, maxSendMessageDeleteIdSize,
                 adapterNames == null ? null : Arrays.asList(adapterNames)).size();
     }

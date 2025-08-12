@@ -73,15 +73,15 @@ public class StringEsETLService {
     public List<CompletableFuture<?>> checkAll(String esIndexName, List<String> adapterNames, int offsetAdd, String sqlWhere, String esQueryBodyJson) {
         List<CompletableFuture<?>> futureList = new ArrayList<>();
 
-        futureList.addAll(updateEsNestedDiff(esIndexName, null, offsetAdd, null, 100, adapterNames, esQueryBodyJson));
-        futureList.addAll(syncAll(esIndexName, "0", offsetAdd, true, 100, null, adapterNames, sqlWhere, true, 100));
-        futureList.addAll(updateEsDiff(esIndexName, offsetAdd, null, 100, adapterNames, esQueryBodyJson));
+        futureList.addAll(updateEsNestedDiff(esIndexName, null, offsetAdd, null, 50, adapterNames, esQueryBodyJson));
+        futureList.addAll(syncAll(esIndexName, "0", offsetAdd, true, 100, null, adapterNames, sqlWhere, true, 50));
+        futureList.addAll(updateEsDiff(esIndexName, offsetAdd, null, 50, adapterNames, esQueryBodyJson));
         return futureList;
     }
 
     public List<CompletableFuture<Void>> syncAll(
             String esIndexName) {
-        return syncAll(esIndexName, "0", 500, true, 100, null, null, null, false, 100);
+        return syncAll(esIndexName, "0", 500, true, 100, null, null, null, false, 50);
     }
 
     public Object syncById(String[] id,
@@ -90,11 +90,11 @@ public class StringEsETLService {
     }
 
     public Collection<CompletableFuture<Void>> updateEsDiff(String esIndexName) {
-        return updateEsDiff(esIndexName, 1000, null, 100, null, null);
+        return updateEsDiff(esIndexName, 1000, null, 50, null, null);
     }
 
     public List<CompletableFuture<Void>> deleteEsTrim(String esIndexName) {
-        return deleteEsTrim(esIndexName, 1000, 100, null);
+        return deleteEsTrim(esIndexName, 1000, 50, null);
     }
 
     public List<CompletableFuture<Void>> syncAll(
@@ -434,7 +434,7 @@ public class StringEsETLService {
     }
 
     public List<CompletableFuture<Void>> updateEsNestedDiff(String esIndexName) {
-        return updateEsNestedDiff(esIndexName, null, 500, null, 1000, null, null);
+        return updateEsNestedDiff(esIndexName, null, 500, null, 50, null, null);
     }
 
     public List<CompletableFuture<Void>> updateEsNestedDiff(String esIndexName,

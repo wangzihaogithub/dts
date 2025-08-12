@@ -3,6 +3,7 @@ package com.github.dts.util;
 import com.github.dts.util.ESSyncConfig.ESMapping;
 import com.github.dts.util.SchemaItem.FieldItem;
 import org.elasticsearch.ElasticsearchStatusException;
+import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.index.query.RangeQueryBuilder;
@@ -12,6 +13,11 @@ import org.elasticsearch.script.ScriptType;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.aggregations.AggregationBuilders;
 import org.elasticsearch.search.aggregations.metrics.NumericMetricsAggregation;
+import org.elasticsearch.search.builder.SearchSourceBuilder;
+import org.elasticsearch.xcontent.DeprecationHandler;
+import org.elasticsearch.xcontent.NamedXContentRegistry;
+import org.elasticsearch.xcontent.XContentParser;
+import org.elasticsearch.xcontent.json.JsonXContent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -22,6 +28,7 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ExecutionException;
 import java.util.function.Function;
 
 /**
@@ -262,28 +269,73 @@ public class DefaultESTemplate implements ESTemplate {
         return searchAfter(mapping, new String[]{mapping.get_id()}, null, searchAfter, limit, null);
     }
 
+    private static boolean isEmptyQueryBodyJson(Object queryBodyJson) {
+        if (queryBodyJson == null) {
+            return true;
+        }
+        if (queryBodyJson instanceof CharSequence) {
+            return Util.isBlank(queryBodyJson.toString());
+        }
+        if (queryBodyJson instanceof Map) {
+            return ((Map<?, ?>) queryBodyJson).isEmpty();
+        }
+        return false;
+    }
+
     @Override
-    public ESSearchResponse searchAfter(ESMapping mapping, String[] includes, String[] excludes, Object[] searchAfter, Integer limit, String queryBodyJson) {
-        ESConnection.ESSearchRequest esSearchRequest = new ESConnection.ESSearchRequest(mapping.get_index());
-        if (!Util.isBlank(queryBodyJson)) {
+    public ESSearchResponse searchAfter(ESMapping mapping, String[] includes, String[] excludes, Object[] searchAfter, Integer limit, Object queryBodyJson) {
+        Map<String, Object> requestBody = new LinkedHashMap<>();
+        if (!isEmptyQueryBodyJson(queryBodyJson)) {
             try {
-                esSearchRequest.source(queryBodyJson);
+                Map map;
+                if (queryBodyJson instanceof CharSequence) {
+                    map = JsonUtil.objectReader().readValue(queryBodyJson.toString(), Map.class);
+                } else if (queryBodyJson instanceof Map) {
+                    map = (Map) queryBodyJson;
+                } else {
+                    throw new IllegalArgumentException("queryBodyJson no support class type " + queryBodyJson.getClass());
+                }
+                requestBody.putAll(map);
             } catch (IOException e) {
                 Util.sneakyThrows(e);
             }
         }
         if (searchAfter != null) {
-            esSearchRequest.searchAfter(searchAfter);
+            requestBody.put("search_after", searchAfter);
         }
-        esSearchRequest.fetchSource(includes, excludes);
-        esSearchRequest.sort(mapping.get_id(), "ASC");
         if (limit != null) {
-            esSearchRequest.size(limit);
+            requestBody.put("size", limit);
         }
-        SearchResponse response = esSearchRequest.getResponse(this.esConnection);
+        Map<String, Object> _source = new HashMap<>(2);
+        if (includes != null && includes.length > 0) {
+            _source.put("includes", includes);
+        }
+        if (excludes != null && excludes.length > 0) {
+            _source.put("excludes", excludes);
+        }
+        if (!_source.isEmpty()) {
+            requestBody.put("_source", _source);
+        }
+        requestBody.put("sort", Collections.singletonList(Collections.singletonMap(mapping.get_id(), Collections.singletonMap("order", "ASC"))));
         ESSearchResponse searchResponse = new ESSearchResponse();
-        for (SearchHit hit : response.getHits()) {
-            searchResponse.getHitList().add(new Hit(hit.getId(), hit.getSourceAsMap(), hit.getSortValues()));
+        try {
+            CompletableFuture<Map<String, Object>> search = esConnection.search(mapping.get_index(), requestBody);
+            try {
+                Map<String, Object> responseBody = search.get();
+                Map<String, Object> hits = (Map) responseBody.get("hits");
+                List<Map<String, Object>> rowList = (List) hits.get("hits");
+                for (Map<String, Object> row : rowList) {
+                    Object id = row.get("_id");
+                    Map source = (Map) row.get("_source");
+                    List<Object> sort = (List) row.get("sort");
+                    searchResponse.getHitList().add(new Hit(Objects.toString(id, null), source, sort.toArray()));
+                }
+            } catch (InterruptedException | ExecutionException e) {
+                Util.sneakyThrows(e);
+            }
+        } catch (IOException e) {
+            // 客户端没请求过去
+            Util.sneakyThrows(e);
         }
         return searchResponse;
     }
