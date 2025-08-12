@@ -3,7 +3,6 @@ package com.github.dts.cluster;
 import com.github.dts.util.KeepaliveSocket;
 
 import java.io.IOException;
-import java.util.List;
 
 public class SdkInstance {
     private String ip;

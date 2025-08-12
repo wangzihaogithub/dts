@@ -8,7 +8,6 @@ import com.github.dts.impl.rds.RDSAdapter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import javax.sql.DataSource;
-import java.io.File;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URI;

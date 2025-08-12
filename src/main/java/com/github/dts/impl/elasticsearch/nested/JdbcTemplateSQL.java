@@ -1,8 +1,8 @@
 package com.github.dts.impl.elasticsearch.nested;
 
 import com.github.dts.util.CacheMap;
-import com.github.dts.util.ESSyncUtil;
 import com.github.dts.util.ColumnItem;
+import com.github.dts.util.ESSyncUtil;
 import com.github.dts.util.SqlParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

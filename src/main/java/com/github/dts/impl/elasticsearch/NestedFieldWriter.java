@@ -4,7 +4,6 @@ import com.github.dts.impl.elasticsearch.nested.JdbcTemplateSQL;
 import com.github.dts.impl.elasticsearch.nested.MergeJdbcTemplateSQL;
 import com.github.dts.impl.elasticsearch.nested.SQL;
 import com.github.dts.util.*;
-import com.github.dts.util.Lists;
 
 import java.util.*;
 import java.util.concurrent.ExecutorService;

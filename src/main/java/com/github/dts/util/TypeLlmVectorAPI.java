@@ -6,7 +6,6 @@ import org.slf4j.LoggerFactory;
 import java.lang.reflect.InvocationTargetException;
 import java.util.*;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.CompletableFuture;
 
 public class TypeLlmVectorAPI {
     private static final Logger log = LoggerFactory.getLogger(TypeLlmVectorAPI.class);

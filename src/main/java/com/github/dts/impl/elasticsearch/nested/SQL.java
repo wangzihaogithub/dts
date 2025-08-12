@@ -3,7 +3,6 @@ package com.github.dts.impl.elasticsearch.nested;
 import com.github.dts.util.DateUtil;
 import com.github.dts.util.ESSyncUtil;
 
-import java.text.SimpleDateFormat;
 import java.util.*;
 
 /**

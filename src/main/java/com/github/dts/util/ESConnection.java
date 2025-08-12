@@ -37,12 +37,7 @@ import org.elasticsearch.rest.RestStatus;
 import org.elasticsearch.script.Script;
 import org.elasticsearch.script.ScriptType;
 import org.elasticsearch.search.aggregations.AggregationBuilder;
-import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.elasticsearch.search.sort.SortOrder;
-import org.elasticsearch.xcontent.DeprecationHandler;
-import org.elasticsearch.xcontent.NamedXContentRegistry;
-import org.elasticsearch.xcontent.XContentParser;
-import org.elasticsearch.xcontent.json.JsonXContent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

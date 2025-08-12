@@ -2,10 +2,10 @@ package com.github.dts.impl.elasticsearch.basic;
 
 import com.github.dts.impl.elasticsearch.nested.JdbcTemplateSQL;
 import com.github.dts.impl.elasticsearch.nested.SQL;
-import com.github.dts.util.SqlDependent;
 import com.github.dts.util.Dml;
 import com.github.dts.util.ESSyncConfig;
 import com.github.dts.util.ESTemplate;
+import com.github.dts.util.SqlDependent;
 
 import java.util.List;
 import java.util.Map;
