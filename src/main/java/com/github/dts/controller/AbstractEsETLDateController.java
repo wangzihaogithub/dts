@@ -139,7 +139,7 @@ public abstract class AbstractEsETLDateController {
     public Map<String, Map<String, Object>> status() {
         Map<String, Map<String, Object>> statusMap = new LinkedHashMap<>();
         for (ESAdapter esAdapter : startupServer.getAdapter(ESAdapter.class)) {
-            Timestamp lastSqlTimestamp = esAdapter.getLastSqlTimestamp();
+            Timestamp lastSqlTimestamp = esAdapter.getLastBinlogTimestamp();
             Map<String, Object> status = new LinkedHashMap<>();
             status.put("name", esAdapter.getName());
             status.put("clientIdentity", esAdapter.getClientIdentity());

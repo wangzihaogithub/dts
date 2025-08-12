@@ -110,8 +110,8 @@ class NestedMainJoinTableRunnable extends CompletableFuture<Void> implements Run
                 EsSyncRunnableStatus.Row row = new EsSyncRunnableStatus.Row();
                 row.setTotal(value.dmlList.size());
                 row.setCurr(value.bulkRequestList.commitRequests());
-                row.setBinlogTimestamp(value.maxTimestamp);
-                row.setInfo("dmlList=" + value.dmlList);
+                row.setBinlogTimestamp(String.valueOf(value.maxTimestamp));
+                row.setInfo(value.dmlList.stream().map(SqlDependent::toString).collect(Collectors.toList()));
                 status.getRows().add(row);
             }
             return status;

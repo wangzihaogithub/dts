@@ -17,16 +17,16 @@ public class EsSyncRunnableStatus {
     }
 
     public static class Row {
-        private Timestamp binlogTimestamp;
+        private String binlogTimestamp;
         private long total;
         private long curr;
-        private String info;
+        private Object info;
 
-        public Timestamp getBinlogTimestamp() {
+        public String getBinlogTimestamp() {
             return binlogTimestamp;
         }
 
-        public void setBinlogTimestamp(Timestamp binlogTimestamp) {
+        public void setBinlogTimestamp(String binlogTimestamp) {
             this.binlogTimestamp = binlogTimestamp;
         }
 
@@ -46,11 +46,11 @@ public class EsSyncRunnableStatus {
             this.curr = curr;
         }
 
-        public String getInfo() {
+        public Object getInfo() {
             return info;
         }
 
-        public void setInfo(String info) {
+        public void setInfo(Object info) {
             this.info = info;
         }
     }

@@ -43,7 +43,7 @@ public class ESAdapter implements Adapter {
     private int streamChunkSize = 10000;
     private int maxIdIn = 1000;
     private RealtimeListener connectorCommitListener;
-    private Timestamp lastSqlTimestamp = null;
+    private Timestamp lastBinlogTimestamp = null;
 
     @Override
     public void init(CanalConfig.CanalAdapter canalAdapter,
@@ -187,10 +187,10 @@ public class ESAdapter implements Adapter {
             ESTemplate.BulkRequestList bulkRequestList = esTemplate.newBulkRequestList(BulkPriorityEnum.HIGH);
             List<Dml> syncDmlList = dmls.stream().filter(e -> !Boolean.TRUE.equals(e.getIsDdl())).collect(Collectors.toList());
             String tables = syncDmlList.stream().map(Dml::getTable).distinct().collect(Collectors.joining(","));
-            Dml max = syncDmlList.stream().filter(e -> e.getEs() != null).max(Comparator.comparing(Dml::getEs)).orElse(null);
+            Dml max = dmls.stream().filter(e -> e.getEs() != null).max(Comparator.comparing(Dml::getEs)).orElse(null);
             Timestamp lastSqlTimestamp = max == null ? null : new Timestamp(max.getEs());
             if (!etl && lastSqlTimestamp != null) {
-                this.lastSqlTimestamp = lastSqlTimestamp;
+                this.lastBinlogTimestamp = lastSqlTimestamp;
             }
             // basic field change
             BasicFieldWriter.WriteResult writeResult = new BasicFieldWriter.WriteResult();
@@ -446,8 +446,8 @@ public class ESAdapter implements Adapter {
      *
      * @return 最后一次增量的SQL时间
      */
-    public Timestamp getLastSqlTimestamp() {
-        return lastSqlTimestamp;
+    public Timestamp getLastBinlogTimestamp() {
+        return lastBinlogTimestamp;
     }
 
     /**

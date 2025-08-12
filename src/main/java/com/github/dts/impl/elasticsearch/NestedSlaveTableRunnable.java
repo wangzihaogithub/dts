@@ -12,6 +12,7 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 /**
  * Nested字段的从表发生变化时，对应的处理逻辑
@@ -127,11 +128,18 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
         EsSyncRunnableStatus status() {
             EsSyncRunnableStatus status = new EsSyncRunnableStatus();
             for (NestedSlaveTableRunnable value : runnableMap.values()) {
+                List<MergeJdbcTemplateSQL<DependentSQL>> nestedMainSqlListMerge = value.nestedMainSqlListMerge;
+                List<MergeJdbcTemplateSQL<DependentSQL>> joinForeignKeyMerge = value.joinForeignKeyMerge;
+
                 EsSyncRunnableStatus.Row row = new EsSyncRunnableStatus.Row();
                 row.setTotal(value.joinBySlaveTable.nestedMainSqlList.size() + value.joinForeignKey.childSqlSet.size());
                 row.setCurr(value.bulkRequestList.commitRequests());
-                row.setBinlogTimestamp(value.timestamp);
-                row.setInfo("nestedMainSqlListMerge=" + value.nestedMainSqlListMerge + ", joinForeignKeyMerge=" + value.joinForeignKeyMerge);
+                row.setBinlogTimestamp(String.valueOf(value.timestamp));
+                Map<String, Object> info = new LinkedHashMap<>(3);
+                info.put("updateDmlList", value.updateDmlList.stream().map(SqlDependent::toString).collect(Collectors.toList()));
+                info.put("nestedMainSqlListMerge", nestedMainSqlListMerge == null ? null : nestedMainSqlListMerge.stream().map(SQL::toString).collect(Collectors.toList()));
+                info.put("joinForeignKeyMerge", joinForeignKeyMerge == null ? null : joinForeignKeyMerge.stream().map(SQL::toString).collect(Collectors.toList()));
+                row.setInfo(info);
                 status.getRows().add(row);
             }
             return status;
