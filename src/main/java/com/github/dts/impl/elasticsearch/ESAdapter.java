@@ -188,9 +188,9 @@ public class ESAdapter implements Adapter {
             List<Dml> syncDmlList = dmls.stream().filter(e -> !Boolean.TRUE.equals(e.getIsDdl())).collect(Collectors.toList());
             String tables = syncDmlList.stream().map(Dml::getTable).distinct().collect(Collectors.joining(","));
             Dml max = dmls.stream().filter(e -> e.getEs() != null).max(Comparator.comparing(Dml::getEs)).orElse(null);
-            Timestamp lastSqlTimestamp = max == null ? null : new Timestamp(max.getEs());
-            if (!etl && lastSqlTimestamp != null) {
-                this.lastBinlogTimestamp = lastSqlTimestamp;
+            Timestamp lastBinlogTimestamp = max == null ? null : new Timestamp(max.getEs());
+            if (!etl && lastBinlogTimestamp != null) {
+                this.lastBinlogTimestamp = lastBinlogTimestamp;
             }
             // basic field change
             BasicFieldWriter.WriteResult writeResult = new BasicFieldWriter.WriteResult();
@@ -226,7 +226,7 @@ public class ESAdapter implements Adapter {
             SqlDependentGroup sqlDependentGroup = nestedFieldWriter.convertToSqlDependentGroup(syncDmlList, onlyCurrentIndex, onlyEffect);
 
             // join async change
-            List<CompletableFuture<?>> futures = asyncRunSqlDependent(lastSqlTimestamp, joinUpdateSize,
+            List<CompletableFuture<?>> futures = asyncRunSqlDependent(lastBinlogTimestamp, joinUpdateSize,
                     bulkRequestList, sqlDependentGroup.selectMainTableJoinDependentList(), sqlDependentGroup.selectSlaveTableDependentList(), cacheMap);
 
             // nested type ： main table change
@@ -240,7 +240,7 @@ public class ESAdapter implements Adapter {
                             syncDmlList.size(),
                             basicFieldWriterCost,
                             System.currentTimeMillis() - timestamp,
-                            lastSqlTimestamp, tables);
+                            lastBinlogTimestamp, tables);
                     bulkRequestList.commit(esTemplate, null);
                 }
             }
@@ -258,7 +258,7 @@ public class ESAdapter implements Adapter {
             }
 
             // future
-            CompletableFuture<Void> future = allOfCompleted(futures, commitListener, sqlDependentGroup, writeResult, startTimestamp, lastSqlTimestamp, refresh);
+            CompletableFuture<Void> future = allOfCompleted(futures, commitListener, sqlDependentGroup, writeResult, startTimestamp, lastBinlogTimestamp, refresh);
             // refresh
             if (refresh && dmls.size() < refreshThreshold) {
                 if (changeListenerList || changeNestedFieldMainTable) {
