@@ -37,9 +37,10 @@ public class IntESETLService {
     private final String name;
     private boolean stop = false;
     private boolean sendMessage = true;
+    private int maxChangeInfoListSize = Integer.MAX_VALUE;
 
     public IntESETLService(String name, StartupServer startupServer) {
-        this(name, startupServer, 1000);
+        this(name, startupServer, Math.max(Runtime.getRuntime().availableProcessors() * 20, 50));
     }
 
     public IntESETLService(String name, StartupServer startupServer, int threads) {
@@ -47,6 +48,14 @@ public class IntESETLService {
         this.startupServer = startupServer;
         this.executorService = Util.newFixedThreadPool(threads, 5000L,
                 name, true);
+    }
+
+    public void setMaxChangeInfoListSize(int maxChangeInfoListSize) {
+        this.maxChangeInfoListSize = maxChangeInfoListSize;
+    }
+
+    public int getMaxChangeInfoListSize() {
+        return maxChangeInfoListSize;
     }
 
     public void stopSync() {
@@ -245,7 +254,7 @@ public class IntESETLService {
                     counterList[i] = counter;
                     futureList[i] = newUpdateEsDiffRunnable(counter, esTemplate, config, range.getStart(), range.isLast() ? null : range.getEnd(), offsetAdd, diffFields, maxSendMessageSize, esQueryBodyJson);
                 }
-                CompletableFuture<Counter> future = CompletableFuture.allOf(futureList).thenApply(unused -> Counter.merge(counterList, maxSendMessageSize));
+                CompletableFuture<Counter> future = CompletableFuture.allOf(futureList).thenApply(unused -> Counter.merge(counterList, maxSendMessageSize, maxChangeInfoListSize));
                 resultFutureList.add(future);
                 future.thenAccept(merge -> {
                             if (sendMessage) {
@@ -254,7 +263,7 @@ public class IntESETLService {
                         })
                         .exceptionally(throwable -> {
                             log.error("updateEsDiff error {}", throwable.toString(), throwable);
-                            Counter merge = Counter.merge(counterList, maxSendMessageSize);
+                            Counter merge = Counter.merge(counterList, maxSendMessageSize, maxChangeInfoListSize);
                             sendDiffError(messageService, throwable, timestamp, merge.hitListSize, merge.deleteSize, merge.deleteIdList, merge.updateSize, merge.updateIdList, merge.allRowChangeMap, diffFields, adapter, lastConfig[0], merge.lastId);
                             return null;
                         });
@@ -278,9 +287,10 @@ public class IntESETLService {
         private long updateSize = 0;
         private final ArrayList<String> deleteIdList = new ArrayList<>();
         private final ArrayList<String> updateIdList = new ArrayList<>();
+        private final ArrayList<String> changeInfoList = new ArrayList<>();
         private final Map<String, AtomicInteger> allRowChangeMap = new LinkedHashMap<>();
 
-        public static Counter merge(Counter[] counters, int maxSendMessageSize) {
+        public static Counter merge(Counter[] counters, int maxSendMessageSize, int maxChangeInfoListSize) {
             Counter merge = new Counter();
             if (counters.length == 0) {
                 return merge;
@@ -291,6 +301,7 @@ public class IntESETLService {
             merge.lastId = counters[counters.length - 1].lastId;
             ArrayList<String> deleteIdList = new ArrayList<>();
             ArrayList<String> updateIdList = new ArrayList<>();
+            ArrayList<String> changeInfoList = new ArrayList<>();
             for (Counter counter : counters) {
                 merge.hitListSize += counter.hitListSize;
                 merge.deleteSize += counter.deleteSize;
@@ -301,10 +312,14 @@ public class IntESETLService {
                 if (updateIdList.size() < maxSendMessageSize) {
                     updateIdList.addAll(counter.updateIdList);
                 }
+                if (changeInfoList.size() < Math.min(maxChangeInfoListSize, maxSendMessageSize)) {
+                    changeInfoList.addAll(counter.changeInfoList);
+                }
                 counter.allRowChangeMap.forEach((k, v) -> merge.allRowChangeMap.computeIfAbsent(k, u -> new AtomicInteger()).addAndGet(v.get()));
             }
             merge.deleteIdList.addAll(deleteIdList.subList(0, Math.min(deleteIdList.size(), maxSendMessageSize)));
             merge.updateIdList.addAll(updateIdList.subList(0, Math.min(updateIdList.size(), maxSendMessageSize)));
+            merge.changeInfoList.addAll(changeInfoList.subList(0, Math.min(changeInfoList.size(), Math.min(maxChangeInfoListSize, maxSendMessageSize))));
             return merge;
         }
 
@@ -470,16 +485,16 @@ public class IntESETLService {
                     counterList[i] = counter;
                     futureList[i] = newUpdateEsNestedDiffRunnable(counter, esTemplate, config, range.getStart(), range.isLast() ? null : range.getEnd(), offsetAdd, diffFieldsFinal, maxSendMessageSize, maxIdInCount, esQueryBodyJson);
                 }
-                CompletableFuture<Counter> future = CompletableFuture.allOf(futureList).thenApply(unused -> Counter.merge(counterList, maxSendMessageSize));
+                CompletableFuture<Counter> future = CompletableFuture.allOf(futureList).thenApply(unused -> Counter.merge(counterList, maxSendMessageSize, maxChangeInfoListSize));
                 resultFutureList.add(future);
                 future.thenAccept(merge -> {
                             if (sendMessage) {
-                                sendNestedDiffDone(messageService, timestamp, merge.hitListSize, merge.updateSize, merge.updateIdList, merge.allRowChangeMap, diffFieldsFinal, adapter, config);
+                                sendNestedDiffDone(messageService, timestamp, merge.hitListSize, merge.updateSize, merge.updateIdList, merge.changeInfoList, merge.allRowChangeMap, diffFieldsFinal, adapter, config);
                             }
                         })
                         .exceptionally(throwable -> {
                             log.error("updateEsNestedDiff error {}", throwable.toString(), throwable);
-                            Counter merge = Counter.merge(counterList, maxSendMessageSize);
+                            Counter merge = Counter.merge(counterList, maxSendMessageSize, maxChangeInfoListSize);
                             sendNestedDiffError(messageService, throwable, timestamp, merge.hitListSize, merge.updateSize, merge.updateIdList, merge.allRowChangeMap, diffFieldsFinal, adapter, lastConfig[0], merge.lastId);
                             return null;
                         });
@@ -496,6 +511,7 @@ public class IntESETLService {
         CompletableFuture<Void> future = new CompletableFuture<>();
         executorService.execute(() -> {
             try {
+                JsonUtil.ObjectWriter objectWriter = JsonUtil.objectWriter();
                 ESSyncConfig.ESMapping esMapping = config.getEsMapping();
 
                 String pkFieldName = esMapping.getSchemaItem().getIdField().getFieldName();
@@ -581,15 +597,25 @@ public class IntESETLService {
                             counter.lastId = id;
                             Object esData = hit.get(field);
                             List<Map<String, Object>> mysqlData = dbMap.get(id);
-                            if (ESSyncUtil.equalsNestedRowData(mysqlData, esData, objectField)) {
+                            Collection<String> rowChangeList = ESSyncUtil.getNestedRowChangeList(mysqlData, esData, objectField);
+                            if (rowChangeList.isEmpty()) {
                                 continue;
                             }
-                            counter.allRowChangeMap.computeIfAbsent(field, __ -> new AtomicInteger()).incrementAndGet();
+                            Object mysqlValue = EsGetterUtil.getSqlObjectMysqlValue(objectField, mysqlData, esTemplate, esMapping);
+
+                            rowChangeList.forEach(f -> counter.allRowChangeMap.computeIfAbsent(f, __ -> new AtomicInteger()).incrementAndGet());
                             counter.updateSize++;
                             if (counter.updateIdList.size() < maxSendMessageSize) {
                                 counter.updateIdList.add(id);
                             }
-                            Object mysqlValue = EsGetterUtil.getSqlObjectMysqlValue(objectField, mysqlData, esTemplate, esMapping);
+                            if (counter.changeInfoList.size() < Math.min(maxChangeInfoListSize, maxSendMessageSize)) {
+                                Map<String, Object> info = new LinkedHashMap<>(3);
+                                info.put("id", id);
+                                info.put("field", field);
+                                info.put("mysqlValue", mysqlValue);
+                                info.put("esValue", esData);
+                                counter.changeInfoList.add(objectWriter.writeValueAsString(info));
+                            }
                             Map<String, Object> objectMysql = Collections.singletonMap(objectField.getFieldName(), mysqlValue);
                             esTemplate.update(esMapping, id, objectMysql, null);//updateEsNestedDiff
                             if (++uncommit >= 35) {
@@ -850,7 +876,7 @@ public class IntESETLService {
                 + ",\n\n 影响字段 = " + (onlyFieldNameSet == null ? "全部" : onlyFieldNameSet)
                 + ",\n\n 校验条数 = " + dmlSize
                 + ",\n\n 更新条数 = " + updateSize
-                + ",\n\n 更新ID = " + updateIdList
+                + ",\n\n 更新ID(预览) = " + updateIdList
                 + ",\n\n 明细 = " + runnableList.stream().map(SyncRunnable::toString).collect(Collectors.joining("\r\n,"));
         messageService.send(title, content);
     }
@@ -942,7 +968,7 @@ public class IntESETLService {
                 + ",\n\n 校验条数 = " + dmlSize
                 + ",\n\n 删除条数 = " + deleteSize
                 + ",\n\n 更新条数 = " + updateSize
-                + ",\n\n 更新ID = " + updateIdList
+                + ",\n\n 更新ID(预览) = " + updateIdList
                 + ",\n\n 删除ID = " + deleteIdList;
         messageService.send(title, content);
     }
@@ -971,7 +997,7 @@ public class IntESETLService {
                 + ",\n\n 异常 = " + throwable
                 + ",\n\n 删除条数 = " + deleteSize
                 + ",\n\n 更新条数 = " + updateSize
-                + ",\n\n 更新ID = " + updateIdList
+                + ",\n\n 更新ID(预览) = " + updateIdList
                 + ",\n\n 删除ID = " + deleteIdList
                 + ",\n\n 明细 = " + writer;
         messageService.send(title, content);
@@ -979,7 +1005,7 @@ public class IntESETLService {
 
     protected void sendNestedDiffDone(AbstractMessageService messageService, Date startTime,
                                       long dmlSize,
-                                      long updateSize, List<String> updateIdList,
+                                      long updateSize, List<String> updateIdList, List<String> changeInfoList,
                                       Map<String, AtomicInteger> allRowChangeMap,
                                       Set<String> diffFields,
                                       ESAdapter adapter, ESSyncConfig config) {
@@ -996,7 +1022,8 @@ public class IntESETLService {
                 + ",\n\n 影响字段数 = " + allRowChangeMap
                 + ",\n\n 校验条数 = " + dmlSize
                 + ",\n\n 更新条数 = " + updateSize
-                + ",\n\n 更新ID = " + updateIdList;
+                + ",\n\n 更新内容(预览) = " + changeInfoList
+                + ",\n\n 更新ID(预览) = " + updateIdList;
         messageService.send(title, content);
     }
 
@@ -1024,7 +1051,7 @@ public class IntESETLService {
                 + ",\n\n 最近的ID = " + lastId
                 + ",\n\n 异常 = " + throwable
                 + ",\n\n 更新条数 = " + updateSize
-                + ",\n\n 更新ID = " + updateIdList
+                + ",\n\n 更新ID(预览) = " + updateIdList
                 + ",\n\n 明细 = " + writer;
         messageService.send(title, content);
     }

@@ -353,9 +353,10 @@ public class ESAdapter implements Adapter {
         }
 
         // nested type ：join table change
-        List<SqlDependent> slaveTableList = slaveTableSqlDependentList.stream()
-                .filter(e -> e.getDml().isTypeUpdate())
-                .collect(Collectors.toList());
+        List<SqlDependent> slaveTableList = slaveTableSqlDependentList;
+//        List<SqlDependent> slaveTableList = slaveTableSqlDependentList.stream()
+//                .filter(e -> e.getDml().isTypeUpdate())
+//                .collect(Collectors.toList());
         if (!slaveTableList.isEmpty()) {
             NestedSlaveTableRunnable runnable = new NestedSlaveTableRunnable(
                     slaveTableList, esTemplate,

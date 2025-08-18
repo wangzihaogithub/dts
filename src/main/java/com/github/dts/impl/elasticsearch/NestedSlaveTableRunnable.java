@@ -227,7 +227,7 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
     private Set<DependentSQL> convertDependentSQL(List<SchemaItem.TableItem> nestedSlaveTableList, SqlDependent sqlDependent, CacheMap cacheMap, int chunkSize) {
         Set<DependentSQL> byChildrenSqlSet = new LinkedHashSet<>();
         for (SchemaItem.TableItem tableItem : nestedSlaveTableList) {
-            SQL nestedChildrenSql = convertNestedSlaveTableSQL(tableItem, sqlDependent);
+            SQL nestedChildrenSql = sqlDependent.getDml().isTypeDelete() ? convertNestedSlaveTableSQLDelete(tableItem, sqlDependent) : convertNestedSlaveTableSQL(tableItem, sqlDependent);
             byChildrenSqlSet.add(new DependentSQL(nestedChildrenSql, sqlDependent, null));
         }
 
@@ -245,7 +245,7 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
                                                                         CacheMap cacheMap, int chunkSize) {
         Set<DependentSQL> byChildrenSqlSet = new LinkedHashSet<>();
         for (SchemaItem.TableItem tableItem : nestedSlaveTableList) {
-            SQL nestedChildrenSql = convertNestedSlaveTableSQL(tableItem, sqlDependent);
+            SQL nestedChildrenSql = sqlDependent.getDml().isTypeDelete() ? convertNestedSlaveTableSQLDelete(tableItem, sqlDependent) : convertNestedSlaveTableSQL(tableItem, sqlDependent);
             byChildrenSqlSet.add(new DependentSQL(nestedChildrenSql, sqlDependent, null));
         }
 
@@ -279,6 +279,14 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
                 Collections.singletonMap(idField.getOwner(), Collections.singletonList(idField.getColumnName())),
                 true);
         return changedSelect + " WHERE " + condition + " ";
+    }
+
+    private SQL convertNestedSlaveTableSQLDelete(SchemaItem.TableItem tableItem, SqlDependent sqlDependent) {
+        String sql1 = sqlDependent.getSchemaItem().sql();
+
+        Map<String, List<String>> columnList = sqlDependent.getSchemaItem().getOnSlaveTableChangeWhereSqlColumnList();
+        String sql2 = SqlParser.changeSelectByJoinTable(sql1, tableItem.getTableName(), tableItem.getAlias(), columnList, true);
+        return SQL.convertToSql(sql2, sqlDependent.getMergeAfterDataMap());
     }
 
     private SQL convertNestedSlaveTableSQL(SchemaItem.TableItem tableItem, SqlDependent sqlDependent) {

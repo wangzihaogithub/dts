@@ -28,13 +28,116 @@ import java.util.stream.Stream;
  */
 public class SqlParser {
     public static final Map<String, String> CHANGE_SELECT_CACHE = new ConcurrentHashMap<>();
+    public static final Map<String, String> CHANGE_SELECT_JOIN_CACHE = new ConcurrentHashMap<>();
     private static final SQLExpr TRUE_EXPR = SQLUtils.toMySqlExpr("true");
+    private static final SQLExpr FALSE_EXPR = SQLUtils.toMySqlExpr("false");
+
     private static final Map<String, Map<String, List<String>>> GET_COLUMN_LIST_CACHE = new ConcurrentHashMap<>();
     private static final Map<String, Map<String, List<String>>> ORDER_BY_COLUMN_LIST_CACHE = new ConcurrentHashMap<>();
 
     private static final Map<String, String> REMOVE_GROUP_BY_CACHE = new ConcurrentHashMap<>();
 
+    private static boolean equalsAliasName(String aliasName, String aliasName2) {
+        if (aliasName == null) {
+            aliasName = "";
+        }
+        if (aliasName2 == null) {
+            aliasName2 = "";
+        }
+        return aliasName.equals(aliasName2);
+    }
+
+    public static String changeSelectByJoinTable(String sql, String tableName, String aliasName,
+                                                 Map<String, List<String>> columnList, boolean distinct) {
+        return CHANGE_SELECT_JOIN_CACHE.computeIfAbsent(sql + tableName + aliasName + columnList + distinct, unused -> {
+            SQLStatementParser parser = new MySqlStatementParser(sql);
+            List<SQLExpr> on = new ArrayList<>();
+            SQLSelectStatement statement = (SQLSelectStatement) parser.parseStatement();
+            statement.accept(new SQLASTVisitorAdapter() {
+                @Override
+                public boolean visit(SQLJoinTableSource x) {
+                    SQLTableSource right = x.getRight();
+                    if (right instanceof SQLExprTableSource) {
+                        SQLExprTableSource table = (SQLExprTableSource) right;
+                        if (tableName.equalsIgnoreCase(table.getTableName()) && equalsAliasName(aliasName, table.getAlias())) {
+                            on.add(x.getCondition());
+                            x.setCondition(FALSE_EXPR);
+                        }
+                    }
+                    return true;
+                }
+            });
+            SQLSelect select = statement.getSelect();
+            SQLSelectQueryBlock query = select.getQueryBlock();
+            SQLExpr on0 = on.get(0);
+            on0.accept(new SQLASTVisitorAdapter() {
+                @Override
+                public boolean visit(SQLBinaryOpExpr x) {
+                    SQLExpr left = x.getLeft();
+                    SQLExpr right = x.getRight();
+                    if (left instanceof SQLPropertyExpr) {
+                        SQLPropertyExpr l = (SQLPropertyExpr) left;
+                        SQLExpr owner = l.getOwner();
+                        if (owner instanceof SQLName) {
+                            if (equalsAliasName(((SQLName) owner).getSimpleName(), aliasName)) {
+                                SQLExpr mySqlExpr = SQLUtils.toMySqlExpr("#{" + l.getName() + "}");
+                                x.setLeft(mySqlExpr);
+                            }
+                        }
+                    } else if (right instanceof SQLPropertyExpr) {
+                        SQLPropertyExpr l = (SQLPropertyExpr) right;
+                        SQLExpr owner = l.getOwner();
+                        if (owner instanceof SQLName) {
+                            if (equalsAliasName(((SQLName) owner).getSimpleName(), aliasName)) {
+                                SQLExpr mySqlExpr = SQLUtils.toMySqlExpr("#{" + l.getName() + "}");
+                                x.setRight(mySqlExpr);
+                            }
+                        }
+                    }
+                    return true;
+                }
+            });
+
+            SQLExpr where = query.getWhere();
+            if (where == null) {
+                where = on0;
+            } else {
+                where = new SQLBinaryOpExpr(where, SQLBinaryOperator.BooleanAnd, on0);
+            }
+            query.setWhere(where);
+
+            if (distinct) {
+                query.setDistinct();
+            }
+            List<SQLSelectItem> selectList = query.getSelectList();
+            selectList.clear();
+            for (Map.Entry<String, List<String>> entry : columnList.entrySet()) {
+                String owner = entry.getKey();
+                LinkedHashSet<String> names = new LinkedHashSet<>(entry.getValue());
+                for (String name : names) {
+                    selectList.add(new SQLSelectItem(new SQLPropertyExpr(owner, name)));
+                }
+            }
+            return toMysqlString(statement);
+        });
+    }
+
     public static void main(String[] args) {
+        String j = changeSelectByJoinTable("SELECT\n" +
+                        "                corp.id ,\n" +
+                        "                corp.`name`,\n" +
+                        "                GROUP_CONCAT(if(corpName.type = 2, corpName.`name`, null)) as aliasNames,\n" +
+                        "                GROUP_CONCAT(if(corpName.type = 3, corpName.`name`, null)) as historyNames,\n" +
+                        "                corp.group_name as groupCompany,\n" +
+                        "                corp.data_type as dataType,\n" +
+                        "                corp.central_country_ent_flag as centralCountryEntFlag\n" +
+                        "              FROM corp corp\n" +
+                        "              LEFT JOIN corp_name1 corpName1 on corpName1.corp_id = corp.id and corpName1.corp_id = corp.id and corpName1.corp_id = corp.id" +
+                        "              LEFT JOIN corp_name corpName on corpName.corp_id = corp.id ", "corp_name", "corpName",
+
+                Collections.singletonMap("corp", Arrays.asList("id")), true);
+
+
         SchemaItem parse = parse("SELECT\n" +
                 "        id as id,\n" +
                 "        question,\n" +

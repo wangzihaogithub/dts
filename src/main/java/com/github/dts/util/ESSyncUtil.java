@@ -500,71 +500,86 @@ public class ESSyncUtil {
         return list;
     }
 
-    public static boolean equalsNestedRowData(List<Map<String, Object>> mysqlRowData, Object esRowData, ESSyncConfig.ObjectField objectField) {
+    public static Collection<String> getNestedRowChangeList(List<Map<String, Object>> mysqlRowData, Object esRowData, ESSyncConfig.ObjectField objectField) {
+        String parentObjectFieldFieldName = objectField.getFieldName();
         if (isEmpty(esRowData)) {
             if (mysqlRowData == null || mysqlRowData.isEmpty()) {
-                return true;
+                return Collections.emptyList();
+            } else if (isEmpty(mysqlRowData.get(0))) {
+                return Collections.emptyList();
             } else {
-                Map<String, Object> map = mysqlRowData.get(0);
-                return map.isEmpty();
+                return Collections.singletonList(parentObjectFieldFieldName);
             }
         } else if (mysqlRowData == null || mysqlRowData.isEmpty()) {
-            return isEmpty(esRowData);
+            return Collections.singletonList(parentObjectFieldFieldName);
         } else if (objectField.isSqlType()) {
             if (esRowData instanceof Map) {
                 Map es = ((Map<?, ?>) esRowData);
                 Map<String, Object> mysql = mysqlRowData.get(0);
+                List<String> changeList = new ArrayList<>();
                 for (String field : mysql.keySet()) {
                     Object mysqlValue = mysql.get(field);
                     Object esValue = es.get(field);
-                    ESSyncConfig.ObjectField childObjectField = objectField.getEsMapping().getObjectField(objectField.getFieldName(), field);
+                    ESSyncConfig.ObjectField childObjectField = objectField.getEsMapping().getObjectField(parentObjectFieldFieldName, field);
                     if (childObjectField != null) {
                         if (!equalsObjectFieldRowDataValue(mysqlValue, esValue, childObjectField, mysql, es, true)) {
-                            return false;
+                            changeList.add(convertNestedFieldName(parentObjectFieldFieldName, field));
                         }
                     } else if (!equalsRowDataValue(mysqlValue, esValue)) {
-                        return false;
+                        changeList.add(convertNestedFieldName(parentObjectFieldFieldName, field));
                     }
                 }
-                return true;
+                return changeList;
             } else if (esRowData instanceof Collection) {
                 Collection<?> esList = (Collection<?>) esRowData;
                 if (esList.size() != mysqlRowData.size()) {
-                    return false;
+                    return Collections.singletonList(parentObjectFieldFieldName);
                 }
                 boolean requireSequential = isRequireSequential(objectField);
                 if (objectField.getType().isFlatSqlType()) {
                     List<Object> mysqlRowFlatData = flatValue0List(mysqlRowData);
-                    return equalsToStringList(mysqlRowFlatData, esList, requireSequential);
+                    if (equalsToStringList(mysqlRowFlatData, esList, requireSequential)) {
+                        return Collections.emptyList();
+                    } else {
+                        return Collections.singletonList(parentObjectFieldFieldName);
+                    }
                 } else {
                     Iterator<Map<String, Object>> mysqlIterator = mysqlRowData.iterator();
+                    List<String> changeList = new ArrayList<>();
                     for (Object esObj : esList) {
                         if (!(esObj instanceof Map)) {
-                            return false;
+                            return Collections.singletonList(parentObjectFieldFieldName);
                         }
                         Map<String, Object> mysql = mysqlIterator.next();
                         Map<String, Object> es = (Map<String, Object>) esObj;
                         for (String field : mysql.keySet()) {
                             Object mysqlValue = mysql.get(field);
                             Object esValue = es.get(field);
-                            ESSyncConfig.ObjectField fieldObjectField = objectField.getEsMapping().getObjectField(objectField.getFieldName(), field);
+                            ESSyncConfig.ObjectField fieldObjectField = objectField.getEsMapping().getObjectField(parentObjectFieldFieldName, field);
                             if (fieldObjectField != null) {
                                 if (!equalsObjectFieldRowDataValue(mysqlValue, esValue, fieldObjectField, mysql, es, requireSequential)) {
-                                    return false;
+                                    changeList.add(convertNestedFieldName(parentObjectFieldFieldName, field));
                                 }
                             } else if (!equalsRowDataValue(mysqlValue, esValue)) {
-                                return false;
+                                changeList.add(convertNestedFieldName(parentObjectFieldFieldName, field));
                             }
                         }
+                        if (!changeList.isEmpty()) {
+                            return changeList;
+                        }
                     }
-                    return true;
+                    return changeList;
                 }
             } else {
-                return false;
+                return Collections.singletonList(parentObjectFieldFieldName);
             }
         } else {
             throw new IllegalArgumentException("unsupported object type: " + objectField.getType());
         }
+    }
+
+    private static String convertNestedFieldName(String parentFieldName, String fieldName) {
+        return parentFieldName + "." + fieldName;
     }
 
     /**
@@ -635,8 +650,18 @@ public class ESSyncUtil {
             // 这里除了经纬度，其他的应该进不来，其他的进来就是bug（需要外层调用换成 equalsObjectFieldRowDataValue）
             Map<String, Double> mysqlGeo = ESSyncUtil.parseGeoPointToMap(mysql.toString());
             equals = ESSyncUtil.equalsGeoPoint(mysqlGeo, (Map) es);
-        } else if (es instanceof Integer || es instanceof Long) {
-            equals = Long.parseLong(mysql.toString()) == ((Number) es).longValue();
+        } else if (mysql instanceof Integer || mysql instanceof Long || mysql instanceof Byte) {
+            long esLong = es instanceof Number ? ((Number) es).longValue() : Long.parseLong(es.toString());
+            equals = esLong == ((Number) mysql).longValue();
+        } else if (es instanceof Integer || es instanceof Long || es instanceof Byte) {
+            double mysqlLong = mysql instanceof Number ? ((Number) mysql).doubleValue() : Double.parseDouble(mysql.toString());
+            equals = mysqlLong == ((Number) es).longValue();
+        } else if (es instanceof Double || es instanceof Float) {
+            double mysqlDouble = mysql instanceof Number ? ((Number) mysql).doubleValue() : Double.parseDouble(mysql.toString());
+            equals = mysqlDouble == ((Number) es).doubleValue();
+        } else if (mysql instanceof Double || mysql instanceof Float) {
+            double esDouble = es instanceof Number ? ((Number) es).doubleValue() : Double.parseDouble(es.toString());
+            equals = esDouble == ((Number) mysql).doubleValue();
         } else {
             equals = String.valueOf(mysql).equals(String.valueOf(es));
         }

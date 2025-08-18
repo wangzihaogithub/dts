@@ -43,9 +43,10 @@ public class StringEsETLService {
     private final String name;
     private boolean stop = false;
     private boolean sendMessage = true;
+    private int maxChangeInfoListSize = Integer.MAX_VALUE;
 
     public StringEsETLService(String name, StartupServer startupServer) {
-        this(name, startupServer, 1000);
+        this(name, startupServer, Math.max(Runtime.getRuntime().availableProcessors() * 20, 50));
     }
 
     public StringEsETLService(String name, StartupServer startupServer, int threads) {
@@ -53,6 +54,14 @@ public class StringEsETLService {
         this.executorService = Util.newFixedThreadPool(threads, 5000L,
                 name, true);
         this.startupServer = startupServer;
+    }
+
+    public void setMaxChangeInfoListSize(int maxChangeInfoListSize) {
+        this.maxChangeInfoListSize = maxChangeInfoListSize;
+    }
+
+    public int getMaxChangeInfoListSize() {
+        return maxChangeInfoListSize;
     }
 
     public void stopSync() {
@@ -486,10 +495,12 @@ public class StringEsETLService {
                 futureList.add(future);
                 futureItemList.add(future);
                 executorService.execute(() -> {
+                    JsonUtil.ObjectWriter objectWriter = JsonUtil.objectWriter();
                     String lastId = null;
                     long hitListSize = 0;
                     long updateSize = 0;
                     List<String> updateIdList = new ArrayList<>();
+                    List<String> changeInfoList = new ArrayList<>();
                     Timestamp timestamp = new Timestamp(System.currentTimeMillis());
 
                     Map<String, AtomicInteger> lastAllRowChangeMap = Collections.emptyMap();
@@ -577,14 +588,24 @@ public class StringEsETLService {
                                     lastId = id;
                                     Object esData = hit.get(field);
                                     List<Map<String, Object>> mysqlData = dbMap.get(id);
-                                    if (ESSyncUtil.equalsNestedRowData(mysqlData, esData, objectField)) {
+                                    Collection<String> rowChangeList = ESSyncUtil.getNestedRowChangeList(mysqlData, esData, objectField);
+                                    if (rowChangeList.isEmpty()) {
                                         continue;
                                     }
+                                    Object mysqlValue = EsGetterUtil.getSqlObjectMysqlValue(objectField, mysqlData, esTemplate, esMapping);
+                                    rowChangeList.forEach(f -> allRowChangeMap.computeIfAbsent(f, __ -> new AtomicInteger()).incrementAndGet());
                                     updateSize++;
                                     if (updateIdList.size() < maxSendMessageSize) {
                                         updateIdList.add(id);
                                     }
-                                    Object mysqlValue = EsGetterUtil.getSqlObjectMysqlValue(objectField, mysqlData, esTemplate, esMapping);
+                                    if (changeInfoList.size() < Math.min(maxChangeInfoListSize, maxSendMessageSize)) {
+                                        Map<String, Object> info = new LinkedHashMap<>(3);
+                                        info.put("id", id);
+                                        info.put("field", field);
+                                        info.put("mysqlValue", mysqlValue);
+                                        info.put("esValue", esData);
+                                        changeInfoList.add(objectWriter.writeValueAsString(info));
+                                    }
                                     Map<String, Object> objectMysql = Collections.singletonMap(objectField.getFieldName(), mysqlValue);
                                     esTemplate.update(esMapping, id, objectMysql, null);//updateEsNestedDiff
                                     if (++uncommit >= 35) {
@@ -599,7 +620,7 @@ public class StringEsETLService {
                         esTemplate.commit();
                         future.complete(null);
                         if (sendMessage) {
-                            sendNestedDiffDone(messageService, timestamp, hitListSize, updateSize, updateIdList, allRowChangeMap, diffFieldsFinal, adapter, config);
+                            sendNestedDiffDone(messageService, timestamp, hitListSize, updateSize, updateIdList, changeInfoList.subList(0, Math.min(changeInfoList.size(), Math.min(maxChangeInfoListSize, maxSendMessageSize))), allRowChangeMap, diffFieldsFinal, adapter, config);
                         }
                     } catch (Throwable e) {
                         log.error("updateEsNestedDiff error {}", e.toString(), e);
@@ -617,7 +638,7 @@ public class StringEsETLService {
 
     protected void sendNestedDiffDone(AbstractMessageService messageService, Date startTime,
                                       long dmlSize,
-                                      long updateSize, List<String> updateIdList,
+                                      long updateSize, List<String> updateIdList, List<String> changeInfoList,
                                       Map<String, AtomicInteger> allRowChangeMap,
                                       Set<String> diffFields,
                                       ESAdapter adapter, ESSyncConfig config) {
@@ -634,7 +655,8 @@ public class StringEsETLService {
                 + ",\n\n 影响字段数 = " + allRowChangeMap
                 + ",\n\n 校验条数 = " + dmlSize
                 + ",\n\n 更新条数 = " + updateSize
-                + ",\n\n 更新ID = " + updateIdList;
+                + ",\n\n 更新内容(预览) = " + changeInfoList
+                + ",\n\n 更新ID(预览) = " + updateIdList;
         messageService.send(title, content);
     }
 
@@ -662,7 +684,7 @@ public class StringEsETLService {
                 + ",\n\n 最近的ID = " + lastId
                 + ",\n\n 异常 = " + throwable
                 + ",\n\n 更新条数 = " + updateSize
-                + ",\n\n 更新ID = " + updateIdList
+                + ",\n\n 更新ID(预览) = " + updateIdList
                 + ",\n\n 明细 = " + writer;
         messageService.send(title, content);
     }
@@ -685,7 +707,7 @@ public class StringEsETLService {
                 + ",\n\n 结束时间 = " + new Timestamp(System.currentTimeMillis())
                 + ",\n\n 校验条数 = " + dmlSize
                 + ",\n\n 更新条数 = " + updateSize
-                + ",\n\n 更新ID = " + updateIdList;
+                + ",\n\n 更新ID(预览) = " + updateIdList;
         messageService.send(title, content);
     }
 
@@ -772,7 +794,7 @@ public class StringEsETLService {
                 + ",\n\n 校验条数 = " + dmlSize
                 + ",\n\n 删除条数 = " + deleteSize
                 + ",\n\n 更新条数 = " + updateSize
-                + ",\n\n 更新ID = " + updateIdList
+                + ",\n\n 更新ID(预览) = " + updateIdList
                 + ",\n\n 删除ID = " + deleteIdList;
         messageService.send(title, content);
     }
@@ -800,7 +822,7 @@ public class StringEsETLService {
                 + ",\n\n 异常 = " + throwable
                 + ",\n\n 删除条数 = " + deleteSize
                 + ",\n\n 更新条数 = " + updateSize
-                + ",\n\n 更新ID = " + updateIdList
+                + ",\n\n 更新ID(预览) = " + updateIdList
                 + ",\n\n 删除ID = " + deleteIdList
                 + ",\n\n 明细 = " + writer;
         messageService.send(title, content);
