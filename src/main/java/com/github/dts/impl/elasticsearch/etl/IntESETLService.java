@@ -505,7 +505,7 @@ public class IntESETLService {
 
     private CompletableFuture<Void> newUpdateEsNestedDiffRunnable(Counter counter, DefaultESTemplate esTemplate, ESSyncConfig config,
                                                                   Long startId, Long endId, int offsetAdd,
-                                                                  Set<String> diffFieldsFinal, int maxSendMessageSize,
+                                                                  Set<String> diffFields, int maxSendMessageSize,
                                                                   int maxIdInCount,
                                                                   String esQueryBodyJson) {
         CompletableFuture<Void> future = new CompletableFuture<>();
@@ -530,14 +530,14 @@ public class IntESETLService {
                             && isEndSearchAfter(searchAfter[0], endId)) {
                         break;
                     }
-                    ESTemplate.ESSearchResponse searchResponse = esTemplate.searchAfter(esMapping, diffFieldsFinal.toArray(new String[0]), null, searchAfter, offsetAdd, esQueryBodyJson);
+                    ESTemplate.ESSearchResponse searchResponse = esTemplate.searchAfter(esMapping, diffFields.toArray(new String[0]), null, searchAfter, offsetAdd, esQueryBodyJson);
                     List<ESTemplate.Hit> hitList = searchResponse.getHitList();
                     if (hitList.isEmpty()) {
                         break;
                     }
                     counter.hitListSize += hitList.size();
                     Set<String> select = new LinkedHashSet<>();
-                    for (String diffField : diffFieldsFinal) {
+                    for (String diffField : diffFields) {
                         ESSyncConfig.ObjectField objectField = esMapping.getObjectField(null, diffField);
                         if (objectField == null || !objectField.isSqlType()) {
                             continue;
@@ -556,7 +556,7 @@ public class IntESETLService {
                             .collect(Collectors.toMap(e -> String.valueOf(e.get(pkFieldName)), Function.identity()));
 
                     Map<String, List<EsJdbcTemplateSQL>> jdbcTemplateSQLList = new HashMap<>();
-                    for (String diffField : diffFieldsFinal) {
+                    for (String diffField : diffFields) {
                         List<EsJdbcTemplateSQL> list = new ArrayList<>();
                         for (ESTemplate.Hit hit : hitList) {
                             ESSyncConfig.ObjectField objectField = esMapping.getObjectField(null, diffField);

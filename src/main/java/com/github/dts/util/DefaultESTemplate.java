@@ -399,6 +399,7 @@ public class DefaultESTemplate implements ESTemplate {
      *
      * @param aliasIndexName 别名
      * @param newIndexName   新索引名称（如果不存在，则自动创建结构）
+     * @throws IOException 没调用成功
      * @return 是否成功
      */
     public EsActionResponse indexAliasesTo(String aliasIndexName, String newIndexName) throws IOException {

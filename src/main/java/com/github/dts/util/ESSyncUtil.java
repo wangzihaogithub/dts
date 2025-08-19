@@ -12,6 +12,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.math.BigDecimal;
 import java.net.JarURLConnection;
 import java.net.URL;
 import java.nio.file.Files;
@@ -629,8 +630,11 @@ public class ESSyncUtil {
         if (val == null) {
             return null;
         }
-        if (val instanceof Number) {
-            return String.valueOf(((Number) val).doubleValue());
+        if (val instanceof Float || val instanceof Double) {
+            // 保证 【1.0 和 1 比较时，算相同】
+            return new BigDecimal(val.toString())
+                    .stripTrailingZeros()  // 去掉末尾多余的0
+                    .toPlainString();       // 避免科学计数法
         }
         return val.toString();
     }
