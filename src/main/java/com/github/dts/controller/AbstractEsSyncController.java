@@ -2,8 +2,8 @@ package com.github.dts.controller;
 
 import com.github.dts.canal.StartupServer;
 import com.github.dts.impl.elasticsearch.ESAdapter;
-import com.github.dts.impl.elasticsearch.etl.IntESETLService;
 import com.github.dts.util.DefaultESTemplate;
+import com.github.dts.util.ESSyncConfig;
 import com.github.dts.util.EsActionResponse;
 import com.github.dts.util.EsTaskCompletableFuture;
 import org.slf4j.LoggerFactory;
@@ -26,26 +26,22 @@ import java.util.stream.Stream;
  * curl "<a href="http://localhost:8080/es/myxxx/stop">http://localhost:8080/es/myxxx/stop</a>"
  * </pre>
  */
-public abstract class AbstractEsETLController {
-    private IntESETLService intESETLService;
+public abstract class AbstractEsSyncController {
     private StartupServer startupServer;
 
     @Autowired(required = false)
     public void setStartupServer(StartupServer startupServer) {
         this.startupServer = startupServer;
-        this.intESETLService = new IntESETLService(getClass().getSimpleName(), startupServer);
     }
 
     /**
      * reindex
      *
-     * @param esIndexName                    dts中的索引名称
-     * @param newIndexName                   新建一个索引名称
-     * @param adapterNames                   哪个ES实例
-     * @param afterAliasRemoveAndAdd         reindex之后，是否需要直接关联上？ true=需要直接关联上
-     * @param afterReindexCheckDiff          reindex之后，是否需要追平？ true=需要追平
-     * @param afterReindexCheckDiffOffsetAdd reindex之后，如果需要追平？ 以几条记录为步长进行追平校验
-     * @param afterReindexCheckDiffThreads   reindex之后，如果需要追平，所需的线程数量
+     * @param esIndexName            dts中的索引名称
+     * @param newIndexName           新建一个索引名称
+     * @param adapterNames           哪个ES实例
+     * @param afterAliasRemoveAndAdd reindex之后，是否需要直接关联上？ true=需要直接关联上
+     * @param afterReindexCheckDiff  reindex之后，是否需要追平？ true=需要追平
      * @return 任务ID
      */
     @RequestMapping("/reindex")
@@ -53,9 +49,7 @@ public abstract class AbstractEsETLController {
                                              @RequestParam(value = "newIndexName", required = true) String newIndexName,
                                              @RequestParam(value = "adapterNames", required = false) String[] adapterNames,
                                              @RequestParam(value = "afterAliasRemoveAndAdd", required = false, defaultValue = "true") boolean afterAliasRemoveAndAdd,
-                                             @RequestParam(value = "afterReindexCheckDiff", required = false, defaultValue = "true") boolean afterReindexCheckDiff,
-                                             @RequestParam(value = "afterReindexCheckDiffOffsetAdd", required = false, defaultValue = "500") int afterReindexCheckDiffOffsetAdd,
-                                             @RequestParam(value = "afterReindexCheckDiffThreads", required = false, defaultValue = "3") int afterReindexCheckDiffThreads) {
+                                             @RequestParam(value = "afterReindexCheckDiff", required = false, defaultValue = "true") boolean afterReindexCheckDiff) {
         List<ESAdapter> adapterList;
         if (adapterNames == null || adapterNames.length == 0) {
             adapterList = startupServer.getAdapter(ESAdapter.class);
@@ -64,6 +58,10 @@ public abstract class AbstractEsETLController {
         }
         List<Map<String, Object>> resultList = new ArrayList<>();
         for (ESAdapter adapter : adapterList) {
+            List<ESSyncConfig> configList = adapter.selectConfigList((c, i) -> i.equals(esIndexName));
+            if (configList.isEmpty()) {
+                continue;
+            }
             DefaultESTemplate esTemplate = adapter.getEsTemplate();
             try {
                 if (!esTemplate.getConnection().indexExist(esIndexName)) {
@@ -77,7 +75,9 @@ public abstract class AbstractEsETLController {
             if (afterAliasRemoveAndAdd && afterReindexCheckDiff) {
                 reindex.thenAccept(esActionResponse -> {
                     if (esActionResponse.isSuccess()) {
-                        intESETLService.checkAll(esIndexName, Collections.singletonList(adapter.getName()), afterReindexCheckDiffOffsetAdd, afterReindexCheckDiffThreads, null, null);
+                        for (ESSyncConfig config : configList) {
+                            adapter.etlSyncAll(config);
+                        }
                     }
                 });
             }
@@ -87,36 +87,6 @@ public abstract class AbstractEsETLController {
             resultList.add(result);
         }
         return resultList;
-    }
-
-    @RequestMapping("/syncAll")
-    public int syncAll(@RequestParam(value = "adapterNames", required = false) String[] adapterNames) {
-        List<ESAdapter> adapterList;
-        if (adapterNames != null && adapterNames.length > 0) {
-            adapterList = Arrays.stream(adapterNames).map(e -> startupServer.getAdapter(e, ESAdapter.class)).collect(Collectors.toList());
-        } else {
-            adapterList = startupServer.getAdapter(ESAdapter.class);
-        }
-        for (ESAdapter esAdapter : adapterList) {
-            esAdapter.etlSyncAll();
-        }
-        return adapterList.size();
-    }
-
-    @RequestMapping("/syncById")
-    public int syncById(@RequestParam(value = "id", required = true) String[] id,
-                        @RequestParam(value = "adapterNames", required = false) String[] adapterNames) {
-        List<ESAdapter> adapterList;
-        if (adapterNames != null && adapterNames.length > 0) {
-            adapterList = Arrays.stream(adapterNames).map(e -> startupServer.getAdapter(e, ESAdapter.class)).collect(Collectors.toList());
-        } else {
-            adapterList = startupServer.getAdapter(ESAdapter.class);
-        }
-        List<String> idList = Arrays.asList(id);
-        for (ESAdapter esAdapter : adapterList) {
-            esAdapter.etlSyncById(idList);
-        }
-        return adapterList.size();
     }
 
     @RequestMapping("/status")
@@ -136,8 +106,38 @@ public abstract class AbstractEsETLController {
         return statusMap;
     }
 
-    @RequestMapping("/stop")
-    public int stop(@RequestParam(value = "adapterNames", required = false) String[] adapterNames) {
+    @RequestMapping("/etl/syncAll")
+    public int syncAll(@RequestParam(value = "adapterNames", required = false) String[] adapterNames) {
+        List<ESAdapter> adapterList;
+        if (adapterNames != null && adapterNames.length > 0) {
+            adapterList = Arrays.stream(adapterNames).map(e -> startupServer.getAdapter(e, ESAdapter.class)).collect(Collectors.toList());
+        } else {
+            adapterList = startupServer.getAdapter(ESAdapter.class);
+        }
+        for (ESAdapter esAdapter : adapterList) {
+            esAdapter.etlSyncAll();
+        }
+        return adapterList.size();
+    }
+
+    @RequestMapping("/etl/syncById")
+    public int syncById(@RequestParam(value = "id", required = true) String[] id,
+                        @RequestParam(value = "adapterNames", required = false) String[] adapterNames) {
+        List<ESAdapter> adapterList;
+        if (adapterNames != null && adapterNames.length > 0) {
+            adapterList = Arrays.stream(adapterNames).map(e -> startupServer.getAdapter(e, ESAdapter.class)).collect(Collectors.toList());
+        } else {
+            adapterList = startupServer.getAdapter(ESAdapter.class);
+        }
+        List<String> idList = Arrays.asList(id);
+        for (ESAdapter esAdapter : adapterList) {
+            esAdapter.etlSyncById(idList);
+        }
+        return adapterList.size();
+    }
+
+    @RequestMapping("/etl/stop")
+    public int etlStop(@RequestParam(value = "adapterNames", required = false) String[] adapterNames) {
         List<ESAdapter> adapterList;
         if (adapterNames != null && adapterNames.length > 0) {
             adapterList = Arrays.stream(adapterNames).map(e -> startupServer.getAdapter(e, ESAdapter.class)).collect(Collectors.toList());
@@ -169,8 +169,8 @@ public abstract class AbstractEsETLController {
      * @param adapterNames 停哪个处理器
      * @return 持续时间
      */
-    @RequestMapping("/ignore")
-    public Object ignore(@RequestParam(value = "duration", required = false, defaultValue = "PT30M") String duration,
+    @RequestMapping("/binlog/ignore")
+    public Object binlogIgnore(@RequestParam(value = "duration", required = false, defaultValue = "PT30M") String duration,
                          @RequestParam(value = "adapterNames", required = false) String[] adapterNames) {
         Duration parseDuration = Duration.parse(duration);
         List<ESAdapter> adapterList;
@@ -196,8 +196,8 @@ public abstract class AbstractEsETLController {
      * @param adapterNames 恢复哪个处理器
      * @return 持续时间
      */
-    @RequestMapping("/ignoreStop")
-    public Object ignoreStop(@RequestParam(value = "adapterNames", required = false) String[] adapterNames) {
+    @RequestMapping("/binlog/ignoreStop")
+    public Object binlogIgnoreStop(@RequestParam(value = "adapterNames", required = false) String[] adapterNames) {
         List<ESAdapter> adapterList;
         if (adapterNames != null && adapterNames.length > 0) {
             adapterList = Arrays.stream(adapterNames).map(e -> startupServer.getAdapter(e, ESAdapter.class)).collect(Collectors.toList());

@@ -258,6 +258,18 @@ public class ESAdapter implements Adapter {
         return set;
     }
 
+    public List<ESSyncConfig> selectConfigList(BiPredicate<ESSyncConfig, String> test) {
+        List<ESSyncConfig> set = new ArrayList<>(3);
+        for (Map.Entry<String, ESSyncConfig> entry : esSyncConfig.entrySet()) {
+            ESSyncConfig config = entry.getValue();
+            String index = config.getEsMapping().get_index();
+            if (test.test(config, index)) {
+                set.add(config);
+            }
+        }
+        return set;
+    }
+
     @Override
     public CompletableFuture<Void> sync(List<Dml> dmls, int adapterListSize) {
         return sync(dmls, refresh, onlyEffect, false, joinUpdateSize, null, connectorCommitListener, adapterListSize, false);
