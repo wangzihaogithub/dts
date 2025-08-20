@@ -6,7 +6,6 @@ import com.github.dts.impl.elasticsearch.etl.IntESETLService;
 import com.github.dts.util.DefaultESTemplate;
 import com.github.dts.util.EsActionResponse;
 import com.github.dts.util.EsTaskCompletableFuture;
-import com.github.dts.util.Util;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -27,7 +26,7 @@ import java.util.stream.Stream;
  * curl "<a href="http://localhost:8080/es/myxxx/stop">http://localhost:8080/es/myxxx/stop</a>"
  * </pre>
  */
-public abstract class AbstractEsETLIntController {
+public abstract class AbstractEsETLController {
     private IntESETLService intESETLService;
     private StartupServer startupServer;
 
@@ -90,78 +89,34 @@ public abstract class AbstractEsETLIntController {
         return resultList;
     }
 
-    @RequestMapping("/updateEsNestedDiff")
-    public int updateEsNestedDiff(@RequestParam(value = "esIndexName", required = true) String esIndexName,
-                                  @RequestParam(value = "threads", required = false, defaultValue = "6") int threads,
-                                  @RequestParam(value = "offsetAdd", required = false, defaultValue = "1000") int offsetAdd,
-                                  // 比较字段：必须是嵌套字段：空=全部，
-                                  @RequestParam(value = "startId", required = false) Long startId,
-                                  @RequestParam(value = "endId", required = false) Long endId,
-                                  @RequestParam(value = "diffFields", required = false) String[] diffFields,
-                                  @RequestParam(value = "adapterNames", required = false) String[] adapterNames,
-                                  @RequestParam(value = "maxSendMessageSize", required = false, defaultValue = "50") int maxSendMessageSize,
-                                  @RequestParam(value = "esQueryBodyJson", required = false, defaultValue = "") String esQueryBodyJson) {
-        return intESETLService.updateEsNestedDiff(esIndexName, startId, endId, offsetAdd, threads,
-                diffFields == null ? null : new LinkedHashSet<>(Arrays.asList(diffFields)), maxSendMessageSize,
-                adapterNames == null ? null : Arrays.asList(adapterNames), esQueryBodyJson).size();
-    }
-
-    @RequestMapping("/updateEsDiff")
-    public int updateEsDiff(@RequestParam(value = "esIndexName", required = true) String esIndexName,
-                            @RequestParam(value = "threads", required = false, defaultValue = "6") int threads,
-                            @RequestParam(value = "offsetAdd", required = false, defaultValue = "1000") int offsetAdd,
-                            @RequestParam(value = "startId", required = false) Long startId,
-                            @RequestParam(value = "endId", required = false) Long endId,
-                            // 比较字段：不含嵌套字段：空=全部，
-                            @RequestParam(value = "diffFields", required = false) String[] diffFields,
-                            @RequestParam(value = "adapterNames", required = false) String[] adapterNames,
-                            @RequestParam(value = "maxSendMessageSize", required = false, defaultValue = "50") int maxSendMessageSize,
-                            @RequestParam(value = "esQueryBodyJson", required = false, defaultValue = "") String esQueryBodyJson) {
-        return intESETLService.updateEsDiff(esIndexName, startId, endId, offsetAdd, threads,
-                diffFields == null ? null : new LinkedHashSet<>(Arrays.asList(diffFields)), maxSendMessageSize,
-                adapterNames == null ? null : Arrays.asList(adapterNames), esQueryBodyJson).size();
-    }
-
-    @RequestMapping("/deleteEsTrim")
-    public int deleteEsTrim(@RequestParam(value = "esIndexName", required = true) String esIndexName,
-                            @RequestParam(value = "startId", required = false) Long startId,
-                            @RequestParam(value = "endId", required = false) Long endId,
-                            @RequestParam(value = "adapterNames", required = false) String[] adapterNames,
-                            @RequestParam(value = "offsetAdd", required = false, defaultValue = "1000") int offsetAdd,
-                            @RequestParam(value = "maxSendMessageDeleteIdSize", required = false, defaultValue = "50") int maxSendMessageDeleteIdSize) {
-        return intESETLService.deleteEsTrim(esIndexName, startId, endId, offsetAdd, maxSendMessageDeleteIdSize,
-                adapterNames == null ? null : Arrays.asList(adapterNames)).size();
-    }
-
     @RequestMapping("/syncAll")
-    public List<String> syncAll(
-            @RequestParam(value = "esIndexName", required = true) String esIndexName,
-            @RequestParam(value = "threads", required = false, defaultValue = "50") int threads,
-            @RequestParam(value = "offsetStart", required = false) Long offsetStart,
-            @RequestParam(value = "offsetEnd", required = false) Long offsetEnd,
-            @RequestParam(value = "offsetAdd", required = false, defaultValue = "500") int offsetAdd,
-            @RequestParam(value = "onlyCurrentIndex", required = false, defaultValue = "true") boolean onlyCurrentIndex,
-            @RequestParam(value = "joinUpdateSize", required = false, defaultValue = "100") int joinUpdateSize,
-            @RequestParam(value = "onlyFieldName", required = false) String[] onlyFieldName,
-            @RequestParam(value = "adapterNames", required = false) String[] adapterNames,
-            @RequestParam(value = "sqlWhere", required = false) String sqlWhere,
-            @RequestParam(value = "insertIgnore", required = false, defaultValue = "false") boolean insertIgnore,
-            @RequestParam(value = "maxSendMessageSize", required = false, defaultValue = "50") int maxSendMessageSize) {
-        Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(Util::isNotBlank).collect(Collectors.toCollection(LinkedHashSet::new));
-        return intESETLService.syncAll(esIndexName, threads, offsetStart, offsetEnd, offsetAdd, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet,
-                        adapterNames == null ? null : Arrays.asList(adapterNames), sqlWhere, insertIgnore, maxSendMessageSize)
-                .stream().map(IntESETLService.SyncRunnable::getRange).map(Util.Range::toString).collect(Collectors.toList());
+    public int syncAll(@RequestParam(value = "adapterNames", required = false) String[] adapterNames) {
+        List<ESAdapter> adapterList;
+        if (adapterNames != null && adapterNames.length > 0) {
+            adapterList = Arrays.stream(adapterNames).map(e -> startupServer.getAdapter(e, ESAdapter.class)).collect(Collectors.toList());
+        } else {
+            adapterList = startupServer.getAdapter(ESAdapter.class);
+        }
+        for (ESAdapter esAdapter : adapterList) {
+            esAdapter.etlSyncAll();
+        }
+        return adapterList.size();
     }
 
     @RequestMapping("/syncById")
-    public Object syncById(@RequestParam(value = "id", required = true) Long[] id,
-                           @RequestParam(value = "esIndexName", required = true) String esIndexName,
-                           @RequestParam(value = "onlyCurrentIndex", required = false, defaultValue = "true") boolean onlyCurrentIndex,
-                           @RequestParam(value = "onlyFieldName", required = false) String[] onlyFieldName,
-                           @RequestParam(value = "adapterNames", required = false) String[] adapterNames) {
-        Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(Util::isNotBlank).collect(Collectors.toCollection(LinkedHashSet::new));
-        return intESETLService.syncById(id, esIndexName, onlyCurrentIndex, onlyFieldNameSet,
-                adapterNames == null ? null : Arrays.asList(adapterNames));
+    public int syncById(@RequestParam(value = "id", required = true) String[] id,
+                        @RequestParam(value = "adapterNames", required = false) String[] adapterNames) {
+        List<ESAdapter> adapterList;
+        if (adapterNames != null && adapterNames.length > 0) {
+            adapterList = Arrays.stream(adapterNames).map(e -> startupServer.getAdapter(e, ESAdapter.class)).collect(Collectors.toList());
+        } else {
+            adapterList = startupServer.getAdapter(ESAdapter.class);
+        }
+        List<String> idList = Arrays.asList(id);
+        for (ESAdapter esAdapter : adapterList) {
+            esAdapter.etlSyncById(idList);
+        }
+        return adapterList.size();
     }
 
     @RequestMapping("/status")
@@ -179,6 +134,20 @@ public abstract class AbstractEsETLIntController {
             statusMap.put(esAdapter.getName(), status);
         }
         return statusMap;
+    }
+
+    @RequestMapping("/stop")
+    public int stop(@RequestParam(value = "adapterNames", required = false) String[] adapterNames) {
+        List<ESAdapter> adapterList;
+        if (adapterNames != null && adapterNames.length > 0) {
+            adapterList = Arrays.stream(adapterNames).map(e -> startupServer.getAdapter(e, ESAdapter.class)).collect(Collectors.toList());
+        } else {
+            adapterList = startupServer.getAdapter(ESAdapter.class);
+        }
+        for (ESAdapter esAdapter : adapterList) {
+            esAdapter.etlSyncStop();
+        }
+        return adapterList.size();
     }
 
     /**
@@ -202,7 +171,7 @@ public abstract class AbstractEsETLIntController {
      */
     @RequestMapping("/ignore")
     public Object ignore(@RequestParam(value = "duration", required = false, defaultValue = "PT30M") String duration,
-                             @RequestParam(value = "adapterNames", required = false) String[] adapterNames) {
+                         @RequestParam(value = "adapterNames", required = false) String[] adapterNames) {
         Duration parseDuration = Duration.parse(duration);
         List<ESAdapter> adapterList;
         if (adapterNames != null && adapterNames.length > 0) {
@@ -245,17 +214,6 @@ public abstract class AbstractEsETLIntController {
             result.put(esAdapter.getName(), time);
         }
         return result;
-    }
-
-    @RequestMapping("/stop")
-    public boolean stop() {
-        intESETLService.stopSync();
-        return true;
-    }
-
-    @RequestMapping("/discard")
-    public List discard(@RequestParam(value = "clientIdentity", required = true) String clientIdentity) throws InterruptedException {
-        return intESETLService.discard(clientIdentity);
     }
 
 }

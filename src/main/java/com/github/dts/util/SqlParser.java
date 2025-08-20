@@ -123,6 +123,8 @@ public class SqlParser {
     }
 
     public static void main(String[] args) {
+        String s = setWhere("select id,name from job", "false");
+
         String j = changeSelectByJoinTable("SELECT\n" +
                         "                corp.id ,\n" +
                         "                corp.`name`,\n" +
@@ -979,6 +981,14 @@ public class SqlParser {
             }
             return toMysqlString(sqlStatement);
         });
+    }
+
+    public static String setWhere(String sql, String where) {
+        SQLSelectStatement statement = (SQLSelectStatement) SQLUtils.parseSingleMysqlStatement(sql);
+        SQLSelect select = statement.getSelect();
+        SQLSelectQueryBlock query = select.getQueryBlock();
+        query.setWhere(SQLUtils.toMySqlExpr(where));
+        return toMysqlString(statement);
     }
 
     static class VarExprCollectResult {

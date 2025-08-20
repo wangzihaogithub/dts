@@ -35,6 +35,17 @@ public abstract class AbstractMessageService {
         }
     });
 
+    public static class LogMessageService extends AbstractMessageService {
+        private static final Logger log = LoggerFactory.getLogger(LogMessageService.class);
+        public static final LogMessageService INSTANCE = new LogMessageService();
+
+        @Override
+        public Map send(String title, String content) {
+            log.warn("messageService {}: {}", title, content);
+            return Collections.emptyMap();
+        }
+    }
+
     @Value("${spring.profiles.active:}")
     private String env;
     private int maxRetryCount = 10;

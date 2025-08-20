@@ -36,12 +36,13 @@ import java.util.stream.Collectors;
  * curl "<a href="http://localhost:8080/es/myxxx/stop">http://localhost:8080/es/myxxx/stop</a>"
  * </pre>
  */
-public class StringEsETLService {
+public class StringEsETLService implements ESETLService {
     private static final Logger log = LoggerFactory.getLogger(StringEsETLService.class);
     protected final StartupServer startupServer;
     private final ExecutorService executorService;
     private final String name;
-    private boolean stop = false;
+    private final AtomicInteger taskId = new AtomicInteger();
+    private volatile int stopTaskId = 0;
     private boolean sendMessage = true;
     private int maxChangeInfoListSize = Integer.MAX_VALUE;
 
@@ -64,8 +65,13 @@ public class StringEsETLService {
         return maxChangeInfoListSize;
     }
 
+    private boolean isStop(int taskId) {
+        return taskId <= this.stopTaskId;
+    }
+
+    @Override
     public void stopSync() {
-        stop = true;
+        this.stopTaskId = this.taskId.intValue();
     }
 
     protected List<ESAdapter> getAdapterList(List<String> adapterNames) {
@@ -93,7 +99,7 @@ public class StringEsETLService {
         return syncAll(esIndexName, "0", 500, true, 100, null, null, null, false, 50);
     }
 
-    public Object syncById(String[] id,
+    public int syncById(String[] id,
                            String esIndexName) {
         return syncById(id, esIndexName, true, null, null);
     }
@@ -119,7 +125,8 @@ public class StringEsETLService {
             boolean insertIgnore,
             int maxSendMessageSize) {
         String trimWhere = ESSyncUtil.trimWhere(sqlWhere);
-        this.stop = false;
+
+        int taskId = this.taskId.incrementAndGet();
         List<ESAdapter> adapterList = getAdapterList(adapterNames);
         if (adapterList.isEmpty()) {
             return new ArrayList<>();
@@ -149,7 +156,7 @@ public class StringEsETLService {
                     AtomicInteger updateSize = new AtomicInteger(0);
                     try {
                         do {
-                            if (stop) {
+                            if (isStop(taskId)) {
                                 break;
                             }
                             String tableName = config.getEsMapping().getSchemaItem().getMainTable().getTableName();
@@ -199,6 +206,8 @@ public class StringEsETLService {
         if (adapterList.isEmpty()) {
             return 0;
         }
+
+        int taskId = this.taskId.incrementAndGet();
         int count = 0;
         for (ESAdapter adapter : adapterList) {
             Map<String, ESSyncConfig> configMap = adapter.getEsSyncConfigByIndex(esIndexName);
@@ -207,7 +216,7 @@ public class StringEsETLService {
                 String catalog = CanalConfig.DatasourceConfig.getCatalog(config.getDataSourceKey());
                 try {
                     count += id.length;
-                    syncById(jdbcTemplate, catalog, Arrays.asList(id), onlyCurrentIndex, onlyFieldNameSet, adapter, config);
+                    syncById(jdbcTemplate, catalog, Arrays.asList(id), onlyCurrentIndex, onlyFieldNameSet, adapter, config, taskId);
                 } finally {
                     log.info("all sync end.  total = {} ", count);
                 }
@@ -220,7 +229,6 @@ public class StringEsETLService {
                                                       int offsetAdd,
                                                       int maxSendMessageDeleteIdSize,
                                                       List<String> adapterNames) {
-        this.stop = false;
         List<ESAdapter> adapterList = getAdapterList(adapterNames);
         if (adapterList.isEmpty()) {
             return new ArrayList<>();
@@ -233,6 +241,7 @@ public class StringEsETLService {
             return new ArrayList<>();
         }
 
+        int taskId = this.taskId.incrementAndGet();
         List<CompletableFuture<Void>> futureList = new ArrayList<>();
         AbstractMessageService messageService = startupServer.getMessageService();
         for (ESAdapter adapter : adapterList) {
@@ -254,7 +263,7 @@ public class StringEsETLService {
                     try {
                         Object[] searchAfter = null;
                         do {
-                            if (stop) {
+                            if (isStop(taskId)) {
                                 break;
                             }
                             ESTemplate.ESSearchResponse searchResponse = esTemplate.searchAfterId(esMapping, searchAfter, offsetAdd);
@@ -300,7 +309,6 @@ public class StringEsETLService {
                                                       int maxSendMessageSize,
                                                       List<String> adapterNames,
                                                       String esQueryBodyJson) {
-        this.stop = false;
         List<ESAdapter> adapterList = getAdapterList(adapterNames);
         if (adapterList.isEmpty()) {
             return new ArrayList<>();
@@ -313,6 +321,7 @@ public class StringEsETLService {
             return new ArrayList<>();
         }
 
+        int taskId = this.taskId.incrementAndGet();
         List<CompletableFuture<Void>> futureList = new ArrayList<>();
         AbstractMessageService messageService = startupServer.getMessageService();
         for (ESAdapter adapter : adapterList) {
@@ -339,7 +348,7 @@ public class StringEsETLService {
 
                         Object[] searchAfter = null;
                         do {
-                            if (stop) {
+                            if (isStop(taskId)) {
                                 break;
                             }
                             ESTemplate.ESSearchResponse searchResponse = esTemplate.searchAfter(esMapping, selectFields, null, searchAfter, offsetAdd, esQueryBodyJson);
@@ -420,8 +429,7 @@ public class StringEsETLService {
     }
 
     protected int syncById(JdbcTemplate jdbcTemplate, String catalog, Collection<String> id, boolean onlyCurrentIndex, Collection<String> onlyFieldNameSet,
-                           ESAdapter esAdapter, ESSyncConfig config) {
-        this.stop = false;
+                           ESAdapter esAdapter, ESSyncConfig config, int taskId) {
         if (id == null || id.isEmpty()) {
             return 0;
         }
@@ -429,7 +437,7 @@ public class StringEsETLService {
         String tableName = config.getEsMapping().getSchemaItem().getMainTable().getTableName();
         String pk = config.getEsMapping().getPk();
         for (String i : id) {
-            if (stop) {
+            if (isStop(taskId)) {
                 break;
             }
             List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, i, 1, tableName, pk, config, null);
@@ -453,7 +461,6 @@ public class StringEsETLService {
                                                             int maxSendMessageSize,
                                                             List<String> adapterNames,
                                                             String esQueryBodyJson) {
-        this.stop = false;
         List<ESAdapter> adapterList = getAdapterList(adapterNames);
         if (adapterList.isEmpty()) {
             return new ArrayList<>();
@@ -466,6 +473,7 @@ public class StringEsETLService {
             return new ArrayList<>();
         }
 
+        int taskId = this.taskId.incrementAndGet();
         int maxIdInCount = 1000;
         List<CompletableFuture<Void>> futureList = new ArrayList<>();
         AbstractMessageService messageService = startupServer.getMessageService();
@@ -518,7 +526,7 @@ public class StringEsETLService {
                         int uncommit = 0;
                         Object[] searchAfter = startId == null ? null : new Object[]{startId};
                         do {
-                            if (stop) {
+                            if (isStop(taskId)) {
                                 break;
                             }
                             ESTemplate.ESSearchResponse searchResponse = esTemplate.searchAfter(esMapping, diffFieldsFinal.toArray(new String[0]), null, searchAfter, offsetAdd, esQueryBodyJson);

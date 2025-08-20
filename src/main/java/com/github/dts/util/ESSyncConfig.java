@@ -1,13 +1,19 @@
 package com.github.dts.util;
 
+import com.github.dts.canal.StartupServer;
 import com.github.dts.impl.elasticsearch.ESAdapter;
 import com.github.dts.impl.elasticsearch.NestedFieldWriter;
+import com.github.dts.impl.elasticsearch.etl.ESETLService;
+import com.github.dts.impl.elasticsearch.etl.IntESETLService;
+import com.github.dts.impl.elasticsearch.etl.StringEsETLService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.util.AntPathMatcher;
 
+import javax.sql.DataSource;
 import java.io.IOException;
 import java.net.URL;
+import java.sql.*;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -37,7 +43,7 @@ public class ESSyncConfig {
     public boolean equals(Object o) {
         if (o == null || getClass() != o.getClass()) return false;
         ESSyncConfig config = (ESSyncConfig) o;
-        return Objects.equals(md5, config.md5) ;
+        return Objects.equals(md5, config.md5);
     }
 
     @Override
@@ -49,25 +55,37 @@ public class ESSyncConfig {
                                         Map<String, ESSyncConfig> configMap,
                                         Properties envProperties, CanalConfig.CanalAdapter canalAdapter,
                                         String adapterName,
-                                        URL resourcesDir, String env) {
-        Map<String, ESSyncConfig> load = loadYamlToBean(envProperties, canalAdapter, resourcesDir, env);
+                                        URL resourcesDir,
+                                        StartupServer server) {
+        Map<String, ESSyncConfig> load = loadYamlToBean(envProperties, canalAdapter, resourcesDir, server.getEnv());
         for (Map.Entry<String, ESSyncConfig> entry : load.entrySet()) {
             ESSyncConfig config = entry.getValue();
-            if (!config.getEsMapping().isEnable()) {
+            ESMapping esMapping = config.getEsMapping();
+            if (!esMapping.isEnable()) {
                 continue;
             }
             if (!config.isMatchAdapterName(adapterName)) {
                 continue;
             }
+            Etl etl = esMapping.getEtl();
+            if (etl == null) {
+                etl = new Etl();
+                esMapping.setEtl(etl);
+            }
+            EtlServiceEnum etlService = etl.getServiceType();
+            if (etlService == null) {
+                etlService = defaultEtlServiceEnum(esMapping, config.dataSourceKey);
+            }
+            etl.etlServiceInstance = etlService.newInstance(esMapping.get_index(), server);
 
             String configName = entry.getKey();
             configMap.put(configName, config);
             String schema = CanalConfig.DatasourceConfig.getCatalog(config.getDataSourceKey());
-            for (SchemaItem.TableItem item : config.getEsMapping().getSchemaItem().getAliasTableItems().values()) {
+            for (SchemaItem.TableItem item : esMapping.getSchemaItem().getAliasTableItems().values()) {
                 map.computeIfAbsent(getEsSyncConfigKey(config.getDestination(), schema, item.getTableName()),
                         k -> new ConcurrentHashMap<>()).put(configName, config);
             }
-            for (Map.Entry<String, ObjectField> e : config.getEsMapping().getObjFields().entrySet()) {
+            for (Map.Entry<String, ObjectField> e : esMapping.getObjFields().entrySet()) {
                 ObjectField v = e.getValue();
                 if (v == null) {
                     continue;
@@ -87,6 +105,51 @@ public class ESSyncConfig {
                 }
             }
         }
+    }
+
+    public static boolean isJdbcTypeNumeric(int jdbcType) {
+        switch (jdbcType) {
+            // 整数类型
+            case Types.TINYINT:
+            case Types.SMALLINT:
+            case Types.INTEGER:
+            case Types.BIGINT:
+                // 浮点/定点数类型
+            case Types.REAL:
+            case Types.FLOAT:
+            case Types.DOUBLE:
+            case Types.NUMERIC:
+            case Types.DECIMAL:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private static EtlServiceEnum defaultEtlServiceEnum(ESMapping esMapping, String dataSourceKey) {
+        DataSource dataSource = CanalConfig.DatasourceConfig.getDataSource(dataSourceKey);
+        String sql = SqlParser.setWhere(esMapping.getSql(), "false");
+        String pk = esMapping.getPk();
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql);
+             ResultSet rs = pstmt.executeQuery()) {
+            ResultSetMetaData metaData = rs.getMetaData();
+            int columnCount = metaData.getColumnCount();
+            for (int i = 1; i <= columnCount; i++) {
+                String columnName = metaData.getColumnName(i);
+                if (columnName.equals(pk)) {
+                    int jdbcType = metaData.getColumnType(i);
+                    if (isJdbcTypeNumeric(jdbcType)) {
+                        return EtlServiceEnum.IntESETLService;
+                    } else {
+                        return EtlServiceEnum.StringEsETLService;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("use default StringEsETLService, cause: jdbcType select fail {} , sql = {}", e.toString(), sql, e);
+        }
+        return EtlServiceEnum.StringEsETLService;
     }
 
     public static Map<String, ESSyncConfig> loadYamlToBean(Properties envProperties, CanalConfig.CanalAdapter canalAdapter, URL resourcesDir, String env) {
@@ -257,6 +320,41 @@ public class ESSyncConfig {
         return false;
     }
 
+    public enum EtlServiceEnum {
+        IntESETLService {
+            @Override
+            public ESETLService newInstance(String name, StartupServer startupServer) {
+                return new IntESETLService(name, startupServer);
+            }
+        },
+        StringEsETLService {
+            @Override
+            public ESETLService newInstance(String name, StartupServer startupServer) {
+                return new StringEsETLService(name, startupServer);
+            }
+        };
+
+        public abstract ESETLService newInstance(String name, StartupServer startupServer);
+    }
+
+    public static class Etl {
+        private EtlServiceEnum serviceType;
+        private ESETLService etlServiceInstance;
+
+        public EtlServiceEnum getServiceType() {
+            return serviceType;
+        }
+
+        public void setServiceType(EtlServiceEnum serviceType) {
+            this.serviceType = serviceType;
+        }
+
+        public ESETLService serviceInstance() {
+            return etlServiceInstance;
+        }
+
+    }
+
     public static class ESMapping {
         private String env;
         private String _index;
@@ -280,10 +378,19 @@ public class ESSyncConfig {
         private Map<String, ObjectField> objFields = new LinkedHashMap<>();
         private SchemaItem schemaItem;                             // sql解析结果模型
         private ESSyncConfig config;
+        private Etl etl;
 
         public boolean isLlmVector(String fieldName) {
             ObjectField objectField = objFields.get(fieldName);
             return objectField != null && objectField.paramLlmVector != null;
+        }
+
+        public Etl getEtl() {
+            return etl;
+        }
+
+        public void setEtl(Etl etl) {
+            this.etl = etl;
         }
 
         @Override

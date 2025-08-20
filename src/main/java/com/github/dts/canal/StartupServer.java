@@ -180,7 +180,7 @@ public class StartupServer implements ApplicationRunner {
             if (adapter == null) {
                 adapter = beanFactory.getBean(adapterClass);
                 adapterMap.put(name, adapter);
-                adapter.init(canalAdapter, config, evnProperties, discoveryService, getEnv());
+                adapter.init(canalAdapter, config, evnProperties, discoveryService, this);
                 log.info("Load canal adapter: {} succeed", config.getName());
             }
             return adapter;

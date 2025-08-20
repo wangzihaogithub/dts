@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 import java.io.IOException;
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -173,6 +174,72 @@ public abstract class AbstractEsETLStringController {
             statusMap.put(esAdapter.getName(), status);
         }
         return statusMap;
+    }
+
+    /**
+     * 忽略增量的处理
+     * <p>
+     * 持续时间（必填） Examples:
+     * <pre>
+     *    "PT20.345S" -- parses as "20.345 seconds"
+     *    "PT15M"     -- parses as "15 minutes" (where a minute is 60 seconds)
+     *    "PT10H"     -- parses as "10 hours" (where an hour is 3600 seconds)
+     *    "P2D"       -- parses as "2 days" (where a day is 24 hours or 86400 seconds)
+     *    "P2DT3H4M"  -- parses as "2 days, 3 hours and 4 minutes"
+     *    "P-6H3M"    -- parses as "-6 hours and +3 minutes"
+     *    "-P6H3M"    -- parses as "-6 hours and -3 minutes"
+     *    "-P-6H+3M"  -- parses as "+6 hours and -3 minutes"
+     * </pre>
+     *
+     * @param duration     持续时间（必填）
+     * @param adapterNames 停哪个处理器
+     * @return 持续时间
+     */
+    @RequestMapping("/ignore")
+    public Object ignore(@RequestParam(value = "duration", required = false, defaultValue = "PT30M") String duration,
+                             @RequestParam(value = "adapterNames", required = false) String[] adapterNames) {
+        Duration parseDuration = Duration.parse(duration);
+        List<ESAdapter> adapterList;
+        if (adapterNames != null && adapterNames.length > 0) {
+            adapterList = Arrays.stream(adapterNames).map(e -> startupServer.getAdapter(e, ESAdapter.class)).collect(Collectors.toList());
+        } else {
+            adapterList = startupServer.getAdapter(ESAdapter.class);
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        for (ESAdapter esAdapter : adapterList) {
+            long ignore = esAdapter.ignore(parseDuration);
+            Map<String, String> time = new LinkedHashMap<>();
+            time.put("startTime", new Timestamp(System.currentTimeMillis()).toString());
+            time.put("endTime", new Timestamp(ignore).toString());
+            result.put(esAdapter.getName(), time);
+        }
+        return result;
+    }
+
+    /**
+     * 停止忽略增量的处理
+     *
+     * @param adapterNames 恢复哪个处理器
+     * @return 持续时间
+     */
+    @RequestMapping("/ignoreStop")
+    public Object ignoreStop(@RequestParam(value = "adapterNames", required = false) String[] adapterNames) {
+        List<ESAdapter> adapterList;
+        if (adapterNames != null && adapterNames.length > 0) {
+            adapterList = Arrays.stream(adapterNames).map(e -> startupServer.getAdapter(e, ESAdapter.class)).collect(Collectors.toList());
+        } else {
+            adapterList = startupServer.getAdapter(ESAdapter.class);
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        for (ESAdapter esAdapter : adapterList) {
+            Timestamp lastBinlogTimestamp = esAdapter.getLastBinlogTimestamp();
+            long beforeIgnoreEndTime = esAdapter.ignoreStop();
+            Map<String, String> time = new LinkedHashMap<>();
+            time.put("beforeIgnoreEndTime", beforeIgnoreEndTime == 0 ? "0" : new Timestamp(beforeIgnoreEndTime).toString());
+            time.put("lastBinlogTimestamp", String.valueOf(lastBinlogTimestamp));
+            result.put(esAdapter.getName(), time);
+        }
+        return result;
     }
 
     @RequestMapping("/stop")

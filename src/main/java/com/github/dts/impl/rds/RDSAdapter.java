@@ -1,5 +1,6 @@
 package com.github.dts.impl.rds;
 
+import com.github.dts.canal.StartupServer;
 import com.github.dts.cluster.DiscoveryService;
 import com.github.dts.util.Adapter;
 import com.github.dts.util.CanalConfig;
@@ -22,7 +23,7 @@ public class RDSAdapter implements Adapter {
 
     @Override
     public void init(CanalConfig.CanalAdapter canalAdapter, CanalConfig.OuterAdapterConfig configuration,
-                     Properties envProperties, DiscoveryService discoveryService, String env) {
+                     Properties envProperties, DiscoveryService discoveryService, StartupServer server) {
         this.configuration = configuration;
     }
 

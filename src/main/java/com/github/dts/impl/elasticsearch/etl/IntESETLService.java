@@ -30,12 +30,13 @@ import java.util.stream.Collectors;
  * curl "<a href="http://localhost:8080/es/myxxx/stop">http://localhost:8080/es/myxxx/stop</a>"
  * </pre>
  */
-public class IntESETLService {
+public class IntESETLService implements ESETLService {
     private static final Logger log = LoggerFactory.getLogger(IntESETLService.class);
     protected final StartupServer startupServer;
     private final ExecutorService executorService;
     private final String name;
-    private boolean stop = false;
+    private final AtomicInteger taskId = new AtomicInteger();
+    private volatile int stopTaskId = 0;
     private boolean sendMessage = true;
     private int maxChangeInfoListSize = Integer.MAX_VALUE;
 
@@ -58,8 +59,9 @@ public class IntESETLService {
         return maxChangeInfoListSize;
     }
 
+    @Override
     public void stopSync() {
-        stop = true;
+        this.stopTaskId = this.taskId.intValue();
     }
 
     public List<CompletableFuture<?>> checkAll(String esIndexName, List<String> adapterNames, int offsetAdd, int threads, String sqlWhere, String esQueryBodyJson) {
@@ -81,7 +83,7 @@ public class IntESETLService {
                 true, 100, null, null, null, false, 50);
     }
 
-    public Object syncById(Long[] id,
+    public int syncById(Long[] id,
                            String esIndexName) {
         return syncById(id, esIndexName, true, null, null);
     }
@@ -94,13 +96,17 @@ public class IntESETLService {
         return deleteEsTrim(esIndexName, null, null, 1000, 50, null);
     }
 
+    private boolean isStop(int taskId) {
+        return taskId <= this.stopTaskId;
+    }
+
     public List<CompletableFuture<Void>> deleteEsTrim(String esIndexName,
                                                       Long startId,
                                                       Long endId,
                                                       int offsetAdd,
                                                       int maxSendMessageDeleteIdSize,
                                                       List<String> adapterNames) {
-        this.stop = false;
+        int taskId = this.taskId.incrementAndGet();
         List<ESAdapter> adapterList = getAdapterList(adapterNames);
         if (adapterList.isEmpty()) {
             return new ArrayList<>();
@@ -138,7 +144,7 @@ public class IntESETLService {
 
                         Object[] searchAfter = startId == null ? null : new Object[]{Math.max(startId - 1L, 0L)};
                         do {
-                            if (stop) {
+                            if (isStop(taskId)) {
                                 break;
                             }
                             if (endId != null
@@ -211,7 +217,6 @@ public class IntESETLService {
                                                          int maxSendMessageSize,
                                                          List<String> adapterNames,
                                                          String esQueryBodyJson) {
-        this.stop = false;
         List<ESAdapter> adapterList = getAdapterList(adapterNames);
         if (adapterList.isEmpty()) {
             return new ArrayList<>();
@@ -223,6 +228,7 @@ public class IntESETLService {
         if (r == 0) {
             return new ArrayList<>();
         }
+        int taskId = this.taskId.incrementAndGet();
         if (threads <= 0) {
             threads = Math.max(Runtime.getRuntime().availableProcessors(), 1) * 2;
         }
@@ -252,7 +258,7 @@ public class IntESETLService {
                     Util.Range range = rangeList.get(i);
                     Counter counter = new Counter();
                     counterList[i] = counter;
-                    futureList[i] = newUpdateEsDiffRunnable(counter, esTemplate, config, range.getStart(), range.isLast() ? null : range.getEnd(), offsetAdd, diffFields, maxSendMessageSize, esQueryBodyJson);
+                    futureList[i] = newUpdateEsDiffRunnable(counter, esTemplate, config, range.getStart(), range.isLast() ? null : range.getEnd(), offsetAdd, diffFields, maxSendMessageSize, esQueryBodyJson, taskId);
                 }
                 CompletableFuture<Counter> future = CompletableFuture.allOf(futureList).thenApply(unused -> Counter.merge(counterList, maxSendMessageSize, maxChangeInfoListSize));
                 resultFutureList.add(future);
@@ -354,7 +360,7 @@ public class IntESETLService {
 
     private CompletableFuture<Void> newUpdateEsDiffRunnable(Counter counter, DefaultESTemplate esTemplate, ESSyncConfig config,
                                                             Long startId, Long endId, int offsetAdd,
-                                                            Set<String> diffFields, int maxSendMessageSize, String esQueryBodyJson) {
+                                                            Set<String> diffFields, int maxSendMessageSize, String esQueryBodyJson, int taskId) {
         CompletableFuture<Void> future = new CompletableFuture<>();
         executorService.execute(() -> {
             try {
@@ -366,7 +372,7 @@ public class IntESETLService {
 
                 Object[] searchAfter = startId == null ? null : new Object[]{Math.max(startId - 1L, 0L)};
                 do {
-                    if (stop) {
+                    if (isStop(taskId)) {
                         break;
                     }
                     if (endId != null
@@ -434,7 +440,6 @@ public class IntESETLService {
                                                                int maxSendMessageSize,
                                                                List<String> adapterNames,
                                                                String esQueryBodyJson) {
-        this.stop = false;
         List<ESAdapter> adapterList = getAdapterList(adapterNames);
         if (adapterList.isEmpty()) {
             return new ArrayList<>();
@@ -449,6 +454,7 @@ public class IntESETLService {
         if (threads <= 0) {
             threads = Math.max(Runtime.getRuntime().availableProcessors(), 1) * 2;
         }
+        int taskId = this.taskId.incrementAndGet();
         int maxIdInCount = 1000;
         AbstractMessageService messageService = startupServer.getMessageService();
         List<CompletableFuture<Counter>> resultFutureList = new ArrayList<>();
@@ -483,7 +489,7 @@ public class IntESETLService {
                     Util.Range range = rangeList.get(i);
                     Counter counter = new Counter();
                     counterList[i] = counter;
-                    futureList[i] = newUpdateEsNestedDiffRunnable(counter, esTemplate, config, range.getStart(), range.isLast() ? null : range.getEnd(), offsetAdd, diffFieldsFinal, maxSendMessageSize, maxIdInCount, esQueryBodyJson);
+                    futureList[i] = newUpdateEsNestedDiffRunnable(counter, esTemplate, config, range.getStart(), range.isLast() ? null : range.getEnd(), offsetAdd, diffFieldsFinal, maxSendMessageSize, maxIdInCount, esQueryBodyJson, taskId);
                 }
                 CompletableFuture<Counter> future = CompletableFuture.allOf(futureList).thenApply(unused -> Counter.merge(counterList, maxSendMessageSize, maxChangeInfoListSize));
                 resultFutureList.add(future);
@@ -507,7 +513,8 @@ public class IntESETLService {
                                                                   Long startId, Long endId, int offsetAdd,
                                                                   Set<String> diffFields, int maxSendMessageSize,
                                                                   int maxIdInCount,
-                                                                  String esQueryBodyJson) {
+                                                                  String esQueryBodyJson,
+                                                                  int taskId) {
         CompletableFuture<Void> future = new CompletableFuture<>();
         executorService.execute(() -> {
             try {
@@ -521,7 +528,7 @@ public class IntESETLService {
                 int uncommit = 0;
                 Object[] searchAfter = startId == null ? null : new Object[]{Math.max(startId - 1L, 0L)};
                 do {
-                    if (stop) {
+                    if (isStop(taskId)) {
                         break;
                     }
                     if (endId != null
@@ -663,11 +670,13 @@ public class IntESETLService {
             boolean insertIgnore,
             int maxSendMessageSize) {
         String trimWhere = ESSyncUtil.trimWhere(sqlWhere);
-        this.stop = false;
+
         List<ESAdapter> adapterList = getAdapterList(adapterNames);
         if (adapterList.isEmpty()) {
             return new ArrayList<>();
         }
+
+        int taskId = this.taskId.incrementAndGet();
 
         if (threads <= 0) {
             threads = Math.max(Runtime.getRuntime().availableProcessors(), 1) * 2;
@@ -717,7 +726,7 @@ public class IntESETLService {
                             onlyFieldNameSet, adapter, config, onlyCurrentIndex, sqlWhere, insertIgnore) {
                         @Override
                         public long run0(long offset) {
-                            if (stop) {
+                            if (isStop(taskId)) {
                                 return offset;
                             }
                             List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, offset, offsetAdd, tableName, pk, config, trimWhere);
@@ -775,6 +784,7 @@ public class IntESETLService {
         if (adapterList.isEmpty()) {
             return 0;
         }
+        int taskId = this.taskId.incrementAndGet();
         int count = 0;
         for (ESAdapter adapter : adapterList) {
             Map<String, ESSyncConfig> configMap = adapter.getEsSyncConfigByIndex(esIndexName);
@@ -783,7 +793,7 @@ public class IntESETLService {
                 String catalog = CanalConfig.DatasourceConfig.getCatalog(config.getDataSourceKey());
                 try {
                     count += id.length;
-                    syncById(jdbcTemplate, catalog, Arrays.asList(id), onlyCurrentIndex, onlyFieldNameSet, adapter, config);
+                    syncById(jdbcTemplate, catalog, Arrays.asList(id), onlyCurrentIndex, onlyFieldNameSet, adapter, config, taskId);
                 } finally {
                     log.info("all sync end.  total = {} ", count);
                 }
@@ -836,8 +846,7 @@ public class IntESETLService {
 
     protected int syncById(JdbcTemplate jdbcTemplate, String catalog, Collection<Long> id,
                            boolean onlyCurrentIndex, Collection<String> onlyFieldNameSet,
-                           ESAdapter esAdapter, ESSyncConfig config) {
-        this.stop = false;
+                           ESAdapter esAdapter, ESSyncConfig config, int taskId) {
         if (id == null || id.isEmpty()) {
             return 0;
         }
@@ -845,7 +854,7 @@ public class IntESETLService {
         String pk = config.getEsMapping().getPk();
         String tableName = config.getEsMapping().getSchemaItem().getMainTable().getTableName();
         for (Long i : id) {
-            if (stop) {
+            if (isStop(taskId)) {
                 break;
             }
             List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, i, 1, tableName, pk, config, null);

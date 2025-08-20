@@ -1,10 +1,14 @@
 package com.github.dts.impl.elasticsearch;
 
+import com.github.dts.canal.StartupServer;
 import com.github.dts.cluster.DiscoveryService;
 import com.github.dts.cluster.MessageTypeEnum;
 import com.github.dts.cluster.SdkInstanceClient;
 import com.github.dts.cluster.SdkMessage;
 import com.github.dts.impl.elasticsearch.basic.ESSyncConfigSQL;
+import com.github.dts.impl.elasticsearch.etl.ESETLService;
+import com.github.dts.impl.elasticsearch.etl.IntESETLService;
+import com.github.dts.impl.elasticsearch.etl.StringEsETLService;
 import com.github.dts.util.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,10 +16,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.annotation.AnnotationAwareOrderComparator;
 
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
+import java.util.function.IntFunction;
 import java.util.stream.Collectors;
 
 
@@ -44,11 +50,22 @@ public class ESAdapter implements Adapter {
     private int maxIdIn = 1000;
     private RealtimeListener connectorCommitListener;
     private Timestamp lastBinlogTimestamp = null;
+    private long ignoreEndTimestamp;
+
+    private static List<Dml> filterDmlList(List<Dml> dmls, boolean etl, long ignoreEndTimestamp) {
+        return dmls.stream()
+                .filter(e -> !Boolean.TRUE.equals(e.getIsDdl()))
+                .filter(e -> {
+                    Long es = e.getEs();
+                    return etl || es == null || ignoreEndTimestamp == 0 || es > ignoreEndTimestamp;
+                })
+                .collect(Collectors.toList());
+    }
 
     @Override
     public void init(CanalConfig.CanalAdapter canalAdapter,
                      CanalConfig.OuterAdapterConfig configuration, Properties envProperties,
-                     DiscoveryService discoveryService, String env) {
+                     DiscoveryService discoveryService, StartupServer server) {
         this.configuration = configuration;
         this.connectorCommitListener = discoveryService == null ? null : new RealtimeListener(discoveryService, configuration.getName(), configuration.getEs().getCommitEventPublishScheduledTickMs(), configuration.getEs().getCommitEventPublishMaxBlockCount());
         this.onlyEffect = configuration.getEs().isOnlyEffect();
@@ -76,7 +93,7 @@ public class ESAdapter implements Adapter {
                 Runnable::run :
                 Util.newFixedThreadPool(1, mainJoinNestedField.getThreads(),
                         60_000L, "ESJoin-" + clientIdentity, true, false, mainJoinNestedField.getQueues(), NestedMainJoinTableRunnable::merge));
-        ESSyncConfig.loadESSyncConfig(dbTableEsSyncConfig, esSyncConfig, envProperties, canalAdapter, configuration.getName(), configuration.getEs().resourcesDir(), env);
+        ESSyncConfig.loadESSyncConfig(dbTableEsSyncConfig, esSyncConfig, envProperties, canalAdapter, configuration.getName(), configuration.getEs().resourcesDir(), server);
 
         this.listenerList.sort(AnnotationAwareOrderComparator.INSTANCE);
         this.listenerList.forEach(item -> item.init(esSyncConfig));
@@ -142,6 +159,89 @@ public class ESAdapter implements Adapter {
         return map;
     }
 
+    public int etlSyncById(List<?> idList) {
+        int i = 0;
+        ArrayList<ESSyncConfig> configs = new ArrayList<>(esSyncConfig.values());
+        for (ESSyncConfig config : configs) {
+            i += etlSyncById(config, idList);
+        }
+        return i;
+    }
+
+    public int etlSyncById(ESSyncConfig config, List<?> idList) {
+        ESSyncConfig.ESMapping esMapping = config.getEsMapping();
+        String name = getName();
+
+        ESETLService esetlService = esMapping.getEtl().serviceInstance();
+        if (esetlService instanceof IntESETLService) {
+            IntESETLService esETLService = (IntESETLService) esetlService;
+            Long[] idArray = idList.stream().map(TypeUtil::castToLong).toArray(Long[]::new);
+            return esETLService.syncById(idArray, esMapping.get_index(), true, null, Collections.singletonList(name));
+        } else if (esetlService instanceof StringEsETLService) {
+            StringEsETLService esETLService = (StringEsETLService) esetlService;
+            String[] idArray = idList.stream().map(String::valueOf).toArray(String[]::new);
+            return esETLService.syncById(idArray, esMapping.get_index(), true, null, Collections.singletonList(name));
+        } else {
+            throw new IllegalStateException("no support etl service");
+        }
+    }
+
+    public CompletableFuture<?> etlSyncAll() {
+        Iterator<ESSyncConfig> iterator = new ArrayList<>(esSyncConfig.values()).iterator();
+        CompletableFuture<?> future = new CompletableFuture<>();
+        class SyncAll {
+            public void next() {
+                if (iterator.hasNext()) {
+                    try {
+                        List<CompletableFuture<?>> futureList = etlSyncAll(iterator.next());
+                        CompletableFuture.allOf(futureList.toArray(new CompletableFuture[0]))
+                                .whenComplete((unused, throwable) -> next());
+                    } catch (Exception e) {
+                        log.warn("etlSyncAll error, {}", e.toString(), e);
+                        next();
+                    }
+                } else {
+                    future.complete(null);
+                }
+            }
+        }
+        new SyncAll().next();
+        return future;
+    }
+
+    public List<CompletableFuture<?>> etlSyncAll(ESSyncConfig config) {
+        ESSyncConfig.ESMapping esMapping = config.getEsMapping();
+        String name = getName();
+
+        ESETLService esetlService = esMapping.getEtl().serviceInstance();
+        if (esetlService instanceof IntESETLService) {
+            IntESETLService esETLService = (IntESETLService) esetlService;
+            int threads = Math.max(Runtime.getRuntime().availableProcessors() * 2, 4);
+            return esETLService.checkAll(esMapping.get_index(), Collections.singletonList(name),
+                    100, threads, null, null);
+        } else if (esetlService instanceof StringEsETLService) {
+            StringEsETLService esETLService = (StringEsETLService) esetlService;
+            return esETLService.checkAll(esMapping.get_index(), Collections.singletonList(name),
+                    100, null, null);
+        } else {
+            throw new IllegalStateException("no support etl service");
+        }
+    }
+
+    public void etlSyncStop() {
+        for (ESSyncConfig config : esSyncConfig.values()) {
+            etlSyncStop(config);
+        }
+    }
+
+    public void etlSyncStop(ESSyncConfig config) {
+        ESSyncConfig.ESMapping esMapping = config.getEsMapping();
+        ESETLService esetlService = esMapping.getEtl().serviceInstance();
+        if (esetlService != null) {
+            esetlService.stopSync();
+        }
+    }
+
     public Map<String, ESSyncConfig> getEsSyncConfig() {
         return Collections.unmodifiableMap(esSyncConfig);
     }
@@ -183,9 +283,11 @@ public class ESAdapter implements Adapter {
         // share Adapter Cache
         ReferenceCounted<CacheMap> cacheMapRef = newCacheMap(dmls, adapterListSize, etl);
         CacheMap cacheMap = cacheMapRef.get();
+        long currentTimestamp = System.currentTimeMillis();
+        Timestamp startTimestamp = new Timestamp(currentTimestamp);
         try {
             ESTemplate.BulkRequestList bulkRequestList = esTemplate.newBulkRequestList(BulkPriorityEnum.HIGH);
-            List<Dml> syncDmlList = dmls.stream().filter(e -> !Boolean.TRUE.equals(e.getIsDdl())).collect(Collectors.toList());
+            List<Dml> syncDmlList = filterDmlList(dmls, etl, ignoreEndTimestamp);
             String tables = syncDmlList.stream().map(Dml::getTable).distinct().collect(Collectors.joining(","));
             Dml max = dmls.stream().filter(e -> e.getEs() != null).max(Comparator.comparing(Dml::getEs)).orElse(null);
             Timestamp lastBinlogTimestamp = max == null ? null : new Timestamp(max.getEs());
@@ -194,8 +296,7 @@ public class ESAdapter implements Adapter {
             }
             // basic field change
             BasicFieldWriter.WriteResult writeResult = new BasicFieldWriter.WriteResult();
-            Timestamp startTimestamp = new Timestamp(System.currentTimeMillis());
-            long timestamp = System.currentTimeMillis();
+            long timestamp = currentTimestamp;
             long basicFieldWriterCost;
             try {
                 Map<Map<String, ESSyncConfig>, List<Dml>> groupByMap = new IdentityHashMap<>(dbTableEsSyncConfig.size());
@@ -480,6 +581,32 @@ public class ESAdapter implements Adapter {
                 ", streamChunkSize=" + streamChunkSize +
                 ", maxIdIn=" + maxIdIn +
                 '}';
+    }
+
+    /**
+     * 忽略增量的处理
+     *
+     * @param duration 持续时间（必填）
+     * @return 结束时间
+     */
+    public long ignore(Duration duration) {
+        long millis = duration.toMillis();
+        return this.ignoreEndTimestamp = System.currentTimeMillis() + millis;
+    }
+
+    /**
+     * 停止忽略增量的处理
+     *
+     * @return 之前的结束时间
+     */
+    public long ignoreStop() {
+        long ignoreEndTimestamp = this.ignoreEndTimestamp;
+        this.ignoreEndTimestamp = 0;
+        return ignoreEndTimestamp;
+    }
+
+    public long getIgnoreEndTimestamp() {
+        return ignoreEndTimestamp;
     }
 
     static class RealtimeListener implements ESTemplate.RefreshListener, EsDependentCommitListener, Runnable {
