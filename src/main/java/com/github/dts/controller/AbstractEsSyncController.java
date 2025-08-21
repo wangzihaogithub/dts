@@ -93,15 +93,17 @@ public abstract class AbstractEsSyncController {
     public Map<String, Map<String, Object>> status() {
         Map<String, Map<String, Object>> statusMap = new LinkedHashMap<>();
         for (ESAdapter esAdapter : startupServer.getAdapter(ESAdapter.class)) {
+            String name = esAdapter.getName();
+
             Timestamp lastBinlogTimestamp = esAdapter.getLastBinlogTimestamp();
             Map<String, Object> status = new LinkedHashMap<>();
-            status.put("name", esAdapter.getName());
+            status.put("name", name);
             status.put("clientIdentity", esAdapter.getClientIdentity());
             status.put("lastBinlogTimestamp", String.valueOf(lastBinlogTimestamp));
             status.put("nestedMainJoinTableStatus", esAdapter.getNestedMainJoinTableStatus());
             status.put("nestedSlaveTableStatus", esAdapter.getNestedSlaveTableStatus());
 
-            statusMap.put(esAdapter.getName(), status);
+            statusMap.put(name, status);
         }
         return statusMap;
     }
@@ -129,11 +131,12 @@ public abstract class AbstractEsSyncController {
         } else {
             adapterList = startupServer.getAdapter(ESAdapter.class);
         }
+        int count = 0;
         List<String> idList = Arrays.asList(id);
         for (ESAdapter esAdapter : adapterList) {
-            esAdapter.etlSyncById(idList);
+            count += esAdapter.etlSyncById(idList);
         }
-        return adapterList.size();
+        return count;
     }
 
     @RequestMapping("/etl/stop")
@@ -170,8 +173,8 @@ public abstract class AbstractEsSyncController {
      * @return 持续时间
      */
     @RequestMapping("/binlog/ignore")
-    public Object binlogIgnore(@RequestParam(value = "duration", required = false, defaultValue = "PT30M") String duration,
-                         @RequestParam(value = "adapterNames", required = false) String[] adapterNames) {
+    public Map<String, Object> binlogIgnore(@RequestParam(value = "duration", required = false, defaultValue = "PT30M") String duration,
+                                            @RequestParam(value = "adapterNames", required = false) String[] adapterNames) {
         Duration parseDuration = Duration.parse(duration);
         List<ESAdapter> adapterList;
         if (adapterNames != null && adapterNames.length > 0) {
@@ -197,7 +200,7 @@ public abstract class AbstractEsSyncController {
      * @return 持续时间
      */
     @RequestMapping("/binlog/ignoreStop")
-    public Object binlogIgnoreStop(@RequestParam(value = "adapterNames", required = false) String[] adapterNames) {
+    public Map<String, Object> binlogIgnoreStop(@RequestParam(value = "adapterNames", required = false) String[] adapterNames) {
         List<ESAdapter> adapterList;
         if (adapterNames != null && adapterNames.length > 0) {
             adapterList = Arrays.stream(adapterNames).map(e -> startupServer.getAdapter(e, ESAdapter.class)).collect(Collectors.toList());

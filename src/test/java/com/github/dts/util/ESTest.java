@@ -40,24 +40,35 @@ public class ESTest {
         LinkedList<TrimRequest> requests1 = new LinkedList<>();
 
         requests1.add(new ESConnection.ESUpdateRequestImpl("123",
-                "1", asMap("k", "v"), false, 1));
+                "1", asMap("k", "v"), false, 1, "indexUpdateTime"));
         requests1.add(new ESConnection.ESDeleteRequestImpl("123",
                 "1"));
         requests1.add(new ESConnection.ESUpdateRequestImpl("123",
-                "1", asMap("k", "v"), true, 1));
+                "1", asMap("k", "v"), true, 1, "indexUpdateTime"));
         requests1.add(new ESConnection.ESDeleteRequestImpl("123",
                 "1"));
         requests1.add(new ESConnection.ESUpdateRequestImpl("123",
-                "1", asMap("k", "v"), false, 1));
+                "1", asMap("k", "v"), false, 1, "indexUpdateTime"));
         requests1.add(new ESConnection.ESUpdateRequestImpl("123",
-                "1", asMap("k", "v"), false, 1));
+                "1", asMap("k", "v"), false, 1, "indexUpdateTime"));
         requests1.add(new ESConnection.ESUpdateRequestImpl("123",
-                "1", asMap("k", "v"), false, 1));
+                "1", asMap("k2", "v"), false, 1, "indexUpdateTime"));
         requests1.add(new ESConnection.ESUpdateRequestImpl("123",
-                "1", asMap("ka", "v2"), true, 1));
+                "1", asMap("k23", "v"), false, 1, "indexUpdateTime"));
+
         requests1.add(new ESConnection.ESUpdateRequestImpl("123",
-                "2", asMap("k", "v2"), true, 1));
+                "1", asMap("k", "v"), false, 1, "indexUpdateTime"));
+        requests1.add(new ESConnection.ESUpdateRequestImpl("123",
+                "1", asMap("ka", "v2"), true, 1, "indexUpdateTime"));
+        requests1.add(new ESConnection.ESUpdateRequestImpl("123",
+                "2", asMap("k", "v2"), true, 1, "indexUpdateTime"));
+        requests1.add(new ESConnection.ESUpdateRequestImpl("123",
+                "2", asMap("k1", "v2"), true, 1, "indexUpdateTime"));
+
         TrimRequest.trim(requests1);
+
+        LinkedList<TrimRequest> trimRequests = new LinkedList<>(requests1);
+        TrimRequest.merge(trimRequests);
         System.out.println("requests1 = " + requests1);
     }
 

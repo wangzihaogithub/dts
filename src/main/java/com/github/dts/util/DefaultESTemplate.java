@@ -96,8 +96,8 @@ public class DefaultESTemplate implements ESTemplate {
         setterIndexUpdatedTime(mapping, temp);
 
         Map<String, Object> esMap = EsTypeUtil.mysql2EsType(mapping, temp, getEsType(mapping));//insert
-        ESBulkRequest.ESUpdateRequest updateRequest = new ESConnection.ESUpdateRequestImpl(mapping.get_index(),
-                pkVal.toString(), esMap, true, mapping.getRetryOnConflict());
+        ESBulkRequest.ESUpdateRequest updateRequest = new ESConnection.ESUpdateRequestImpl(mapping,
+                pkVal.toString(), esMap, true);
         return addRequest(updateRequest, bulkRequestList);
     }
 
@@ -399,8 +399,8 @@ public class DefaultESTemplate implements ESTemplate {
      *
      * @param aliasIndexName 别名
      * @param newIndexName   新索引名称（如果不存在，则自动创建结构）
-     * @throws IOException 没调用成功
      * @return 是否成功
+     * @throws IOException 没调用成功
      */
     public EsActionResponse indexAliasesTo(String aliasIndexName, String newIndexName) throws IOException {
         // 新索引是否存在
@@ -631,8 +631,8 @@ public class DefaultESTemplate implements ESTemplate {
         } else {
             String pkToString = pkVal.toString();
             String index = mapping.get_index();
-            ESConnection.ESUpdateRequestImpl esUpdateRequest = new ESConnection.ESUpdateRequestImpl(index,
-                    pkToString, esFieldData, mapping.isUpsert(), mapping.getRetryOnConflict());
+            ESConnection.ESUpdateRequestImpl esUpdateRequest = new ESConnection.ESUpdateRequestImpl(mapping,
+                    pkToString, esFieldData, mapping.isUpsert());
             trimRemoveIndexUpdateTime(mapping, bulkRequestList, esFieldData, index, pkToString);
             addRequest(esUpdateRequest, bulkRequestList);
         }
@@ -805,12 +805,16 @@ public class DefaultESTemplate implements ESTemplate {
         }
 
         List<ESBulkRequest.ESRequest> drainTo() {
+            if (requests.isEmpty()) {
+                return Collections.emptyList();
+            }
             synchronized (requests) {
                 LinkedList<ESBulkRequest.ESRequest> esRequests = new LinkedList<>(requests);
                 size = 0;
                 requests.clear();
                 if (esRequests.size() > 1) {
                     TrimRequest.trim(esRequests);
+                    TrimRequest.merge(esRequests);
                 }
                 return esRequests;
             }

@@ -206,7 +206,7 @@ public class StringEsETLService implements ESETLService {
         if (adapterList.isEmpty()) {
             return 0;
         }
-
+        List<String> idList = Arrays.asList(id);
         int taskId = this.taskId.incrementAndGet();
         int count = 0;
         for (ESAdapter adapter : adapterList) {
@@ -215,8 +215,7 @@ public class StringEsETLService implements ESETLService {
                 JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(config.getDataSourceKey());
                 String catalog = CanalConfig.DatasourceConfig.getCatalog(config.getDataSourceKey());
                 try {
-                    count += id.length;
-                    syncById(jdbcTemplate, catalog, Arrays.asList(id), onlyCurrentIndex, onlyFieldNameSet, adapter, config, taskId);
+                    count += syncById(jdbcTemplate, catalog, idList, onlyCurrentIndex, onlyFieldNameSet, adapter, config, taskId);
                 } finally {
                     log.info("all sync end.  total = {} ", count);
                 }

@@ -6,6 +6,7 @@ import com.github.dts.impl.elasticsearch.nested.SQL;
 import com.github.dts.util.*;
 
 import java.util.*;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.stream.Collectors;
@@ -213,15 +214,19 @@ public class NestedFieldWriter {
             if (partition.size() == 1) {
                 executeEsTemplateUpdate(mergeSqlList, bulkRequestList, cacheMap, esTemplate);
             } else {
-                List<Future> futures = partition.stream()
-                        .map(e -> mainTableListenerExecutor.submit(() -> executeEsTemplateUpdate(e, bulkRequestList, cacheMap, esTemplate)))
+                List<Callable<Void>> callableList = partition.stream()
+                        .map(e -> (Callable<Void>) () -> {
+                            executeEsTemplateUpdate(e, bulkRequestList, cacheMap, esTemplate);
+                            return null;
+                        })
                         .collect(Collectors.toList());
-                for (Future future : futures) {
-                    try {
+                try {
+                    List<Future<Void>> futureList = mainTableListenerExecutor.invokeAll(callableList);
+                    for (Future<Void> future : futureList) {
                         future.get();
-                    } catch (Exception e) {
-                        Util.sneakyThrows(e);
                     }
+                } catch (Exception e) {
+                    Util.sneakyThrows(e);
                 }
             }
         }

@@ -751,8 +751,13 @@ public class ESConnection {
         private final String id;
         private final Map source;
         private final boolean shouldUpsertDoc;
+        private final String indexUpdatedTimeFieldName;
 
-        public ESUpdateRequestImpl(String index, String id, Map source, boolean shouldUpsertDoc, int retryOnConflict) {
+        public ESUpdateRequestImpl(ESSyncConfig.ESMapping mapping, String id, Map source, boolean shouldUpsertDoc) {
+            this(mapping.get_index(), id, source, shouldUpsertDoc, mapping.getRetryOnConflict(), mapping.getIndexUpdatedTime());
+        }
+
+        public ESUpdateRequestImpl(String index, String id, Map source, boolean shouldUpsertDoc, int retryOnConflict, String indexUpdatedTimeFieldName) {
             super(index, id);
             docAsUpsert(shouldUpsertDoc);
             retryOnConflict(retryOnConflict);
@@ -761,6 +766,36 @@ public class ESConnection {
             this.id = id;
             this.source = source;
             this.shouldUpsertDoc = shouldUpsertDoc;
+            this.indexUpdatedTimeFieldName = indexUpdatedTimeFieldName;
+        }
+
+        @Override
+        public <T extends TrimRequest> boolean mergeTo(T next) {
+            if (next instanceof ESUpdateRequestImpl) {
+                ESUpdateRequestImpl o = (ESUpdateRequestImpl) next;
+                if (Objects.equals(id, o.id)
+                        && Objects.equals(index, o.index)
+                        && shouldUpsertDoc == o.shouldUpsertDoc) {
+                    if (isExistCrossing(source, o.source, indexUpdatedTimeFieldName)) {
+                        source.putAll(o.source);
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        private static boolean isExistCrossing(Map source, Map other, String excludeFiledName) {
+            Set otherKeys = other.keySet();
+            for (Object otherKey : otherKeys) {
+                if (Objects.equals(excludeFiledName, otherKey)) {
+                    continue;
+                }
+                if (source.containsKey(otherKey)) {
+                    return false;
+                }
+            }
+            return true;
         }
 
         @Override

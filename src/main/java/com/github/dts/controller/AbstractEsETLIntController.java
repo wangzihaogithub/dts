@@ -154,7 +154,7 @@ public abstract class AbstractEsETLIntController {
     }
 
     @RequestMapping("/syncById")
-    public Object syncById(@RequestParam(value = "id", required = true) Long[] id,
+    public int syncById(@RequestParam(value = "id", required = true) Long[] id,
                            @RequestParam(value = "esIndexName", required = true) String esIndexName,
                            @RequestParam(value = "onlyCurrentIndex", required = false, defaultValue = "true") boolean onlyCurrentIndex,
                            @RequestParam(value = "onlyFieldName", required = false) String[] onlyFieldName,
@@ -168,15 +168,17 @@ public abstract class AbstractEsETLIntController {
     public Map<String, Map<String, Object>> status() {
         Map<String, Map<String, Object>> statusMap = new LinkedHashMap<>();
         for (ESAdapter esAdapter : startupServer.getAdapter(ESAdapter.class)) {
+            String name = esAdapter.getName();
+
             Timestamp lastBinlogTimestamp = esAdapter.getLastBinlogTimestamp();
             Map<String, Object> status = new LinkedHashMap<>();
-            status.put("name", esAdapter.getName());
+            status.put("name", name);
             status.put("clientIdentity", esAdapter.getClientIdentity());
             status.put("lastBinlogTimestamp", String.valueOf(lastBinlogTimestamp));
             status.put("nestedMainJoinTableStatus", esAdapter.getNestedMainJoinTableStatus());
             status.put("nestedSlaveTableStatus", esAdapter.getNestedSlaveTableStatus());
 
-            statusMap.put(esAdapter.getName(), status);
+            statusMap.put(name, status);
         }
         return statusMap;
     }
@@ -201,7 +203,7 @@ public abstract class AbstractEsETLIntController {
      * @return 持续时间
      */
     @RequestMapping("/ignore")
-    public Object ignore(@RequestParam(value = "duration", required = false, defaultValue = "PT30M") String duration,
+    public Map<String, Object> ignore(@RequestParam(value = "duration", required = false, defaultValue = "PT30M") String duration,
                              @RequestParam(value = "adapterNames", required = false) String[] adapterNames) {
         Duration parseDuration = Duration.parse(duration);
         List<ESAdapter> adapterList;
@@ -228,7 +230,7 @@ public abstract class AbstractEsETLIntController {
      * @return 持续时间
      */
     @RequestMapping("/ignoreStop")
-    public Object ignoreStop(@RequestParam(value = "adapterNames", required = false) String[] adapterNames) {
+    public Map<String, Object> ignoreStop(@RequestParam(value = "adapterNames", required = false) String[] adapterNames) {
         List<ESAdapter> adapterList;
         if (adapterNames != null && adapterNames.length > 0) {
             adapterList = Arrays.stream(adapterNames).map(e -> startupServer.getAdapter(e, ESAdapter.class)).collect(Collectors.toList());
