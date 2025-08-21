@@ -549,7 +549,7 @@ public class StringEsETLService implements ESETLService {
                             String ids = hitList.stream().map(ESTemplate.Hit::getId).collect(Collectors.joining("','"));
                             String sql = String.format("select %s from %s where %s in ('%s') group by %s",
                                     String.join(",", select),
-                                    esMapping.getSchemaItem().getMainTable().getTableName(), pkFieldExpr, ids, pkFieldExpr);
+                                    esMapping.getSchemaItem().getMainTable().getTableName(), pkFieldName, ids, pkFieldName);
                             Map<String, Map<String, Object>> db1Map = jdbcTemplate.queryForList(sql).stream()
                                     .collect(Collectors.toMap(e -> String.valueOf(e.get(pkFieldName)), Function.identity()));
 
