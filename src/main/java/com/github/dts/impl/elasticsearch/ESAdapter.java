@@ -159,13 +159,16 @@ public class ESAdapter implements Adapter {
         return map;
     }
 
-    public int etlSyncById(List<?> idList) {
-        int i = 0;
+    public Map<ESSyncConfig, Integer> etlSyncById(List<?> idList) {
+        Map<ESSyncConfig, Integer> result = new IdentityHashMap<>();
         ArrayList<ESSyncConfig> configs = new ArrayList<>(esSyncConfig.values());
         for (ESSyncConfig config : configs) {
-            i += etlSyncById(config, idList);
+            int i = etlSyncById(config, idList);
+            if (i > 0) {
+                result.put(config, i);
+            }
         }
-        return i;
+        return result;
     }
 
     public int etlSyncById(ESSyncConfig config, List<?> idList) {

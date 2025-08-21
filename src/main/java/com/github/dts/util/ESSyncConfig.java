@@ -74,7 +74,7 @@ public class ESSyncConfig {
             }
             EtlServiceEnum etlService = etl.getServiceType();
             if (etlService == null) {
-                etlService = defaultEtlServiceEnum(esMapping, config.dataSourceKey);
+                etl.serviceType = etlService = defaultEtlServiceEnum(esMapping, config.dataSourceKey);
             }
             etl.etlServiceInstance = etlService.newInstance(esMapping.get_index(), server);
 

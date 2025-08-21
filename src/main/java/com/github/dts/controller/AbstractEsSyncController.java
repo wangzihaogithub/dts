@@ -125,20 +125,26 @@ public abstract class AbstractEsSyncController {
     }
 
     @RequestMapping("/etl/syncById")
-    public int syncById(@RequestParam(value = "id", required = true) String[] id,
-                        @RequestParam(value = "adapterNames", required = false) String[] adapterNames) {
+    public Map<String, Map<String, Integer>> syncById(@RequestParam(value = "id", required = true) String[] id,
+                                                      @RequestParam(value = "adapterNames", required = false) String[] adapterNames) {
         List<ESAdapter> adapterList;
         if (adapterNames != null && adapterNames.length > 0) {
             adapterList = Arrays.stream(adapterNames).map(e -> startupServer.getAdapter(e, ESAdapter.class)).collect(Collectors.toList());
         } else {
             adapterList = startupServer.getAdapter(ESAdapter.class);
         }
-        int count = 0;
+        Map<String, Map<String, Integer>> result = new LinkedHashMap<>();
         List<String> idList = Arrays.asList(id);
         for (ESAdapter esAdapter : adapterList) {
-            count += esAdapter.etlSyncById(idList);
+            Map<ESSyncConfig, Integer> map = esAdapter.etlSyncById(idList);
+            if (map.isEmpty()) {
+                continue;
+            }
+            Map<String, Integer> row = new LinkedHashMap<>();
+            map.forEach((k, v) -> row.put(k.getEsMapping().get_index(), v));
+            result.put(esAdapter.getName(), row);
         }
-        return count;
+        return result;
     }
 
     @RequestMapping("/etl/stop")

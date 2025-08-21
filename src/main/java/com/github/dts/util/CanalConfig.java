@@ -586,9 +586,9 @@ public class CanalConfig {
                 return adapterClass;
             }
             if (es.getAddress() != null && es.getAddress().length > 0) {
-                return ESAdapter.class;
+                return this.adapterClass = ESAdapter.class;
             } else {
-                return RDSAdapter.class;
+                return this.adapterClass = RDSAdapter.class;
             }
         }
 
