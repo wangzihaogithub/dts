@@ -155,10 +155,10 @@ public abstract class AbstractEsETLIntController {
 
     @RequestMapping("/syncById")
     public int syncById(@RequestParam(value = "id", required = true) Long[] id,
-                           @RequestParam(value = "esIndexName", required = true) String esIndexName,
-                           @RequestParam(value = "onlyCurrentIndex", required = false, defaultValue = "true") boolean onlyCurrentIndex,
-                           @RequestParam(value = "onlyFieldName", required = false) String[] onlyFieldName,
-                           @RequestParam(value = "adapterNames", required = false) String[] adapterNames) {
+                        @RequestParam(value = "esIndexName", required = true) String esIndexName,
+                        @RequestParam(value = "onlyCurrentIndex", required = false, defaultValue = "true") boolean onlyCurrentIndex,
+                        @RequestParam(value = "onlyFieldName", required = false) String[] onlyFieldName,
+                        @RequestParam(value = "adapterNames", required = false) String[] adapterNames) {
         Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(Util::isNotBlank).collect(Collectors.toCollection(LinkedHashSet::new));
         return intESETLService.syncById(id, esIndexName, onlyCurrentIndex, onlyFieldNameSet,
                 adapterNames == null ? null : Arrays.asList(adapterNames));
@@ -169,10 +169,12 @@ public abstract class AbstractEsETLIntController {
         Map<String, Map<String, Object>> statusMap = new LinkedHashMap<>();
         for (ESAdapter esAdapter : startupServer.getAdapter(ESAdapter.class)) {
             String name = esAdapter.getName();
+            long ignore = esAdapter.getIgnoreEndTimestamp();
 
             Timestamp lastBinlogTimestamp = esAdapter.getLastBinlogTimestamp();
             Map<String, Object> status = new LinkedHashMap<>();
             status.put("name", name);
+            status.put("ignoreEndTime", ignore == 0 ? "0" : new Timestamp(ignore).toString());
             status.put("clientIdentity", esAdapter.getClientIdentity());
             status.put("lastBinlogTimestamp", String.valueOf(lastBinlogTimestamp));
             status.put("nestedMainJoinTableStatus", esAdapter.getNestedMainJoinTableStatus());
@@ -204,7 +206,7 @@ public abstract class AbstractEsETLIntController {
      */
     @RequestMapping("/ignore")
     public Map<String, Object> ignore(@RequestParam(value = "duration", required = false, defaultValue = "PT30M") String duration,
-                             @RequestParam(value = "adapterNames", required = false) String[] adapterNames) {
+                                      @RequestParam(value = "adapterNames", required = false) String[] adapterNames) {
         Duration parseDuration = Duration.parse(duration);
         List<ESAdapter> adapterList;
         if (adapterNames != null && adapterNames.length > 0) {

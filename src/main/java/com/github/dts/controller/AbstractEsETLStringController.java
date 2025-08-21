@@ -164,10 +164,12 @@ public abstract class AbstractEsETLStringController {
         Map<String, Map<String, Object>> statusMap = new LinkedHashMap<>();
         for (ESAdapter esAdapter : startupServer.getAdapter(ESAdapter.class)) {
             String name = esAdapter.getName();
+            long ignore = esAdapter.getIgnoreEndTimestamp();
 
             Timestamp lastBinlogTimestamp = esAdapter.getLastBinlogTimestamp();
             Map<String, Object> status = new LinkedHashMap<>();
             status.put("name", name);
+            status.put("ignoreEndTime", ignore == 0 ? "0" : new Timestamp(ignore).toString());
             status.put("clientIdentity", esAdapter.getClientIdentity());
             status.put("lastBinlogTimestamp", String.valueOf(lastBinlogTimestamp));
             status.put("nestedMainJoinTableStatus", esAdapter.getNestedMainJoinTableStatus());
