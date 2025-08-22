@@ -509,6 +509,7 @@ public class ESSyncUtil {
         } else if (mysqlRowData == null || mysqlRowData.isEmpty()) {
             return Collections.singletonList(parentObjectFieldFieldName);
         } else if (objectField.isSqlType()) {
+            // 扁平的SQL类型 (OBJECT_FLAT_SQL || ARRAY_FLAT_SQL)
             if (objectField.getType().isFlatSqlType()) {
                 Collection<?> esList;
                 if (esRowData instanceof Collection) {
@@ -527,9 +528,11 @@ public class ESSyncUtil {
                     return Collections.singletonList(parentObjectFieldFieldName);
                 }
             } else if (esRowData instanceof Map) {
+                // (OBJECT_SQL)
                 Map es = ((Map<?, ?>) esRowData);
                 Map<String, Object> mysql = mysqlRowData.get(0);
                 List<String> changeList = new ArrayList<>();
+                // 只比较一行记录：O(n * 字段数量)
                 for (String field : mysql.keySet()) {
                     Object mysqlValue = mysql.get(field);
                     Object esValue = es.get(field);
@@ -544,33 +547,62 @@ public class ESSyncUtil {
                 }
                 return changeList;
             } else if (esRowData instanceof Collection) {
+                // ARRAY_FLAT_SQL
                 Collection<?> esList = (Collection<?>) esRowData;
                 if (esList.size() != mysqlRowData.size()) {
                     return Collections.singletonList(parentObjectFieldFieldName);
                 }
+                // 是否需要保证每行的先后顺序
                 boolean requireSequential = isRequireSequential(objectField);
-                Iterator<Map<String, Object>> mysqlIterator = mysqlRowData.iterator();
                 List<String> changeList = new ArrayList<>();
-                for (Object esObj : esList) {
-                    if (!(esObj instanceof Map)) {
-                        return Collections.singletonList(parentObjectFieldFieldName);
-                    }
-                    Map<String, Object> mysql = mysqlIterator.next();
-                    Map<String, Object> es = (Map<String, Object>) esObj;
-                    for (String field : mysql.keySet()) {
-                        Object mysqlValue = mysql.get(field);
-                        Object esValue = es.get(field);
-                        ESSyncConfig.ObjectField fieldObjectField = objectField.getEsMapping().getObjectField(parentObjectFieldFieldName, field);
-                        if (fieldObjectField != null) {
-                            if (!equalsObjectFieldRowDataValue(mysqlValue, esValue, fieldObjectField, mysql, es, requireSequential)) {
+                if (requireSequential) {
+                    // 按每行顺序比较：O(n * 字段数量)
+                    Iterator<Map<String, Object>> mysqlIterator = mysqlRowData.iterator();
+                    for (Object esObj : esList) {
+                        if (!(esObj instanceof Map)) {
+                            return Collections.singletonList(parentObjectFieldFieldName);
+                        }
+                        Map<String, Object> mysql = mysqlIterator.next();
+                        Map<String, Object> es = (Map<String, Object>) esObj;
+                        ESMapping esMapping = objectField.getEsMapping();
+                        for (String field : mysql.keySet()) {
+                            Object mysqlValue = mysql.get(field);
+                            Object esValue = es.get(field);
+                            ESSyncConfig.ObjectField fieldObjectField = esMapping.getObjectField(parentObjectFieldFieldName, field);
+                            if (fieldObjectField != null) {
+                                if (!equalsObjectFieldRowDataValue(mysqlValue, esValue, fieldObjectField, mysql, es, requireSequential)) {
+                                    changeList.add(convertNestedFieldName(parentObjectFieldFieldName, field));
+                                }
+                            } else if (!equalsRowDataValue(mysqlValue, esValue)) {
                                 changeList.add(convertNestedFieldName(parentObjectFieldFieldName, field));
                             }
-                        } else if (!equalsRowDataValue(mysqlValue, esValue)) {
-                            changeList.add(convertNestedFieldName(parentObjectFieldFieldName, field));
+                        }
+                        if (!changeList.isEmpty()) {
+                            return changeList;
                         }
                     }
-                    if (!changeList.isEmpty()) {
-                        return changeList;
+                } else {
+                    // 不区分每行顺序比较：O(n² * 字段数量)
+                    List<Map<String, Object>> unmatchedMysqlList = new LinkedList<>(mysqlRowData);
+                    for (Object esObj : esList) {
+                        if (!(esObj instanceof Map)) {
+                            return Collections.singletonList(parentObjectFieldFieldName);
+                        }
+                        Map<String, Object> es = (Map<String, Object>) esObj;
+                        ESMapping esMapping = objectField.getEsMapping();
+                        boolean notfound = true;
+                        Iterator<Map<String, Object>> unmatchedMysqlIterator = unmatchedMysqlList.iterator();
+                        while (unmatchedMysqlIterator.hasNext()) {
+                            Map<String, Object> mysql = unmatchedMysqlIterator.next();
+                            if (equalsNestedListRow(mysql, es, esMapping, parentObjectFieldFieldName)) {
+                                unmatchedMysqlIterator.remove();
+                                notfound = false;
+                                break;
+                            }
+                        }
+                        if (notfound) {
+                            return Collections.singletonList(parentObjectFieldFieldName);
+                        }
                     }
                 }
                 return changeList;
@@ -581,6 +613,23 @@ public class ESSyncUtil {
         } else {
             throw new IllegalArgumentException("unsupported object type: " + objectField.getType());
         }
+    }
+
+    private static boolean equalsNestedListRow(Map<String, Object> mysql, Map<String, Object> es,
+                                               ESMapping esMapping, String parentObjectFieldFieldName) {
+        for (String field : mysql.keySet()) {
+            Object mysqlValue = mysql.get(field);
+            Object esValue = es.get(field);
+            ESSyncConfig.ObjectField fieldObjectField = esMapping.getObjectField(parentObjectFieldFieldName, field);
+            if (fieldObjectField != null) {
+                if (!equalsObjectFieldRowDataValue(mysqlValue, esValue, fieldObjectField, mysql, es, false)) {
+                    return false;
+                }
+            } else if (!equalsRowDataValue(mysqlValue, esValue)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static String convertNestedFieldName(String parentFieldName, String fieldName) {
@@ -640,6 +689,9 @@ public class ESSyncUtil {
     }
 
     private static boolean equalsRowDataValue(Object mysql, Object es) {
+        if (Objects.equals(mysql, es)) {
+            return true;
+        }
         boolean emptyMysql = ESSyncUtil.isEmpty(mysql);
         boolean emptyEs = ESSyncUtil.isEmpty(es);
         boolean equals;
