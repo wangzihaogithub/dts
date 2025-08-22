@@ -725,11 +725,11 @@ public class IntESETLService implements ESETLService {
                     runnableList.add(new SyncRunnable(runnableList, range, this,
                             onlyFieldNameSet, adapter, config, onlyCurrentIndex, sqlWhere, insertIgnore) {
                         @Override
-                        public long run0(long offset) {
+                        public long run0(long offset, Long max) {
                             if (isStop(taskId)) {
                                 return offset;
                             }
-                            List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, offset, offsetAdd, tableName, pk, config, trimWhere);
+                            List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, offset, max, offsetAdd, tableName, pk, config, trimWhere);
                             Long dmlListMaxId = getDmlListMaxId(dmlList);
                             List<Dml> filterDmlList;
                             if (insertIgnore) {
@@ -858,7 +858,7 @@ public class IntESETLService implements ESETLService {
             if (isStop(taskId)) {
                 break;
             }
-            List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, i, 1, tableName, pk, config, null);
+            List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, i, null, 1, tableName, pk, config, null);
             esAdapter.sync(dmlList, false, false, onlyCurrentIndex, 1, onlyFieldNameSet, null);
             count += dmlList.size();
         }
@@ -1083,8 +1083,8 @@ public class IntESETLService implements ESETLService {
         return result;
     }
 
-    protected List<Dml> convertDmlList(JdbcTemplate jdbcTemplate, String catalog, Long minId, int limit, String tableName, String idColumnName, ESSyncConfig config, String where) {
-        List<Map<String, Object>> jobList = selectList(jdbcTemplate, minId, limit, tableName, idColumnName, where);
+    protected List<Dml> convertDmlList(JdbcTemplate jdbcTemplate, String catalog, long minId, Long maxId, int limit, String tableName, String idColumnName, ESSyncConfig config, String where) {
+        List<Map<String, Object>> jobList = selectList(jdbcTemplate, minId, maxId, limit, tableName, idColumnName, where);
         List<Dml> dmlList = new ArrayList<>();
         for (Map<String, Object> row : jobList) {
             dmlList.addAll(Dml.convertInsert(Collections.singletonList(row), Collections.singletonList(idColumnName), tableName, catalog, new String[]{config.getDestination()}));
@@ -1092,12 +1092,15 @@ public class IntESETLService implements ESETLService {
         return dmlList;
     }
 
-    protected List<Map<String, Object>> selectList(JdbcTemplate jdbcTemplate, Long minId, int limit, String tableName, String idColumnName, String where) {
+    protected List<Map<String, Object>> selectList(JdbcTemplate jdbcTemplate, long minId, Long maxId, int limit, String tableName, String idColumnName, String where) {
         String sql;
         if (limit == 1) {
             sql = "select * from " + tableName + " " + tableName + " where " + tableName + "." + idColumnName + " = ?";
         } else {
             sql = "select * from " + tableName + " " + tableName + " where " + tableName + "." + idColumnName + " > ?";
+        }
+        if (maxId != null) {
+            sql += " and " + tableName + "." + idColumnName + " <= " + maxId;
         }
         boolean whereAppend = Util.isNotBlank(where);
         if (whereAppend) {
@@ -1200,11 +1203,12 @@ public class IntESETLService implements ESETLService {
         @Override
         public void run() {
             int i = 0;
+            Long max = range.isLast() ? null : range.getEnd();
             try {
                 for (currOffset = range.getStart(), i = 0; range.isLast() || currOffset < range.getEnd(); i++) {
                     long ts = System.currentTimeMillis();
                     long beforeOffset = currOffset;
-                    currOffset = run0(currOffset);
+                    currOffset = run0(currOffset, max);
                     log.info("all sync threadIndex {}/{}, offset = {}-{}, i ={}, remain = {}, cost = {}ms",
                             range.getIndex(), range.getRanges(), beforeOffset, currOffset, i, range.getEnd() - currOffset, System.currentTimeMillis() - ts);
                     if (beforeOffset == currOffset) {
@@ -1230,7 +1234,7 @@ public class IntESETLService implements ESETLService {
 
         }
 
-        public abstract long run0(long offset);
+        public abstract long run0(long offset, Long max);
 
         public Util.Range getRange() {
             return range;
