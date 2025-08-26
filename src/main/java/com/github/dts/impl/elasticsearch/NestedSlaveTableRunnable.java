@@ -177,14 +177,14 @@ class NestedSlaveTableRunnable extends CompletableFuture<Void> implements Runnab
             }
 
             bulkRequestList.commit(esTemplate);
-            log.info("NestedMainJoinTable={}ms, rowCount={}, dml={}, ts={}",
+            log.info("NestedSlaveTable={}ms, rowCount={}, dml={}, ts={}",
                     System.currentTimeMillis() - timestamp.getTime(),
                     updateDmlList,
                     updateDmlList.size(),
                     timestamp);
             complete(null);
         } catch (Exception e) {
-            log.info("NestedMainJoinTable={}ms, rowCount={}, dml={}, ts={}, error={}",
+            log.info("NestedSlaveTable={}ms, rowCount={}, dml={}, ts={}, error={}",
                     System.currentTimeMillis() - timestamp.getTime(),
                     updateDmlList.size(),
                     updateDmlList,
