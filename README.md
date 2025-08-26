@@ -18,7 +18,7 @@
 https://github.com/wangzihaogithub/dts-demo
 
 
-[![Maven Central](https://maven-badges.herokuapp.com/maven-central/com.github.wangzihaogithub/dts/badge.svg)](https://search.maven.org/search?q=g:com.github.wangzihaogithub%20AND%20a:dts)
+[![Maven Central](https://img.shields.io/maven-central/v/com.github.wangzihaogithub/dts.svg?label=Maven%20Central)](https://search.maven.org/search?q=g:com.github.wangzihaogithub%20AND%20a:dts)
 
 ```xml
 <!-- https://github.com/wangzihaogithub/dts -->
@@ -26,7 +26,7 @@ https://github.com/wangzihaogithub/dts-demo
 <dependency>
   <groupId>com.github.wangzihaogithub</groupId>
   <artifactId>dts</artifactId>
-  <version>1.1.21</version>
+  <version>1.1.22</version>
 </dependency>
 ```
     
@@ -224,7 +224,7 @@ https://github.com/wangzihaogithub/dts-demo
 <dependency>
   <groupId>com.github.wangzihaogithub</groupId>
   <artifactId>dts-sdk</artifactId>
-  <version>1.1.21</version>
+  <version>1.1.22</version>
 </dependency>
 ```
 
