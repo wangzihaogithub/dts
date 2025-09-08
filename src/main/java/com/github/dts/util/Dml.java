@@ -1,5 +1,7 @@
 package com.github.dts.util;
 
+import com.alibaba.otter.canal.protocol.CanalEntry;
+
 import java.io.Serializable;
 import java.util.*;
 
@@ -10,6 +12,8 @@ import java.util.*;
  * @version 1.0.0
  */
 public class Dml implements Serializable {
+    public static final String TYPE_TRANSACTIONBEGIN = CanalEntry.EntryType.TRANSACTIONBEGIN.toString();
+    public static final String TYPE_TRANSACTIONEND = CanalEntry.EntryType.TRANSACTIONEND.toString();
 
     private static final long serialVersionUID = 2611556444074013268L;
     private int index = 0;
@@ -21,7 +25,7 @@ public class Dml implements Serializable {
     private String table;                                  // 表名
     private List<String> pkNames;
     private Boolean isDdl;
-    private String type;                                   // 类型: INSERT UPDATE DELETE
+    private String type;                                   // 类型: INSERT ｜ UPDATE ｜ DELETE ｜ TRANSACTIONBEGIN | TRANSACTIONEND | CREATE ｜ ALTER ｜ ERASE ｜ QUERY ｜ TRUNCATE ｜ RENAME ｜ CINDEX ｜ DINDEX ｜ GTID ｜ XACOMMIT ｜ XAROLLBACK ｜ MHEARTBEAT
     // binlog executeTime
     private Long es;                                     // 执行耗时
     // dml build timeStamp
@@ -35,6 +39,22 @@ public class Dml implements Serializable {
     private String logfileName;
 
     private Map<String, String> mysqlType;
+
+    /**
+     * 过滤掉事物消息
+     *
+     * @param list list
+     * @return 过滤掉事物消息
+     */
+    public static List<Dml> filterTransaction(List<Dml> list) {
+        ArrayList<Dml> result= new ArrayList<>(list.size());
+        for (Dml e : list) {
+            if (!TYPE_TRANSACTIONBEGIN.equals(e.type) && !TYPE_TRANSACTIONEND.equals(e.type)) {
+                result.add(e);
+            }
+        }
+        return result;
+    }
 
     public static List<Dml> convertInsert(List<Map<String, Object>> rowList,
                                           List<String> pkNames,
@@ -52,7 +72,7 @@ public class Dml implements Serializable {
         List<Dml> dmlList = new ArrayList<>();
         for (Map row : rowList) {
             Dml dml = new Dml();
-            dml.setData(Arrays.asList(row));
+            dml.setData(Collections.singletonList(row));
             dml.setTable(table);
             dml.setEs(timeMillis);
             dml.setTs(timeMillis);

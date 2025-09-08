@@ -170,10 +170,11 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
         long timeMillis = System.currentTimeMillis();
         int index = 0;
         for (CanalEntry.Entry entry : entries) {
-            if (entry.getEntryType() == CanalEntry.EntryType.TRANSACTIONBEGIN
-                    || entry.getEntryType() == CanalEntry.EntryType.TRANSACTIONEND) {
-                continue;
-            }
+            CanalEntry.EntryType entryType = entry.getEntryType();
+//            if (entryType == CanalEntry.EntryType.TRANSACTIONBEGIN
+//                    || entryType == CanalEntry.EntryType.TRANSACTIONEND) {
+//                continue;
+//            }
 
             CanalEntry.RowChange rowChange;
             try {
@@ -189,7 +190,14 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
             msg.setIsDdl(Boolean.valueOf(rowChange.getIsDdl()));
             msg.setDatabase(entry.getHeader().getSchemaName());
             msg.setTable(entry.getHeader().getTableName());
-            msg.setType(eventType.toString());
+            String type;
+            if (entryType == CanalEntry.EntryType.TRANSACTIONBEGIN
+                    || entryType == CanalEntry.EntryType.TRANSACTIONEND) {
+                type = entryType.toString();
+            } else {
+                type = eventType.toString();
+            }
+            msg.setType(type);
             msg.setEs(entry.getHeader().getExecuteTime());
             msg.setTs(timeMillis);
             msg.setSql(rowChange.getSql());

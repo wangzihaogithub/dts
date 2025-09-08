@@ -116,12 +116,13 @@ public class CanalThread extends Thread {
                         if (!running) {
                             break;
                         }
-                        List<Dml> message = connector.getListWithoutAck(Duration.ofMillis(config.getPullTimeout())); // 获取指定数量的数据
+                        List<Dml> rawMessage = connector.getListWithoutAck(Duration.ofMillis(config.getPullTimeout())); // 获取指定数量的数据
                         if (suspend) {
                             Thread.sleep(10_000);
-                        } else if (message.isEmpty()) {
+                        } else if (rawMessage.isEmpty()) {
                             // next
                         } else {
+                            List<Dml> message = Dml.filterTransaction(rawMessage);
                             try {
                                 if (logger.isDebugEnabled()) {
                                     logger.debug("destination: {} batchId: {} batchSize: {} offset: {}",
@@ -186,30 +187,33 @@ public class CanalThread extends Thread {
     protected void writeOut(final List<Dml> message) {
         CanalConnector.Ack2 ack2 = connector.getAck2();
         CompletableFuture<Void>[] futureList;
-        if (adapterList.length == 1) {
-            futureList = new CompletableFuture[]{adapterList[0].sync(message, adapterList.length)};
+        if (message.isEmpty()) {
+            futureList = new CompletableFuture[0];
         } else {
-            // 组间适配器并行运行
-            Future<CompletableFuture<Void>>[] submitList = Arrays.stream(adapterList)
-                    .map(e -> getExecutor(e).submit(() -> e.sync(message, adapterList.length)))
-                    .toArray(Future[]::new);
+            if (adapterList.length == 1) {
+                futureList = new CompletableFuture[]{adapterList[0].sync(message, adapterList.length)};
+            } else {
+                // 组间适配器并行运行
+                Future<CompletableFuture<Void>>[] submitList = Arrays.stream(adapterList)
+                        .map(e -> getExecutor(e).submit(() -> e.sync(message, adapterList.length)))
+                        .toArray(Future[]::new);
 
-            // 等待所有适配器写入完成
-            // 由于是组间并发操作，所以将阻塞直到耗时最久的工作组操作完成
-            List<Throwable> exception = new ArrayList<>();
-            futureList = new CompletableFuture[adapterList.length];
-            for (int i = 0; i < submitList.length; i++) {
-                try {
-                    futureList[i] = submitList[i].get();
-                } catch (Throwable e) {
-                    exception.add(e);
+                // 等待所有适配器写入完成
+                // 由于是组间并发操作，所以将阻塞直到耗时最久的工作组操作完成
+                List<Throwable> exception = new ArrayList<>();
+                futureList = new CompletableFuture[adapterList.length];
+                for (int i = 0; i < submitList.length; i++) {
+                    try {
+                        futureList[i] = submitList[i].get();
+                    } catch (Throwable e) {
+                        exception.add(e);
+                    }
+                }
+                if (!exception.isEmpty()) {
+                    Util.sneakyThrows(exception.get(0));
                 }
             }
-            if (!exception.isEmpty()) {
-                Util.sneakyThrows(exception.get(0));
-            }
         }
-
 
         CompletableFuture.allOf(this.lastFutureList).whenComplete((unused, throwable) -> {
             if (throwable == null) {
