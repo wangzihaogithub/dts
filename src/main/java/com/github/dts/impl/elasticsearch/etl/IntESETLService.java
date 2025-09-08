@@ -136,7 +136,7 @@ public class IntESETLService implements ESETLService {
                     for (ESSyncConfig config : configMap.values()) {
                         lastConfig = config;
                         ESSyncConfig.ESMapping esMapping = config.getEsMapping();
-                        JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(config.getDataSourceKey());
+                        JdbcTemplate jdbcTemplate = ESSyncUtil.getAutoRetryJdbcTemplateByKey(config.getDataSourceKey());
                         String pk = esMapping.getPk();
                         String tableName = esMapping.getSchemaItem().getMainTable().getTableName();
 
@@ -365,7 +365,7 @@ public class IntESETLService implements ESETLService {
         executorService.execute(() -> {
             try {
                 ESSyncConfig.ESMapping esMapping = config.getEsMapping();
-                JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(config.getDataSourceKey());
+                JdbcTemplate jdbcTemplate = ESSyncUtil.getAutoRetryJdbcTemplateByKey(config.getDataSourceKey());
                 String pkFieldName = esMapping.getSchemaItem().getIdField().getFieldName();
                 String pkFieldExpr = esMapping.getSchemaItem().getIdField().getOwnerAndColumnName();
                 String[] selectFields = esMapping.getSchemaItem().getSelectFields().keySet().stream().filter(e -> !esMapping.isLlmVector(e)).toArray(String[]::new);
@@ -522,8 +522,7 @@ public class IntESETLService implements ESETLService {
                 ESSyncConfig.ESMapping esMapping = config.getEsMapping();
 
                 String pkFieldName = esMapping.getSchemaItem().getIdField().getFieldName();
-                String pkFieldExpr = esMapping.getSchemaItem().getIdField().getOwnerAndColumnName();
-                JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(config.getDataSourceKey());
+                JdbcTemplate jdbcTemplate = ESSyncUtil.getAutoRetryJdbcTemplateByKey(config.getDataSourceKey());
 
                 int uncommit = 0;
                 Object[] searchAfter = startId == null ? null : new Object[]{Math.max(startId - 1L, 0L)};
@@ -701,7 +700,7 @@ public class IntESETLService implements ESETLService {
 
             AbstractMessageService messageService = startupServer.getMessageService();
             for (ESSyncConfig config : configMap.values()) {
-                JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(config.getDataSourceKey());
+                JdbcTemplate jdbcTemplate = ESSyncUtil.getAutoRetryJdbcTemplateByKey(config.getDataSourceKey());
                 String catalog = CanalConfig.DatasourceConfig.getCatalog(config.getDataSourceKey());
                 String pk = config.getEsMapping().getPk();
                 String tableName = config.getEsMapping().getSchemaItem().getMainTable().getTableName();
@@ -791,7 +790,7 @@ public class IntESETLService implements ESETLService {
         for (ESAdapter adapter : adapterList) {
             Map<String, ESSyncConfig> configMap = adapter.getEsSyncConfigByIndex(esIndexName);
             for (ESSyncConfig config : configMap.values()) {
-                JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(config.getDataSourceKey());
+                JdbcTemplate jdbcTemplate = ESSyncUtil.getAutoRetryJdbcTemplateByKey(config.getDataSourceKey());
                 String catalog = CanalConfig.DatasourceConfig.getCatalog(config.getDataSourceKey());
                 try {
                     count += syncById(jdbcTemplate, catalog, idList, onlyCurrentIndex, onlyFieldNameSet, adapter, config, taskId);

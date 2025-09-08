@@ -62,7 +62,7 @@ public abstract class AbstractEsETLDateController {
         if (adapterList.isEmpty()) {
             return new ArrayList<>();
         }
-        JdbcTemplate jdbcTemplate = ESSyncUtil.getJdbcTemplateByKey(ds);
+        JdbcTemplate jdbcTemplate = ESSyncUtil.getAutoRetryJdbcTemplateByKey(ds);
         String catalog = CanalConfig.DatasourceConfig.getCatalog(ds);
 
         Date offsetStartParse = DateUtil.parseDate(offsetStart);
