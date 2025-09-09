@@ -5,9 +5,7 @@ import com.github.dts.util.ESSyncConfig.ESMapping;
 import com.github.dts.util.SchemaItem.TableItem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.jdbc.core.JdbcTemplate;
 
-import javax.sql.DataSource;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
@@ -29,8 +27,6 @@ import java.util.stream.Collectors;
  */
 public class ESSyncUtil {
     private static final Logger log = LoggerFactory.getLogger(ESSyncUtil.class);
-    private static final Map<String, JdbcTemplate> JDBC_TEMPLATE_MAP = new HashMap<>(3);
-    private static final Map<String, AutoRetryJdbcTemplate> AUTO_RETRY_JDBC_TEMPLATE_MAP = new HashMap<>(3);
     private static final Map<String, String> STRING_CACHE = Util.newComputeIfAbsentMap(32, 0.75F, true, 1000);
     private static final Map<String, String> STRING_LRU_CACHE = Util.newComputeIfAbsentMap(32, 0.75F, true, 5000);
     private static final Map<String, Map<String, byte[]>> LOAD_YAML_TO_BYTES_CACHE = Util.newComputeIfAbsentMap(32, 0.75F, true, 30);
@@ -186,76 +182,6 @@ public class ESSyncUtil {
             return Collections.emptyList();
         }
         return Arrays.asList(str.toString().split(separator));
-    }
-
-    /**
-     * 获取-查询会自动重试的数据源（默认3次）
-     *
-     * @param srcDataSourcesKey 哪个数据源(配置文件中的key)
-     * @return 查询会自动重试的数据源（默认3次）
-     */
-    public static JdbcTemplate getAutoRetryJdbcTemplateByKey(String srcDataSourcesKey) {
-        Map<String, AutoRetryJdbcTemplate> jdbcTemplateMap = AUTO_RETRY_JDBC_TEMPLATE_MAP;
-        AutoRetryJdbcTemplate jdbcTemplate = jdbcTemplateMap.get(srcDataSourcesKey);
-        if (jdbcTemplate == null) {
-            synchronized (jdbcTemplateMap) {
-                jdbcTemplate = jdbcTemplateMap.get(srcDataSourcesKey);
-                if (jdbcTemplate == null) {
-                    DataSource dataSource = CanalConfig.DatasourceConfig.getDataSource(srcDataSourcesKey);
-                    if (dataSource == null) {
-                        return null;
-                    }
-                    jdbcTemplate = new AutoRetryJdbcTemplate(dataSource);
-                    jdbcTemplateMap.put(srcDataSourcesKey, jdbcTemplate);
-                }
-            }
-        }
-
-        //如果重新加载配置文件, 那么旧的数据源引用是无效的, 所以这里要判断一下
-        if (CanalConfig.DatasourceConfig.contains(jdbcTemplate.getDataSource())) {
-            return jdbcTemplate;
-        }
-        synchronized (jdbcTemplateMap) {
-            jdbcTemplateMap.clear();
-            jdbcTemplate = new AutoRetryJdbcTemplate(CanalConfig.DatasourceConfig.getDataSource(srcDataSourcesKey));
-            jdbcTemplateMap.put(srcDataSourcesKey, jdbcTemplate);
-        }
-        return jdbcTemplate;
-    }
-
-    /**
-     * 获取数据源
-     *
-     * @param srcDataSourcesKey 哪个数据源(配置文件中的key)
-     * @return 数据源
-     */
-    public static JdbcTemplate getJdbcTemplateByKey(String srcDataSourcesKey) {
-        Map<String, JdbcTemplate> jdbcTemplateMap = JDBC_TEMPLATE_MAP;
-        JdbcTemplate jdbcTemplate = jdbcTemplateMap.get(srcDataSourcesKey);
-        if (jdbcTemplate == null) {
-            synchronized (jdbcTemplateMap) {
-                jdbcTemplate = jdbcTemplateMap.get(srcDataSourcesKey);
-                if (jdbcTemplate == null) {
-                    DataSource dataSource = CanalConfig.DatasourceConfig.getDataSource(srcDataSourcesKey);
-                    if (dataSource == null) {
-                        return null;
-                    }
-                    jdbcTemplate = new JdbcTemplate(dataSource);
-                    jdbcTemplateMap.put(srcDataSourcesKey, jdbcTemplate);
-                }
-            }
-        }
-
-        //如果重新加载配置文件, 那么旧的数据源引用是无效的, 所以这里要判断一下
-        if (CanalConfig.DatasourceConfig.contains(jdbcTemplate.getDataSource())) {
-            return jdbcTemplate;
-        }
-        synchronized (jdbcTemplateMap) {
-            jdbcTemplateMap.clear();
-            jdbcTemplate = new JdbcTemplate(CanalConfig.DatasourceConfig.getDataSource(srcDataSourcesKey));
-            jdbcTemplateMap.put(srcDataSourcesKey, jdbcTemplate);
-        }
-        return jdbcTemplate;
     }
 
     public static void appendConditionByExpr(StringBuilder sql, Object value, String owner, String columnName, String and) {

@@ -6,6 +6,7 @@ import com.github.dts.canal.StartupServer;
 import com.github.dts.impl.elasticsearch.ESAdapter;
 import com.github.dts.impl.rds.RDSAdapter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import javax.sql.DataSource;
 import java.lang.reflect.Constructor;
@@ -80,7 +81,9 @@ public class CanalConfig {
 
     public static class DatasourceConfig {
 
-        private final static Map<String, DataSource> DATA_SOURCES = new ConcurrentHashMap<>(); // key对应的数据源
+        private static final Map<String, DataSource> DATA_SOURCES = new ConcurrentHashMap<>(); // key对应的数据源
+        private static final Map<String, JdbcTemplate> JDBC_TEMPLATE_MAP = new HashMap<>(3);
+        private static final Map<String, AutoRetryJdbcTemplate> AUTO_RETRY_JDBC_TEMPLATE_MAP = new HashMap<>(3);
 
         private String driver = "com.mysql.cj.jdbc.Driver";   // 默认为mysql jdbc驱动
         private String url;                                      // jdbc url
@@ -98,6 +101,76 @@ public class CanalConfig {
 
         public static DataSource getDataSource(String key) {
             return DATA_SOURCES.get(key);
+        }
+
+        /**
+         * 获取-查询会自动重试的数据源（默认3次）
+         *
+         * @param srcDataSourcesKey 哪个数据源(配置文件中的key)
+         * @return 查询会自动重试的数据源（默认3次）
+         */
+        public static JdbcTemplate getAutoRetryJdbcTemplateByKey(String srcDataSourcesKey) {
+            Map<String, AutoRetryJdbcTemplate> jdbcTemplateMap = AUTO_RETRY_JDBC_TEMPLATE_MAP;
+            AutoRetryJdbcTemplate jdbcTemplate = jdbcTemplateMap.get(srcDataSourcesKey);
+            if (jdbcTemplate == null) {
+                synchronized (jdbcTemplateMap) {
+                    jdbcTemplate = jdbcTemplateMap.get(srcDataSourcesKey);
+                    if (jdbcTemplate == null) {
+                        DataSource dataSource = CanalConfig.DatasourceConfig.getDataSource(srcDataSourcesKey);
+                        if (dataSource == null) {
+                            return null;
+                        }
+                        jdbcTemplate = new AutoRetryJdbcTemplate(dataSource);
+                        jdbcTemplateMap.put(srcDataSourcesKey, jdbcTemplate);
+                    }
+                }
+            }
+
+            //如果重新加载配置文件, 那么旧的数据源引用是无效的, 所以这里要判断一下
+            if (CanalConfig.DatasourceConfig.contains(jdbcTemplate.getDataSource())) {
+                return jdbcTemplate;
+            }
+            synchronized (jdbcTemplateMap) {
+                jdbcTemplateMap.clear();
+                jdbcTemplate = new AutoRetryJdbcTemplate(CanalConfig.DatasourceConfig.getDataSource(srcDataSourcesKey));
+                jdbcTemplateMap.put(srcDataSourcesKey, jdbcTemplate);
+            }
+            return jdbcTemplate;
+        }
+
+        /**
+         * 获取数据源
+         *
+         * @param srcDataSourcesKey 哪个数据源(配置文件中的key)
+         * @return 数据源
+         */
+        public static JdbcTemplate getJdbcTemplateByKey(String srcDataSourcesKey) {
+            Map<String, JdbcTemplate> jdbcTemplateMap = JDBC_TEMPLATE_MAP;
+            JdbcTemplate jdbcTemplate = jdbcTemplateMap.get(srcDataSourcesKey);
+            if (jdbcTemplate == null) {
+                synchronized (jdbcTemplateMap) {
+                    jdbcTemplate = jdbcTemplateMap.get(srcDataSourcesKey);
+                    if (jdbcTemplate == null) {
+                        DataSource dataSource = CanalConfig.DatasourceConfig.getDataSource(srcDataSourcesKey);
+                        if (dataSource == null) {
+                            return null;
+                        }
+                        jdbcTemplate = new JdbcTemplate(dataSource);
+                        jdbcTemplateMap.put(srcDataSourcesKey, jdbcTemplate);
+                    }
+                }
+            }
+
+            //如果重新加载配置文件, 那么旧的数据源引用是无效的, 所以这里要判断一下
+            if (CanalConfig.DatasourceConfig.contains(jdbcTemplate.getDataSource())) {
+                return jdbcTemplate;
+            }
+            synchronized (jdbcTemplateMap) {
+                jdbcTemplateMap.clear();
+                jdbcTemplate = new JdbcTemplate(CanalConfig.DatasourceConfig.getDataSource(srcDataSourcesKey));
+                jdbcTemplateMap.put(srcDataSourcesKey, jdbcTemplate);
+            }
+            return jdbcTemplate;
         }
 
         public static String getDataSourceKey0() {

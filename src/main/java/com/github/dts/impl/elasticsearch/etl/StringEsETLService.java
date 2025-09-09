@@ -147,7 +147,7 @@ public class StringEsETLService implements ESETLService {
                 futureList.add(future);
                 executorService.execute(() -> {
                     List<String> updateIdList = new ArrayList<>();
-                    JdbcTemplate jdbcTemplate = ESSyncUtil.getAutoRetryJdbcTemplateByKey(config.getDataSourceKey());
+                    JdbcTemplate jdbcTemplate = CanalConfig.DatasourceConfig.getAutoRetryJdbcTemplateByKey(config.getDataSourceKey());
                     String catalog = CanalConfig.DatasourceConfig.getCatalog(config.getDataSourceKey());
 
                     String minId = offsetStart;
@@ -212,7 +212,7 @@ public class StringEsETLService implements ESETLService {
         for (ESAdapter adapter : adapterList) {
             Map<String, ESSyncConfig> configMap = adapter.getEsSyncConfigByIndex(esIndexName);
             for (ESSyncConfig config : configMap.values()) {
-                JdbcTemplate jdbcTemplate = ESSyncUtil.getAutoRetryJdbcTemplateByKey(config.getDataSourceKey());
+                JdbcTemplate jdbcTemplate = CanalConfig.DatasourceConfig.getAutoRetryJdbcTemplateByKey(config.getDataSourceKey());
                 String catalog = CanalConfig.DatasourceConfig.getCatalog(config.getDataSourceKey());
                 try {
                     count += syncById(jdbcTemplate, catalog, idList, onlyCurrentIndex, onlyFieldNameSet, adapter, config, taskId);
@@ -254,7 +254,7 @@ public class StringEsETLService implements ESETLService {
                     List<String> deleteIdList = new ArrayList<>();
                     Timestamp timestamp = new Timestamp(System.currentTimeMillis());
                     ESSyncConfig.ESMapping esMapping = config.getEsMapping();
-                    JdbcTemplate jdbcTemplate = ESSyncUtil.getAutoRetryJdbcTemplateByKey(config.getDataSourceKey());
+                    JdbcTemplate jdbcTemplate = CanalConfig.DatasourceConfig.getAutoRetryJdbcTemplateByKey(config.getDataSourceKey());
                     String pk = esMapping.getPk();
                     String tableName = esMapping.getSchemaItem().getMainTable().getTableName();
 
@@ -337,7 +337,7 @@ public class StringEsETLService implements ESETLService {
                     Timestamp timestamp = new Timestamp(System.currentTimeMillis());
                     Map<String, AtomicInteger> allRowChangeMap = new LinkedHashMap<>();
                     ESSyncConfig.ESMapping esMapping = config.getEsMapping();
-                    JdbcTemplate jdbcTemplate = ESSyncUtil.getAutoRetryJdbcTemplateByKey(config.getDataSourceKey());
+                    JdbcTemplate jdbcTemplate = CanalConfig.DatasourceConfig.getAutoRetryJdbcTemplateByKey(config.getDataSourceKey());
                     try {
                         String pkFieldName = esMapping.getSchemaItem().getIdField().getFieldName();
                         String pkFieldExpr = esMapping.getSchemaItem().getIdField().getOwnerAndColumnName();
@@ -516,8 +516,7 @@ public class StringEsETLService implements ESETLService {
                     ESSyncConfig.ESMapping esMapping = config.getEsMapping();
                     try {
                         String pkFieldName = esMapping.getSchemaItem().getIdField().getFieldName();
-                        String pkFieldExpr = esMapping.getSchemaItem().getIdField().getOwnerAndColumnName();
-                        JdbcTemplate jdbcTemplate = ESSyncUtil.getAutoRetryJdbcTemplateByKey(config.getDataSourceKey());
+                        JdbcTemplate jdbcTemplate = CanalConfig.DatasourceConfig.getAutoRetryJdbcTemplateByKey(config.getDataSourceKey());
 
                         if (diffFields == null || diffFields.isEmpty()) {
                             diffFieldsFinal = esMapping.getObjFields().entrySet().stream().filter(e -> e.getValue().isSqlType()).map(Map.Entry::getKey).collect(Collectors.toCollection(LinkedHashSet::new));
