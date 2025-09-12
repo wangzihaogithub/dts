@@ -74,7 +74,9 @@ public class ESSyncUtil {
                     byte[] bytes = readStream(is);
                     if (bytes.length > 0) {
                         String fileName = extractFileName(entryName);
-                        map.put(fileName, bytes);
+                        if (map.put(fileName, bytes) != null) {
+                            throw new RuntimeException("duplicate file name  " + entryName + "!");
+                        }
                     }
                 } catch (IOException e) {
                     throw new RuntimeException("Read " + entryName + " error." + e, e);
@@ -155,7 +157,9 @@ public class ESSyncUtil {
                     try {
                         byte[] bytes = Files.readAllBytes(file.toPath());
                         if (bytes.length > 0) {
-                            map.put(fileName, bytes);
+                            if (map.put(fileName, bytes) != null) {
+                                throw new RuntimeException("duplicate file name  " + fileName + "!");
+                            }
                         }
                     } catch (IOException e) {
                         throw new RuntimeException("Read " + dir + "mapping config: " + fileName + " error. ", e);
