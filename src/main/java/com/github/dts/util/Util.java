@@ -356,7 +356,7 @@ public class Util {
         }
 
         // 如果只需要一段，直接返回整个范围
-        if (n <= 1) {
+        if (n <= 1 || endId - startId <= 1) {
             ranges.add(new Range(0, 1, startId, endId));
             return ranges;
         }
@@ -387,7 +387,7 @@ public class Util {
                 currentEnd += 1;
             }
             if (currentStart <= currentEnd) {
-                ranges.add(new Range((int) i, rangeCount, currentStart, currentEnd));
+                ranges.add(new Range((int) i, rangeCount, currentStart, currentStart == currentEnd ? currentEnd + 1 : currentEnd));
             }
             currentStart = currentEnd + 1;
         }

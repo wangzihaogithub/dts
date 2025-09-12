@@ -134,7 +134,7 @@ public abstract class AbstractEsETLStringController {
     @RequestMapping("/syncAll")
     public Integer syncAll(
             @RequestParam(value = "esIndexName", required = true) String esIndexName,
-            @RequestParam(value = "offsetStart", required = false, defaultValue = "0") String offsetStart,
+            @RequestParam(value = "offsetStart", required = false, defaultValue = "") String offsetStart,
             @RequestParam(value = "offsetAdd", required = false, defaultValue = "1000") int offsetAdd,
             @RequestParam(value = "onlyCurrentIndex", required = false, defaultValue = "true") boolean onlyCurrentIndex,
             @RequestParam(value = "joinUpdateSize", required = false, defaultValue = "100") int joinUpdateSize,
@@ -144,7 +144,7 @@ public abstract class AbstractEsETLStringController {
             @RequestParam(value = "insertIgnore", required = false, defaultValue = "false") boolean insertIgnore,
             @RequestParam(value = "maxSendMessageSize", required = false, defaultValue = "50") int maxSendMessageSize) {
         Set<String> onlyFieldNameSet = onlyFieldName == null ? null : Arrays.stream(onlyFieldName).filter(Util::isNotBlank).collect(Collectors.toCollection(LinkedHashSet::new));
-        return stringEsETLService.syncAll(esIndexName, offsetStart, offsetAdd, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet,
+        return stringEsETLService.syncAll(esIndexName, offsetStart == null || offsetStart.isEmpty() ? null : offsetStart, offsetAdd, onlyCurrentIndex, joinUpdateSize, onlyFieldNameSet,
                 adapterNames == null ? null : Arrays.asList(adapterNames), sqlWhere, insertIgnore, maxSendMessageSize).size();
     }
 

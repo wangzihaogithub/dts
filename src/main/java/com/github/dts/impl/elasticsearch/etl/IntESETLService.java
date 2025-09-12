@@ -704,12 +704,22 @@ public class IntESETLService implements ESETLService {
                 String catalog = CanalConfig.DatasourceConfig.getCatalog(config.getDataSourceKey());
                 String pk = config.getEsMapping().getPk();
                 String tableName = config.getEsMapping().getSchemaItem().getMainTable().getTableName();
-                Long minId = offsetStart == null ?
-                        selectMinId(jdbcTemplate, pk, tableName) : offsetStart.longValue();
-                Long maxId = offsetEnd == null ?
-                        selectMaxId(jdbcTemplate, pk, tableName) : offsetEnd.longValue();
+                Long minId;
+                if (offsetStart == null) {
+                    minId = selectMinId(jdbcTemplate, pk, tableName);
+                } else {
+                    minId = offsetStart.longValue();
+                }
+                Long maxId;
+                if (offsetEnd == null) {
+                    maxId = selectMaxId(jdbcTemplate, pk, tableName);
+                } else {
+                    maxId = offsetEnd.longValue();
+                }
                 if (minId == null) {
                     minId = 0L;
+                } else {
+                    minId--;
                 }
                 if (maxId == null) {
                     maxId = 1L;
@@ -837,11 +847,11 @@ public class IntESETLService implements ESETLService {
     }
 
     protected Long selectMinId(JdbcTemplate jdbcTemplate, String idFiled, String tableName) {
-        return jdbcTemplate.queryForObject("select min(" + idFiled + ") from " + tableName, Long.class);
+        return jdbcTemplate.queryForObject("select ifnull(min(" + idFiled + "), 0) n from " + tableName, Long.class);
     }
 
     protected Long selectMaxId(JdbcTemplate jdbcTemplate, String idFiled, String tableName) {
-        return jdbcTemplate.queryForObject("select max(" + idFiled + ") from " + tableName, Long.class);
+        return jdbcTemplate.queryForObject("select ifnull(max(" + idFiled + "),0) n from " + tableName, Long.class);
     }
 
     protected int syncById(JdbcTemplate jdbcTemplate, String catalog, Collection<Long> id,

@@ -89,18 +89,18 @@ public class StringEsETLService implements ESETLService {
         List<CompletableFuture<?>> futureList = new ArrayList<>();
 
         futureList.addAll(updateEsNestedDiff(esIndexName, null, offsetAdd, null, 50, adapterNames, esQueryBodyJson));
-        futureList.addAll(syncAll(esIndexName, "0", offsetAdd, true, 100, null, adapterNames, sqlWhere, true, 50));
+        futureList.addAll(syncAll(esIndexName, null, offsetAdd, true, 100, null, adapterNames, sqlWhere, true, 50));
         futureList.addAll(updateEsDiff(esIndexName, offsetAdd, null, 50, adapterNames, esQueryBodyJson));
         return futureList;
     }
 
     public List<CompletableFuture<Void>> syncAll(
             String esIndexName) {
-        return syncAll(esIndexName, "0", 500, true, 100, null, null, null, false, 50);
+        return syncAll(esIndexName, null, 500, true, 100, null, null, null, false, 50);
     }
 
     public int syncById(String[] id,
-                           String esIndexName) {
+                        String esIndexName) {
         return syncById(id, esIndexName, true, null, null);
     }
 
@@ -161,7 +161,7 @@ public class StringEsETLService implements ESETLService {
                             }
                             String tableName = config.getEsMapping().getSchemaItem().getMainTable().getTableName();
                             String pk = config.getEsMapping().getPk();
-                            List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, minId, offsetAdd, tableName, pk, config, trimWhere);
+                            List<Dml> dmlList = convertDmlList(jdbcTemplate, catalog, minId, dmlSize.intValue() == 0 ? 1 : offsetAdd, tableName, pk, config, trimWhere);
                             List<Dml> filterDmlList;
                             if (insertIgnore) {
                                 filterDmlList = filter(dmlList, adapter.getEsTemplate(), config.getEsMapping());
