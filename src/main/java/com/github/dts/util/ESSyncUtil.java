@@ -147,7 +147,13 @@ public class ESSyncUtil {
         if (files != null) {
             for (File file : files) {
                 if (file.isDirectory()) {
-                    map.putAll(loadYamlToBytes(file));
+                    Map<String, byte[]> dirFileMap = loadYamlToBytes(file);
+                    for (Map.Entry<String, byte[]> entry : dirFileMap.entrySet()) {
+                        String fileName = entry.getKey();
+                        if (map.put(fileName, entry.getValue()) != null) {
+                            throw new RuntimeException("duplicate file name  " + fileName + "!");
+                        }
+                    }
                 } else {
                     String fileName = file.getName();
                     if (!isYaml(fileName)) {
