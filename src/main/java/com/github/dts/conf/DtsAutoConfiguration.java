@@ -10,8 +10,6 @@ import com.github.dts.util.AbstractMessageService;
 import com.github.dts.util.CanalConfig;
 import com.github.dts.util.PlaceholdersResolver;
 import com.github.dts.util.Util;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,9 +20,6 @@ import org.springframework.boot.web.servlet.ServletRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Scope;
-
-import java.util.Collections;
-import java.util.Map;
 
 @EnableConfigurationProperties(CanalConfig.class)
 @Configuration
@@ -40,7 +35,7 @@ public class DtsAutoConfiguration {
     }
 
     @Bean
-    @ConditionalOnClass(name = "org.springframework.boot.web.servlet.ServletRegistrationBean")
+    @ConditionalOnClass(name = {"org.springframework.boot.web.servlet.ServletRegistrationBean", "javax.servlet.Servlet"})
     public ServletRegistrationBean<SdkSubscriberHttpServlet> clusterServlet(CanalConfig canalConfig,
                                                                             SdkSubscriber sdkSubscriber,
                                                                             @Autowired(required = false) DiscoveryService discoveryService

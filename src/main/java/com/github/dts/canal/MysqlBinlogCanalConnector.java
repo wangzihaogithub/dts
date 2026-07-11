@@ -32,6 +32,7 @@ import org.slf4j.LoggerFactory;
 
 import javax.sql.DataSource;
 import java.io.File;
+import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URISyntaxException;
 import java.sql.*;
@@ -445,7 +446,7 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
         return instance;
     }
 
-    public void waitMaxDumpThread() throws InterruptedException {
+    public void waitMaxDumpThread() throws InterruptedException, SQLException {
         while (true) {
             if (setDiscard) {
                 setDiscard = false;
@@ -458,7 +459,7 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
                     list = selectShowProcesslist(dataSource);
                 }
             } catch (SQLException e) {
-                continue;
+                throw e;
             }
             List<Map<String, Object>> dumpThreadList = list.stream()
                     .filter(e -> Objects.equals(username, e.get("User"))
@@ -479,6 +480,8 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return;
+        } catch (SQLException e) {
+            throw new IllegalStateException("connect fail! dataSource=" + dataSource + ". msg=" + e, e);
         }
         if (!server.isStart()) {
             server.start();
@@ -493,6 +496,8 @@ public class MysqlBinlogCanalConnector implements CanalConnector {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return;
+        } catch (SQLException e) {
+            throw new IllegalStateException("subscribe fail! topic=" + Arrays.toString(topic) + "dataSource=" + dataSource + ". msg=" + e, e);
         }
 
         if (connect) {
